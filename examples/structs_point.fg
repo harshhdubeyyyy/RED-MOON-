@@ -1,0 +1,22 @@
+// Structs in Forge: definition, literal, field access, field assignment,
+// and passing a struct to a function (by value, like Go/Rust).
+struct Point {
+    x: float;
+    y: float;
+}
+
+fn distance(a: Point, b: Point) -> float {
+    let dx: float = a.x - b.x;
+    let dy: float = a.y - b.y;
+    return sqrt(dx * dx + dy * dy);
+}
+
+fn main() -> int {
+    let p: Point = Point { x: 0.0, y: 0.0 };
+    let mut q: Point = Point { x: 3.0, y: 4.0 };
+    println("distance =", distance(p, q));
+    q.x = 6.0;
+    println("q.x =", q.x, "q.y =", q.y);
+    println("distance =", distance(p, q));
+    return 0;
+}

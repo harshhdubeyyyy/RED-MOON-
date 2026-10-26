@@ -1,0 +1,19 @@
+// File I/O + CLI args: the first program argument is a filename,
+// otherwise a default file is used. Writes, reads back, and prints.
+fn main() -> int {
+    let argv: [str] = args();
+    let mut filename: str = "forge_output.txt";
+    if len(argv) > 0 {
+        filename = argv[0];
+    }
+    let ok: bool = write_file(filename, "hello from Forge\n");
+    if ok {
+        println("wrote ok");
+    } else {
+        println("write failed");
+    }
+    let content: str = read_file(filename);
+    println("content =", content);
+    println("args count =", len(argv));
+    return 0;
+}

@@ -14,16 +14,9 @@ from . import ast_nodes as A
 
 SCALARS = {"int", "float", "bool", "str"}
 STMT_BUILTINS = {"print", "println", "push", "fail"}
-EXPR_BUILTINS = {"len", "range", "clock_micros", "sqrt", "exp", "log", "pow", "abs"}
+EXPR_BUILTINS = {"len", "range", "clock_micros", "sqrt", "exp", "log", "pow", "abs",
+                 "read_file", "write_file", "args", "parse_int"}
 BUILTINS = STMT_BUILTINS | EXPR_BUILTINS
-
-
-def valid_type(t):
-    if t in SCALARS or t == "void":
-        return True
-    if t.startswith("[") and t.endswith("]"):
-        return valid_type(t[1:-1])
-    return False
 
 
 def elem_type(arr_type):
@@ -34,11 +27,62 @@ class Checker:
     def __init__(self, program):
         self.program = program
         self.funcs = {}
+        self.structs = {}  # name -> {field: type}
         self.scopes = []
         self.current_ret = "void"
         self.current_fn = None
 
+    def valid_type(self, t):
+        if t in SCALARS or t == "void":
+            return True
+        if t in self.structs:
+            return True
+        if t.startswith("[") and t.endswith("]"):
+            inner = t[1:-1]
+            # Arrays of structs and nested arrays are not yet supported.
+            return inner in SCALARS
+        return False
+
+    def check_structs(self):
+        structs = getattr(self.program, "structs", None) or []
+        for sd in structs:
+            if sd.name in self.structs:
+                raise ForgeError(f"duplicate struct '{sd.name}'", sd.line, sd.col)
+            if sd.name in SCALARS or sd.name in BUILTINS:
+                raise ForgeError(f"'{sd.name}' cannot be a struct name", sd.line, sd.col)
+            seen = set()
+            fields = {}
+            for fname, ftype in sd.fields:
+                if fname in seen:
+                    raise ForgeError(f"duplicate field '{fname}' in struct '{sd.name}'",
+                                     sd.line, sd.col)
+                seen.add(fname)
+                fields[fname] = ftype
+            self.structs[sd.name] = fields
+        # Validate field types now that all struct names are known, and
+        # reject recursive structs (C value fields cannot be recursive).
+        for sd in structs:
+            for fname, ftype in sd.fields:
+                if not self.valid_type(ftype):
+                    raise ForgeError(f"unknown field type '{ftype}' in struct '{sd.name}'",
+                                     sd.line, sd.col)
+            # Cycle check: follow struct-typed fields.
+            stack = [sd.name]
+            visited = set()
+            while stack:
+                cur = stack.pop()
+                if cur in visited:
+                    continue
+                visited.add(cur)
+                for ftype in self.structs.get(cur, {}).values():
+                    if ftype in self.structs:
+                        if ftype == sd.name:
+                            raise ForgeError(f"recursive struct '{sd.name}' is not supported",
+                                             sd.line, sd.col)
+                        stack.append(ftype)
+
     def check(self):
+        self.check_structs()
         for fn in self.program.funcs:
             if fn.name in self.funcs:
                 raise ForgeError(f"duplicate function '{fn.name}'", fn.line, fn.col)
@@ -57,9 +101,9 @@ class Checker:
 
     def check_func(self, fn):
         for _, pt in fn.params:
-            if not valid_type(pt) or pt == "void":
+            if not self.valid_type(pt) or pt == "void":
                 raise ForgeError(f"parameter type '{pt}' is not a value type", fn.line, fn.col)
-        if not valid_type(fn.ret):
+        if not self.valid_type(fn.ret):
             raise ForgeError(f"unknown return type '{fn.ret}'", fn.line, fn.col)
         self.current_ret = fn.ret
         self.current_fn = fn
@@ -93,7 +137,7 @@ class Checker:
                                  stmt.line, stmt.col)
             t = self.check_expr(stmt.expr)
             if stmt.ann is not None:
-                if not valid_type(stmt.ann) or stmt.ann == "void":
+                if not self.valid_type(stmt.ann) or stmt.ann == "void":
                     raise ForgeError(f"unknown type '{stmt.ann}'", stmt.line, stmt.col)
                 if t != stmt.ann:
                     # Empty array literal has no element type of its own.
@@ -115,6 +159,26 @@ class Checker:
                         and vt.startswith("[")):
                     raise ForgeError(f"cannot assign {et} to {vt} variable '{stmt.name}'",
                                      stmt.line, stmt.col)
+            return
+        if isinstance(stmt, A.FieldAssign):
+            # Outermost variable must be mutable; field type comes from
+            # checking the target FieldAccess expression itself.
+            node = stmt.target
+            while isinstance(node, A.FieldAccess):
+                node = node.base
+            if not isinstance(node, A.Var):
+                raise ForgeError("field assignment target must start from a variable",
+                                 stmt.line, stmt.col)
+            _vt, mutable = self.lookup(node.name, stmt.line, stmt.col)
+            if not mutable:
+                raise ForgeError(f"cannot assign to a field of immutable variable "
+                                 f"'{node.name}' (declare it with 'let mut')",
+                                 stmt.line, stmt.col)
+            ft = self.check_expr(stmt.target)
+            vt2 = self.check_expr(stmt.expr)
+            if vt2 != ft:
+                raise ForgeError(f"cannot assign {vt2} to field of type {ft}",
+                                 stmt.line, stmt.col)
             return
         if isinstance(stmt, A.IndexAssign):
             base = stmt.base.base
@@ -228,6 +292,37 @@ class Checker:
                     raise ForgeError("array literal elements must all have the same type",
                                      e.line, e.col)
             return f"[{t0}]"
+        if isinstance(expr, A.StructLit):
+            if expr.name not in self.structs:
+                raise ForgeError(f"undefined struct '{expr.name}'", expr.line, expr.col)
+            fields = self.structs[expr.name]
+            provided = {}
+            for fname, fexpr in expr.fields:
+                if fname not in fields:
+                    raise ForgeError(f"struct '{expr.name}' has no field '{fname}'",
+                                     expr.line, expr.col)
+                if fname in provided:
+                    raise ForgeError(f"duplicate field '{fname}' in struct literal",
+                                     expr.line, expr.col)
+                provided[fname] = self.check_expr(fexpr)
+            missing = [f for f in fields if f not in provided]
+            if missing:
+                raise ForgeError(f"struct literal '{expr.name}' is missing field(s): "
+                                 f"{', '.join(missing)}", expr.line, expr.col)
+            for fname, ftype in fields.items():
+                if provided[fname] != ftype:
+                    raise ForgeError(f"field '{fname}' of '{expr.name}' must be {ftype}, "
+                                     f"got {provided[fname]}", expr.line, expr.col)
+            return expr.name
+        if isinstance(expr, A.FieldAccess):
+            bt = self.check_expr(expr.base)
+            if bt not in self.structs:
+                raise ForgeError(f"cannot access a field on a non-struct value of type {bt}",
+                                 expr.line, expr.col)
+            if expr.field not in self.structs[bt]:
+                raise ForgeError(f"struct '{bt}' has no field '{expr.field}'",
+                                 expr.line, expr.col)
+            return self.structs[bt][expr.field]
         if isinstance(expr, A.Index):
             bt = self.check_expr(expr.base)
             et = elem_type(bt)
@@ -239,7 +334,7 @@ class Checker:
             return et
         if isinstance(expr, A.Cast):
             t = self.check_expr(expr.expr)
-            if not valid_type(expr.target) or expr.target == "void":
+            if not self.valid_type(expr.target) or expr.target == "void":
                 raise ForgeError(f"unknown cast target '{expr.target}'", expr.line, expr.col)
             if (t, expr.target) not in (("int", "float"), ("float", "int")):
                 raise ForgeError(f"cannot cast {t} to {expr.target}", expr.line, expr.col)
@@ -291,6 +386,28 @@ class Checker:
         if call.name == "abs":
             if len(call.args) != 1 or self.check_expr(call.args[0]) != "int":
                 raise ForgeError("abs() takes exactly one int argument", call.line, call.col)
+            return "int"
+        if call.name == "read_file":
+            if len(call.args) != 1 or self.check_expr(call.args[0]) != "str":
+                raise ForgeError("read_file() takes exactly one str argument",
+                                 call.line, call.col)
+            return "str"
+        if call.name == "write_file":
+            if len(call.args) != 2:
+                raise ForgeError("write_file() takes exactly two arguments",
+                                 call.line, call.col)
+            for a in call.args:
+                if self.check_expr(a) != "str":
+                    raise ForgeError("write_file() takes str arguments", call.line, call.col)
+            return "bool"
+        if call.name == "args":
+            if call.args:
+                raise ForgeError("args() takes no arguments", call.line, call.col)
+            return "[str]"
+        if call.name == "parse_int":
+            if len(call.args) != 1 or self.check_expr(call.args[0]) != "str":
+                raise ForgeError("parse_int() takes exactly one str argument",
+                                 call.line, call.col)
             return "int"
         fn = self.funcs.get(call.name)
         if fn is None:

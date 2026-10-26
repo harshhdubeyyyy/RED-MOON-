@@ -4,9 +4,9 @@ from dataclasses import dataclass
 from .errors import ForgeError
 
 KEYWORDS = {"fn", "let", "mut", "if", "else", "while", "for", "in",
-            "return", "true", "false", "import", "as"}
+            "return", "true", "false", "import", "as", "struct"}
 TWO_CHAR = {"==", "!=", "<=", ">=", "&&", "||", "->"}
-ONE_CHAR = set("+-*/%<>=!;,:(){}[]")
+ONE_CHAR = set("+-*/%<>=!;,:(){}[].")
 
 
 @dataclass

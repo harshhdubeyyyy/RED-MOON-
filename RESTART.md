@@ -81,6 +81,20 @@ from scratch, and do not silently drop a phase.
   90c06fc5a51e8cad089e9ee73057a70cd191f5b4, with figures/ (3D loss
   surface, scaling, convergence, XOR heatmap) and scripts/
   make_figures.py. Repo: https://github.com/jayantt1dubeyy/RED-MOON-
+- Phase C (26 Oct 2026, "keep going to Mojo/Rust/Go level"): structs
+  (definition, literal, field access, `let mut` field assignment,
+  by-value params/returns, recursive/array-of-structs rejected),
+  file I/O (read_file/write_file), CLI args() + `forge run -- args`,
+  parse_int, and `forge test`. Examples structs_point.fg
+  (distance 5, then 7.2111 after q.x=6) and file_and_args.fg.
+  Two real bugs caught by the old test suite during this phase
+  and fixed: (1) `for v in xs {` was misparsed as a struct
+  literal — parser now requires `{ field:` or `{}` lookahead;
+  (2) a Forge variable named `argv` collided with C main's argv
+  — C main now uses __forge_argc/__forge_argv. Full suite passes
+  including new struct/file/missing-field tests. Push Phase C
+  next; do not claim generics/Option/Result/concurrency/GPU/
+  package manager/LSP yet.
 
 ## Research findings that now lock v2's design (26 Oct 2026)
 

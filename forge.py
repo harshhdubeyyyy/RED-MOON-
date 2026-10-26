@@ -4,8 +4,9 @@
 Usage:
     python3 forge.py check <file.fg> [--mode safe|fast]
     python3 forge.py build <file.fg> [-o out] [--mode safe|fast] [--keep-c out.c]
-    python3 forge.py run   <file.fg> [--mode safe|fast]
+    python3 forge.py run   <file.fg> [--mode safe|fast] [-- program args...]
     python3 forge.py emit  <file.fg> [--mode safe|fast]
+    python3 forge.py test
 Safe mode (default): checked int arithmetic + bounds-checked indexing.
 Fast mode: unchecked, -O3 -march=native, for microsecond-latency work.
 """
@@ -25,10 +26,15 @@ from forge_lang.compiler import compile_file, build  # noqa: E402
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="forge", description="Forge compiler v2")
     sub = parser.add_subparsers(dest="cmd", required=True)
-    for name in ("check", "emit", "run"):
+    for name in ("check", "emit"):
         p = sub.add_parser(name)
         p.add_argument("file")
         p.add_argument("--mode", choices=["safe", "fast"], default="safe")
+    p = sub.add_parser("run")
+    p.add_argument("file")
+    p.add_argument("--mode", choices=["safe", "fast"], default="safe")
+    p.add_argument("program_args", nargs=argparse.REMAINDER, default=[])
+    sub.add_parser("test")
     p = sub.add_parser("build")
     p.add_argument("file")
     p.add_argument("--mode", choices=["safe", "fast"], default="safe")
@@ -50,6 +56,11 @@ def main(argv=None):
             build(args.file, out, mode=args.mode, keep_c=args.keep_c)
             print(f"built: {out} (mode={args.mode})")
             return 0
+        if args.cmd == "test":
+            root = os.path.dirname(os.path.abspath(__file__))
+            suite = os.path.join(root, "tests", "run_tests.py")
+            proc = subprocess.run([sys.executable, suite], cwd=root)
+            return proc.returncode
         if args.cmd == "run":
             c_source, _ = compile_file(args.file, mode=args.mode)
             with tempfile.TemporaryDirectory(prefix="forge2_run_") as td:
@@ -63,7 +74,10 @@ def main(argv=None):
                                     capture_output=True, text=True)
                 if cc.returncode != 0:
                     raise ForgeError(f"C compiler failed:\n{cc.stderr}")
-                proc = subprocess.run([exe])
+                prog_args = list(args.program_args)
+                if prog_args and prog_args[0] == "--":
+                    prog_args = prog_args[1:]
+                proc = subprocess.run([exe] + prog_args)
                 return proc.returncode
     except ForgeError as e:
         print(f"forge: error: {e}", file=sys.stderr)

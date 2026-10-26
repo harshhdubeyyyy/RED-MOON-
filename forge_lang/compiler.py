@@ -26,6 +26,7 @@ def load_program(path, seen=None):
     prog = parse(source)
     base = os.path.dirname(real)
     all_funcs = list(prog.funcs)
+    all_structs = list(prog.structs or [])
     for imp in prog.imports:
         candidates = [
             os.path.join(base, imp),
@@ -38,8 +39,9 @@ def load_program(path, seen=None):
             raise ForgeError(f"import not found: {imp} (looked in {base} and stdlib)")
         sub = load_program(found, seen)
         all_funcs.extend(sub.funcs)
+        all_structs.extend(sub.structs or [])
     seen.remove(real)
-    return A.Program([], all_funcs)
+    return A.Program([], all_funcs, all_structs)
 
 
 def compile_source(source, mode="safe"):

@@ -127,6 +127,38 @@ static long long forge_clock_micros(void) {
     return (long long)ts.tv_sec * 1000000LL + ts.tv_nsec / 1000;
 }
 
+static ForgeStrArray forge_args_global;
+
+static char *forge_read_file(const char *path) {
+    FILE *f = fopen(path, "rb");
+    if (!f) forge_fail("cannot read file");
+    fseek(f, 0, SEEK_END);
+    long sz = ftell(f);
+    if (sz < 0) { fclose(f); forge_fail("cannot read file"); }
+    fseek(f, 0, SEEK_SET);
+    char *buf = (char *)malloc((size_t)sz + 1);
+    if (!buf) { fclose(f); forge_fail("out of memory"); }
+    size_t got = fread(buf, 1, (size_t)sz, f);
+    buf[got] = '\0';
+    fclose(f);
+    return buf;
+}
+
+static bool forge_write_file(const char *path, const char *content) {
+    FILE *f = fopen(path, "wb");
+    if (!f) return false;
+    fputs(content, f);
+    fclose(f);
+    return true;
+}
+
+static long long forge_parse_int(const char *s) {
+    char *end = NULL;
+    long long v = strtoll(s, &end, 10);
+    if (end == s || *end != '\0') forge_fail("parse_int: not an integer");
+    return v;
+}
+
 """
 
 
@@ -137,7 +169,8 @@ def c_type(t):
         inner = t[1:-1]
         if inner in ARRAY_STRUCT:
             return ARRAY_STRUCT[inner]
-    raise ForgeError(f"unsupported type for codegen: {t}")
+    # Struct types use their typedef name directly.
+    return t
 
 
 def elem_of(arr_type):
@@ -149,6 +182,8 @@ class Codegen:
         self.program = program
         self.mode = mode
         self.func_ret = {fn.name: fn.ret for fn in program.funcs}
+        self.structs = {sd.name: dict(sd.fields)
+                        for sd in (getattr(program, "structs", None) or [])}
         self.lines = []
         self.indent = 0
         self.arr_counter = 0
@@ -158,6 +193,15 @@ class Codegen:
 
     def generate(self):
         self.lines.append(HEADER)
+        for name in self.structs:
+            self.emit(f"typedef struct {name} {name};")
+        for name, fields in self.structs.items():
+            self.emit(f"struct {name} {{")
+            for fname, ftype in fields.items():
+                self.emit(f"    {c_type(ftype)} {fname};")
+            self.emit("};")
+        if self.structs:
+            self.lines.append("")
         for fn in self.program.funcs:
             if fn.name != "main":
                 self.emit(f"{self.c_sig(fn)};")
@@ -189,9 +233,18 @@ class Codegen:
 
     def gen_func(self, fn):
         self.current_fn = fn.name
-        sig = "int main(void)" if fn.name == "main" else self.c_sig(fn)
+        sig = ("int main(int __forge_argc, char **__forge_argv)"
+               if fn.name == "main" else self.c_sig(fn))
         self.emit(sig + " {")
         self.indent += 1
+        if fn.name == "main":
+            self.emit("forge_args_global.len = __forge_argc > 0 ? __forge_argc - 1 : 0;")
+            self.emit("forge_args_global.cap = forge_args_global.len;")
+            self.emit("forge_args_global.data = forge_args_global.len ? "
+                      "(char **)malloc(sizeof(char *) * (size_t)forge_args_global.len) : NULL;")
+            self.emit("for (long long __forge_arg_i = 0; __forge_arg_i < forge_args_global.len; "
+                      "__forge_arg_i++) forge_args_global.data[__forge_arg_i] = "
+                      "forge_copy_str(__forge_argv[__forge_arg_i + 1]);")
         self.gen_block(fn.body, fn.ret)
         if fn.name == "main":
             self.emit("return 0;")
@@ -225,6 +278,14 @@ class Codegen:
             if self.expr_type(stmt.expr) == "str":
                 expr = f"forge_copy_str({expr})"
             self.emit(f"{stmt.name} = {expr};")
+            return
+        if isinstance(stmt, A.FieldAssign):
+            target_code = self.gen_expr(stmt.target)
+            ft = self.expr_type(stmt.target)
+            val = self.gen_expr(stmt.expr)
+            if ft == "str":
+                val = f"forge_copy_str({val})"
+            self.emit(f"{target_code} = {val};")
             return
         if isinstance(stmt, A.IndexAssign):
             base = stmt.base.base
@@ -338,6 +399,18 @@ class Codegen:
             return "true" if expr.value else "false"
         if isinstance(expr, A.Var):
             return expr.name
+        if isinstance(expr, A.StructLit):
+            fields = self.structs.get(expr.name, {})
+            parts = []
+            for fname, fexpr in expr.fields:
+                code = self.gen_expr(fexpr)
+                if fields.get(fname) == "str":
+                    code = f"forge_copy_str({code})"
+                parts.append(f".{fname} = {code}")
+            return f"({expr.name}){{ {', '.join(parts)} }}"
+        if isinstance(expr, A.FieldAccess):
+            base = self.gen_expr(expr.base)
+            return f"({base}).{expr.field}"
         if isinstance(expr, A.ArrayLit):
             arr_type = self.expr_type(expr)
             if arr_type in ("[?]", "int"):
@@ -407,6 +480,15 @@ class Codegen:
                 return f"pow({self.gen_expr(expr.args[0])}, {self.gen_expr(expr.args[1])})"
             if expr.name == "abs":
                 return f"llabs({self.gen_expr(expr.args[0])})"
+            if expr.name == "read_file":
+                return f"forge_read_file({self.gen_expr(expr.args[0])})"
+            if expr.name == "write_file":
+                return (f"forge_write_file({self.gen_expr(expr.args[0])}, "
+                        f"{self.gen_expr(expr.args[1])})")
+            if expr.name == "args":
+                return "forge_args_global"
+            if expr.name == "parse_int":
+                return f"forge_parse_int({self.gen_expr(expr.args[0])})"
             args = ", ".join(self.gen_expr(a) for a in expr.args)
             return f"{expr.name}({args})"
         raise ForgeError(f"unsupported expression {type(expr).__name__}")

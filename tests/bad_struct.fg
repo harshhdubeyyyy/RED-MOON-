@@ -1,0 +1,10 @@
+struct Point {
+    x: float;
+    y: float;
+}
+
+fn main() -> int {
+    let p: Point = Point { x: 1.0 };
+    println("x =", p.x);
+    return 0;
+}

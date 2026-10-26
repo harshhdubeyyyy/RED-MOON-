@@ -47,7 +47,33 @@ Statement-only: `print(...)`, `println(...)`, `push(array, value)`,
 Expression: `len(str or array) -> int`, `range(n: int) -> [int]`
 (0..n-1), `clock_micros() -> int` (monotonic microseconds),
 `sqrt/exp/log(float) -> float`, `pow(float, float) -> float`,
-`abs(int) -> int`.
+`abs(int) -> int`, `read_file(path: str) -> str` (fails if the file
+cannot be read), `write_file(path: str, content: str) -> bool`
+(true on success), `args() -> [str]` (command-line arguments after
+the program name; pass them with `forge.py run file.fg -- a b`),
+`parse_int(str) -> int` (fails on non-integer input).
+
+## 4b. Structs (added in Phase C, 26 Oct 2026)
+
+```
+struct Point {
+    x: float;
+    y: float;
+}
+let p: Point = Point { x: 0.0, y: 0.0 };
+let mut q: Point = Point { x: 3.0, y: 4.0 };
+q.x = 6.0;
+println("distance =", distance(p, q));
+```
+
+Rules: every field must be supplied exactly once in a literal,
+field types must match, field access requires a struct value,
+and field assignment requires the outermost variable to be
+`let mut`. Structs can be function parameters and return values
+(by value). Recursive structs and arrays of structs are rejected
+for now. Parser note: `Name { field: value }` is only treated as
+a struct literal when the brace is followed by `field:` or `}` —
+so `for v in xs {` and `if x {` still parse as blocks.
 
 ## 5. Imports and the standard library
 
@@ -72,11 +98,12 @@ Forge -> C -> `cc` -> native binary, with `-lm` linked.
 
 ## 7. What v2 deliberately lacks (next phases)
 
-Structs, generics (which `Option`/`Result` depend on), concurrency
+Generics (which `Option`/`Result` depend on), concurrency
 (channels/actors), GPU kernels, Python interop, a package manager,
 a formatter, and an LSP. Array and string values are not yet freed
-(GC is the Phase B memory-manager item). Claiming v2 "combines
-C++, Mojo, and Python" means it combines their *approach* —
-native speed, Python-like ML syntax, Mojo-like compiled kernels
-for small models — not their full ecosystems, libraries, or GPU
-stacks.
+(GC is the Phase B memory-manager item). Structs, file I/O, CLI
+args, and `forge test` are DONE (Phase C, 26 Oct 2026). Claiming
+v2 "combines C++, Mojo, and Python" means it combines their
+*approach* — native speed, Python-like ML syntax, Mojo-like
+compiled kernels for small models — not their full ecosystems,
+libraries, or GPU stacks.

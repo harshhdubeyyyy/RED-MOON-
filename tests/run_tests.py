@@ -26,6 +26,29 @@ def main():
            "sum = 7.5 len = 3\ni = 0 xs[i] = 1.5\ni = 1 xs[i] = 2.5\ni = 2 xs[i] = 3.5\n"
            "sqrt(2) = 1.41421 exp(1) = 2.71828\n")
     expect("examples/matrix.fg", "58 64 139 154 \ndot = 217\n")
+    # Structs: distance 3-4-5, then field assignment to 6-4.
+    expect("examples/structs_point.fg",
+           "distance = 5\nq.x = 6 q.y = 4\ndistance = 7.2111\n")
+    # File I/O + args: writes a file, reads it back, reports args.
+    for fname in ("forge_output.txt", "forge_test_out.txt"):
+        try:
+            os.unlink(os.path.join(ROOT, fname))
+        except FileNotFoundError:
+            pass
+    r = run_forge("run", "examples/file_and_args.fg", "--", "forge_test_out.txt")
+    out_path = os.path.join(ROOT, "forge_test_out.txt")
+    if r.returncode != 0 or "wrote ok" not in r.stdout or "args count = 1" not in r.stdout:
+        failures.append(f"file_and_args failed: {r.stdout!r} {r.stderr!r}")
+    elif not os.path.exists(out_path) or open(out_path).read() != "hello from Forge\n":
+        failures.append("file_and_args: output file missing or wrong content")
+    if os.path.exists(out_path):
+        os.unlink(out_path)
+    # parse_int via a tiny inline program is covered by check only here;
+    # the struct literal must be rejected when a field is missing.
+    r = run_forge("check", "tests/bad_struct.fg")
+    if r.returncode == 0 or "missing field" not in r.stderr:
+        failures.append(f"bad_struct: expected missing-field error, got rc={r.returncode} "
+                        f"out={r.stdout!r} err={r.stderr!r}")
     # MLP: check the four XOR verdicts, not the raw sigmoid digits.
     r = run_forge("run", "examples/ml_mlp_xor.fg")
     for needle in ("xor 0 0 = 0", "xor 0 1 = 1", "xor 1 0 = 1", "xor 1 1 = 0"):

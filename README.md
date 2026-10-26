@@ -156,12 +156,23 @@ fn main() -> int {
 }
 ```
 
-Types: `int` (64-bit), `float` (64-bit), `bool`, `str`, `[T]` arrays.
+Types: `int` (64-bit), `float` (64-bit), `bool`, `str`, `[T]` arrays,
+plus user-defined **structs** (see `examples/structs_point.fg`).
+
+```forge
+struct Point { x: float; y: float; }
+let mut q: Point = Point { x: 3.0, y: 4.0 };
+q.x = 6.0;
+```
+
 Casts are explicit: `x as float`, `y as int`. There is no null and
 no implicit conversion.
 
 Builtins: `print` / `println`, `push`, `fail`, `len`, `range`,
-`clock_micros`, `sqrt`, `exp`, `log`, `pow`, `abs`.
+`clock_micros`, `sqrt`, `exp`, `log`, `pow`, `abs`,
+`read_file` / `write_file`, `args()`, `parse_int`.
+Run a program with arguments: `python3 forge.py run examples/file_and_args.fg -- out.txt`.
+Run the test suite the Go way: `python3 forge.py test`.
 Standard library (`stdlib/ml.fg`, `import "ml.fg"`): `dot`, `mean`,
 `relu`, `sigmoid`, `matmul` (flat row-major matrices).
 
@@ -196,11 +207,12 @@ later — the most common ways new languages stall.
 ## ⚠️ Honest gaps
 
 Forge v2 is production-*oriented*, not a finished Rust/Go/Mojo
-rival. It has no structs, generics, `Option`/`Result`, concurrency,
-GPU kernels, Python interop, package manager, formatter, or LSP
-yet. Array and string values are not yet freed (a GC is the next
-memory-manager item). Those are the next phases in `SPEC_V2.md`,
-not hidden features.
+rival. Structs, file I/O, CLI args, and `forge test` are now done
+(Phase C, 26 Oct 2026). It still has no generics, `Option`/`Result`,
+concurrency, GPU kernels, Python interop, package manager,
+formatter, or LSP yet. Array and string values are not yet freed
+(a GC is the next memory-manager item). Those are the next phases
+in `SPEC_V2.md`, not hidden features.
 
 ## 🔁 Regenerate the figures
 

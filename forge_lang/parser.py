@@ -31,6 +31,18 @@ class Parser:
         t = self.peek()
         return t.kind == "KEYWORD" and t.value == v
 
+    def looks_like_struct_lit(self):
+        # Current token is "{". A struct literal is "{" IDENT ":" ...
+        # or "{" "}". This lookahead is essential: without it,
+        # `for v in xs {` would be misread as a struct literal for xs.
+        if not self.at_op("{"):
+            return False
+        nxt = self.peek(1)
+        if nxt.kind == "OP" and nxt.value == "}":
+            return True
+        after = self.peek(2)
+        return (nxt.kind == "IDENT" and after.kind == "OP" and after.value == ":")
+
     def expect_op(self, v):
         t = self.peek()
         if not (t.kind == "OP" and t.value == v):
@@ -56,6 +68,7 @@ class Parser:
     def parse_program(self):
         imports = []
         funcs = []
+        structs = []
         while self.peek().kind != "EOF":
             if self.at_kw("import"):
                 self.next()
@@ -65,9 +78,33 @@ class Parser:
                 self.next()
                 imports.append(tok.value)
                 self.expect_op(";")
+            elif self.at_kw("struct"):
+                structs.append(self.parse_struct())
             else:
                 funcs.append(self.parse_func())
-        return A.Program(imports, funcs)
+        return A.Program(imports, funcs, structs)
+
+    def parse_struct(self):
+        kw = self.expect_kw("struct")
+        name = self.expect_ident()
+        self.expect_op("{")
+        fields = []
+        while not self.at_op("}"):
+            if self.peek().kind == "EOF":
+                raise ForgeError("unterminated struct", self.peek().line, self.peek().col)
+            fname = self.expect_ident()
+            self.expect_op(":")
+            ftype = self.parse_type()
+            fields.append((fname.value, ftype))
+            if self.at_op(",") or self.at_op(";"):
+                self.next()
+                continue
+            if self.at_op("}"):
+                break
+            raise ForgeError("expected ',' or ';' between struct fields",
+                             self.peek().line, self.peek().col)
+        self.expect_op("}")
+        return A.StructDef(name.value, fields, kw.line, kw.col)
 
     def parse_type(self):
         if self.at_op("["):
@@ -171,7 +208,9 @@ class Parser:
                 return A.Assign(expr.name, rhs, expr.line, expr.col)
             if isinstance(expr, A.Index):
                 return A.IndexAssign(expr, rhs, expr.line, expr.col)
-            raise ForgeError("assignment target must be a variable or an index",
+            if isinstance(expr, A.FieldAccess):
+                return A.FieldAssign(expr, rhs, expr.line, expr.col)
+            raise ForgeError("assignment target must be a variable, an index, or a field",
                              expr.line, expr.col)
         self.expect_op(";")
         return A.ExprStmt(expr, tok.line, tok.col)
@@ -221,6 +260,11 @@ class Parser:
                 self.expect_op("]")
                 expr = A.Index(expr, idx, tok.line, tok.col)
                 continue
+            if self.at_op("."):
+                tok = self.next()
+                field = self.expect_ident()
+                expr = A.FieldAccess(expr, field.value, tok.line, tok.col)
+                continue
             if self.at_kw("as"):
                 tok = self.next()
                 target = self.parse_type()
@@ -257,6 +301,22 @@ class Parser:
                         break
                 self.expect_op(")")
                 return A.Call(tok.value, args, tok.line, tok.col)
+            if self.looks_like_struct_lit():
+                # Struct literal: Name { field: value, ... }
+                self.next()
+                fields = []
+                if not self.at_op("}"):
+                    while True:
+                        fname = self.expect_ident()
+                        self.expect_op(":")
+                        fexpr = self.parse_expr()
+                        fields.append((fname.value, fexpr))
+                        if self.at_op(","):
+                            self.next()
+                            continue
+                        break
+                self.expect_op("}")
+                return A.StructLit(tok.value, fields, tok.line, tok.col)
             return A.Var(tok.value, tok.line, tok.col)
         if self.at_op("("):
             self.next()

@@ -5,6 +5,15 @@ from dataclasses import dataclass
 class Program:
     imports: list  # [path string]
     funcs: list
+    structs: list = None  # [StructDef]; None for old call sites
+
+
+@dataclass
+class StructDef:
+    name: str
+    fields: list  # [(name, type)]
+    line: int
+    col: int
 
 
 @dataclass
@@ -119,6 +128,30 @@ class BoolLit:
 @dataclass
 class ArrayLit:
     elems: list
+    line: int
+    col: int
+
+
+@dataclass
+class StructLit:
+    name: str
+    fields: list  # [(field_name, expr)]
+    line: int
+    col: int
+
+
+@dataclass
+class FieldAccess:
+    base: object
+    field: str
+    line: int
+    col: int
+
+
+@dataclass
+class FieldAssign:
+    target: object  # FieldAccess node
+    expr: object
     line: int
     col: int
 

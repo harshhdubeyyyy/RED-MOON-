@@ -6,6 +6,8 @@ from . import ast_nodes as A
 class Infer:
     def __init__(self, program):
         self.funcs = {fn.name: fn for fn in program.funcs}
+        structs = getattr(program, "structs", None) or []
+        self.structs = {sd.name: dict(sd.fields) for sd in structs}
         self.types = {}
         self.scopes = []
         self.current_ret = "void"
@@ -49,6 +51,9 @@ class Infer:
                     t = stmt.ann
             self.scopes[-1][stmt.name] = t
         elif isinstance(stmt, A.Assign):
+            self.walk_expr(stmt.expr)
+        elif isinstance(stmt, A.FieldAssign):
+            self.walk_expr(stmt.target)
             self.walk_expr(stmt.expr)
         elif isinstance(stmt, A.IndexAssign):
             self.walk_expr(stmt.base)
@@ -97,6 +102,14 @@ class Infer:
                     self.walk_expr(e)
                 return self.set(expr, f"[{t0}]")
             return self.set(expr, "[?]")
+        if isinstance(expr, A.StructLit):
+            for _fname, fexpr in expr.fields:
+                self.walk_expr(fexpr)
+            return self.set(expr, expr.name)
+        if isinstance(expr, A.FieldAccess):
+            bt = self.walk_expr(expr.base)
+            ft = self.structs.get(bt, {}).get(expr.field, "int")
+            return self.set(expr, ft)
         if isinstance(expr, A.Index):
             bt = self.walk_expr(expr.base)
             self.walk_expr(expr.index)
@@ -131,12 +144,18 @@ class Infer:
                     return self.set(expr, fn.ret)
             for a in expr.args:
                 self.walk_expr(a)
-            if expr.name == "len" or expr.name == "clock_micros" or expr.name == "abs":
+            if expr.name in ("len", "clock_micros", "abs", "parse_int"):
                 return self.set(expr, "int")
             if expr.name == "range":
                 return self.set(expr, "[int]")
+            if expr.name == "args":
+                return self.set(expr, "[str]")
             if expr.name in ("sqrt", "exp", "log", "pow"):
                 return self.set(expr, "float")
+            if expr.name == "read_file":
+                return self.set(expr, "str")
+            if expr.name == "write_file":
+                return self.set(expr, "bool")
             return self.set(expr, "void")
         return self.set(expr, "int")
 
