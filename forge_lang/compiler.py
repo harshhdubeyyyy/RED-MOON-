@@ -69,6 +69,15 @@ def compile_file_rv(path):
     return generate_rv(program, types), program
 
 
+def compile_file_wasm(path):
+    """Forge source -> WebAssembly binary (subset, see codegen_wasm)."""
+    from .codegen_wasm import generate_wasm
+    program = load_program(path)
+    check(program)
+    types = infer_types(program)
+    return generate_wasm(program, types), program
+
+
 def _cc_flags(mode):
     # The generated header defines every builtin helper; unused ones
     # are expected, so silence that one warning (other -Wall warnings

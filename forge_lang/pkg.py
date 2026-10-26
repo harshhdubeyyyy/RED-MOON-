@@ -18,6 +18,13 @@ Commands (run from the package directory):
   forge pkg publish         copy this package into the local registry
   forge pkg add name@ver    vendor a package from the local registry
                             (registry dir: $FORGE_REGISTRY or ~/.forge_registry)
+  forge pkg serve --dir D --port P
+                            run the HTTP registry server (see
+                            forge_lang/registry_server.py; no auth)
+  forge pkg publish-remote <url>
+                            POST this package to an HTTP registry
+  forge pkg add-remote <url> name@ver
+                            vendor a package from an HTTP registry
 
 Dependencies are vendored, Go-style, not downloaded: `forge pkg add`
 copies files, so a build never needs the network or a registry.
@@ -152,6 +159,82 @@ def cmd_publish(cwd):
     return 0
 
 
+def _http_json(url, method="GET", body=None):
+    import urllib.request
+    import urllib.error
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(url, data=data, method=method,
+                                 headers={"Content-Type": "application/json"} if body is not None else {})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return resp.status, resp.read().decode()
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode()
+
+
+def cmd_serve(cwd, rest):
+    from .registry_server import serve
+    root = os.path.expanduser("~/.forge_registry_server")
+    port = 8765
+    if "--dir" in rest:
+        root = rest[rest.index("--dir") + 1]
+    if "--port" in rest:
+        port = int(rest[rest.index("--port") + 1])
+    serve(root, port)
+    return 0
+
+
+def cmd_publish_remote(cwd, url):
+    _mp, _text, pkg, _deps = read_manifest(cwd)
+    name = pkg.get("name")
+    version = pkg.get("version", "0.1.0")
+    if not name:
+        print("forge pkg: package has no name", file=sys.stderr)
+        return 1
+    src_dir = os.path.join(cwd, "src")
+    files = {}
+    for fn in sorted(os.listdir(src_dir)):
+        if fn.endswith(".fg") and fn != "main.fg":
+            with open(os.path.join(src_dir, fn), encoding="utf-8") as f:
+                files[fn] = f.read()
+    if not files:
+        print("forge pkg: nothing to publish (src/ has no library files)", file=sys.stderr)
+        return 1
+    status, body = _http_json(url.rstrip("/") + "/api/publish", method="POST",
+                              body={"name": name, "version": version, "files": files})
+    if status != 200:
+        print(f"forge pkg: publish failed ({status}): {body}", file=sys.stderr)
+        return 1
+    print(f"published {name}@{version} to {url}")
+    return 0
+
+
+def cmd_add_remote(cwd, url, spec):
+    import urllib.request
+    name, _, version = spec.partition("@")
+    if not name or not version:
+        print("usage: forge pkg add-remote <url> name@version", file=sys.stderr)
+        return 1
+    base = url.rstrip("/")
+    status, body = _http_json(f"{base}/api/packages/{name}/{version}")
+    if status != 200:
+        print(f"forge pkg: {name}@{version} not on {url} ({status})", file=sys.stderr)
+        return 1
+    files = json.loads(body).get("files", [])
+    # Stage the remote package as a local package directory, then reuse cmd_add.
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        os.makedirs(os.path.join(tmp, "src"))
+        with open(os.path.join(tmp, "forge.toml"), "w", encoding="utf-8") as f:
+            f.write(f'[package]\nname = "{name}"\nversion = "{version}"\n\n[dependencies]\n')
+        for fn in files:
+            with urllib.request.urlopen(f"{base}/api/packages/{name}/{version}/{fn}", timeout=10) as resp:
+                text = resp.read().decode()
+            with open(os.path.join(tmp, "src", fn), "w", encoding="utf-8") as f:
+                f.write(text)
+        return cmd_add(cwd, tmp)
+
+
 def cmd_add_registry(cwd, spec):
     name, _, version = spec.partition("@")
     if not name or not version:
@@ -202,6 +285,18 @@ def dispatch(argv, forge_path, cwd):
             return cmd_add(cwd, rest[0])
         if cmd == "publish":
             return cmd_publish(cwd)
+        if cmd == "serve":
+            return cmd_serve(cwd, rest)
+        if cmd == "publish-remote":
+            if not rest:
+                print("usage: forge pkg publish-remote <url>", file=sys.stderr)
+                return 1
+            return cmd_publish_remote(cwd, rest[0])
+        if cmd == "add-remote":
+            if len(rest) < 2:
+                print("usage: forge pkg add-remote <url> name@version", file=sys.stderr)
+                return 1
+            return cmd_add_remote(cwd, rest[0], rest[1])
         if cmd == "build":
             mode = "safe"
             if "--mode" in rest:

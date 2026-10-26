@@ -46,12 +46,23 @@ static void forge_fail(const char *msg) {
     exit(1);
 }
 
+static long long forge_str_allocs = 0;
+static long long forge_str_frees = 0;
+
 static char *forge_copy_str(const char *s) {
     size_t n = strlen(s) + 1;
     char *p = (char *)malloc(n);
     if (!p) forge_fail("out of memory");
     memcpy(p, s, n);
+    forge_str_allocs++;
     return p;
+}
+
+static void forge_free_str(char *p) {
+    if (p) {
+        free(p);
+        forge_str_frees++;
+    }
 }
 
 static char *forge_concat(const char *a, const char *b) {
@@ -365,7 +376,12 @@ class Codegen:
         self.program = program
         self.mode = mode
         self.func_ret = {fn.name: fn.ret for fn in program.funcs}
+        self.func_params = {fn.name: list(fn.params) for fn in program.funcs}
+        self.func_is_extern = {fn.name: bool(getattr(fn, "is_extern", False))
+                               for fn in program.funcs}
         self.try_counter = 0
+        self.assign_counter = 0
+        self.owned_stack = [set()]
         self.structs = {sd.name: dict(sd.fields)
                         for sd in (getattr(program, "structs", None) or [])}
         self.enums = {ed.name: list(ed.variants)
@@ -384,6 +400,37 @@ class Codegen:
         self.spawn_counter = 0
         self.current_fn = None
         self._types = {}
+
+    def owned_add(self, name):
+        self.owned_stack[-1].add(name)
+
+    def owned_contains(self, name):
+        return any(name in s for s in reversed(self.owned_stack))
+
+    def owned_all(self):
+        """Owned string variables currently in scope, innermost first, deduped."""
+        seen = set()
+        out = []
+        for s in reversed(self.owned_stack):
+            for name in s:
+                if name not in seen:
+                    seen.add(name)
+                    out.append(name)
+        return out
+
+    def is_fresh_str(self, expr):
+        """True if the expression already returns a fresh, owned string
+        (a user-function return, a str helper, or string concat),
+        so taking it as-is does not leak or double-own."""
+        if isinstance(expr, A.Call):
+            if expr.name in ("read_file", "join", "substr", "trim", "http_get"):
+                return True
+            if self.func_ret.get(expr.name) == "str" and not self.func_is_extern.get(expr.name):
+                return True
+            return False
+        if isinstance(expr, A.BinOp) and expr.op == "+" and self.expr_type(expr.left) == "str":
+            return True
+        return False
 
     def collect_spawns(self, block, out):
         for stmt in block.stmts:
@@ -581,6 +628,11 @@ class Codegen:
 
     def gen_func(self, fn):
         self.current_fn = fn.name
+        self.owned_stack = [set()]
+        # String parameters own their copy after copy-on-call (see gen_expr Call).
+        for pn, pt in fn.params:
+            if pt == "str":
+                self.owned_stack[0].add(pn)
         sig = ("int main(int __forge_argc, char **__forge_argv)"
                if fn.name == "main" else self.c_sig(fn))
         self.emit(sig + " {")
@@ -596,11 +648,17 @@ class Codegen:
         self.gen_block(fn.body, fn.ret)
         if fn.name == "main":
             self.emit("forge_join_threads();")
+            for name in self.owned_all():
+                self.emit(f"forge_free_str({name});")
             self.emit("return 0;")
+        elif fn.ret == "void":
+            for name in self.owned_all():
+                self.emit(f"forge_free_str({name});")
         self.indent -= 1
         self.emit("}")
         self.lines.append("")
         self.current_fn = None
+        self.owned_stack = [set()]
 
     def gen_block(self, block, ret_type):
         for stmt in block.stmts:
@@ -610,7 +668,9 @@ class Codegen:
         if isinstance(stmt, A.Block):
             self.emit("{")
             self.indent += 1
+            self.owned_stack.append(set())
             self.gen_block(stmt, ret_type)
+            self.owned_stack.pop()
             self.indent -= 1
             self.emit("}")
             return
@@ -619,14 +679,27 @@ class Codegen:
                              and not stmt.expr.elems) else self.expr_type(stmt.expr)
             expr = self.gen_expr(stmt.expr)
             if t == "str":
-                expr = f"forge_copy_str({expr})"
+                if not self.is_fresh_str(stmt.expr):
+                    expr = f"forge_copy_str({expr})"
+                self.owned_add(stmt.name)
             self.emit(f"{c_type(t)} {stmt.name} = {expr};")
             return
         if isinstance(stmt, A.Assign):
             expr = self.gen_expr(stmt.expr)
             if self.expr_type(stmt.expr) == "str":
-                expr = f"forge_copy_str({expr})"
-            self.emit(f"{stmt.name} = {expr};")
+                if not self.is_fresh_str(stmt.expr):
+                    expr = f"forge_copy_str({expr})"
+                # Evaluate first, then free the old value: the new
+                # expression may reference the old value (out = out + x).
+                n = self.assign_counter
+                self.assign_counter += 1
+                self.emit(f"char * __forge_assign{n} = {expr};")
+                if self.owned_contains(stmt.name):
+                    self.emit(f"forge_free_str({stmt.name});")
+                self.emit(f"{stmt.name} = __forge_assign{n};")
+                self.owned_add(stmt.name)
+            else:
+                self.emit(f"{stmt.name} = {expr};")
             return
         if isinstance(stmt, A.FieldAssign):
             target_code = self.gen_expr(stmt.target)
@@ -735,19 +808,25 @@ class Codegen:
         if isinstance(stmt, A.If):
             self.emit(f"if ({self.gen_expr(stmt.cond)}) {{")
             self.indent += 1
+            self.owned_stack.append(set())
             self.gen_block(stmt.then, ret_type)
+            self.owned_stack.pop()
             self.indent -= 1
             if stmt.els is not None:
                 self.emit("} else {")
                 self.indent += 1
+                self.owned_stack.append(set())
                 self.gen_block(stmt.els, ret_type)
+                self.owned_stack.pop()
                 self.indent -= 1
             self.emit("}")
             return
         if isinstance(stmt, A.While):
             self.emit(f"while ({self.gen_expr(stmt.cond)}) {{")
             self.indent += 1
+            self.owned_stack.append(set())
             self.gen_block(stmt.body, ret_type)
+            self.owned_stack.pop()
             self.indent -= 1
             self.emit("}")
             return
@@ -764,7 +843,9 @@ class Codegen:
             self.emit(f"for (long long {idx} = 0; {idx} < {arr_tmp}.len; {idx}++) {{")
             self.indent += 1
             self.emit(f"{C_SCALAR[et]} {stmt.name} = {arr_tmp}.data[{idx}];")
+            self.owned_stack.append(set())
             self.gen_block(stmt.body, ret_type)
+            self.owned_stack.pop()
             self.indent -= 1
             self.emit("}")
             self.indent -= 1
@@ -774,11 +855,17 @@ class Codegen:
             if self.current_fn == "main":
                 self.emit("forge_join_threads();")
             if stmt.expr is None:
+                for name in self.owned_all():
+                    self.emit(f"forge_free_str({name});")
                 self.emit("return 0;" if self.current_fn == "main" else "return;")
-            elif ret_type == "str":
-                self.emit(f"return forge_copy_str({self.gen_expr(stmt.expr)});")
             else:
-                self.emit(f"return {self.gen_expr(stmt.expr)};")
+                ret_code = self.gen_expr(stmt.expr)
+                if ret_type == "str" and not self.is_fresh_str(stmt.expr):
+                    ret_code = f"forge_copy_str({ret_code})"
+                self.emit(f"{c_type(ret_type)} __forge_ret = {ret_code};")
+                for name in self.owned_all():
+                    self.emit(f"forge_free_str({name});")
+                self.emit("return __forge_ret;")
             return
         if isinstance(stmt, A.ExprStmt):
             call = stmt.expr
@@ -991,6 +1078,8 @@ class Codegen:
                         f"{self.gen_expr(expr.args[1])})")
             if expr.name == "http_get":
                 return f"forge_http_get({self.gen_expr(expr.args[0])})"
+            if expr.name in ("alloc_count", "free_count"):
+                return "forge_str_allocs" if expr.name == "alloc_count" else "forge_str_frees"
             # Enum variant construction: Some(42), None(), Circle(3.0).
             if expr.name in self._enum_variant_map():
                 enum_name, tag, payload_type = self._enum_variant_map()[expr.name]
@@ -1009,8 +1098,22 @@ class Codegen:
                 if payload_type == "str":
                     arg_code = f"forge_copy_str({arg_code})"
                 return f"({cname}){{ .tag = {tag}, .payload.payload_{expr.name} = {arg_code} }}"
-            args = ", ".join(self.gen_expr(a) for a in expr.args)
-            return f"{expr.name}({args})"
+            # User-function call: string arguments are copied, so the
+            # callee owns its parameter and can free it on return.
+            # Fresh string arguments are passed as-is (already owned).
+            params = self.func_params.get(expr.name, [])
+            arg_codes = []
+            for a, (_pn, pt) in zip(expr.args, params):
+                code = self.gen_expr(a)
+                if pt == "str" and not self.is_fresh_str(a):
+                    code = f"forge_copy_str({code})"
+                arg_codes.append(code)
+            # Arguments beyond the known signature (should not happen
+            # for checked code) are passed through unchanged.
+            if len(expr.args) > len(params):
+                for a in expr.args[len(params):]:
+                    arg_codes.append(self.gen_expr(a))
+            return f"{expr.name}({', '.join(arg_codes)})"
         raise ForgeError(f"unsupported expression {type(expr).__name__}")
 
 

@@ -51,11 +51,14 @@ def main(argv=None):
     p = sub.add_parser("build")
     p.add_argument("file")
     p.add_argument("--mode", choices=["safe", "fast"], default="safe")
-    p.add_argument("--target", choices=["native", "big32"], default="native")
+    p.add_argument("--target", choices=["native", "big32", "wasm"], default="native")
     p.add_argument("-o", "--output", default=None)
     p.add_argument("--keep-c", default=None)
     p = sub.add_parser("emit-big32")
     p.add_argument("file")
+    p = sub.add_parser("emit-wasm")
+    p.add_argument("file")
+    p.add_argument("-o", "--output", default=None)
 
     args = parser.parse_args(argv)
     try:
@@ -101,6 +104,14 @@ def main(argv=None):
             asm, _ = compile_file_rv(args.file)
             print(asm, end="")
             return 0
+        if args.cmd == "emit-wasm":
+            from forge_lang.compiler import compile_file_wasm
+            wasm, _ = compile_file_wasm(args.file)
+            out = args.output or (os.path.splitext(args.file)[0] + ".wasm")
+            with open(out, "wb") as f:
+                f.write(wasm)
+            print(f"built wasm: {out} ({len(wasm)} bytes)")
+            return 0
         if args.cmd == "build" and args.target == "big32":
             from forge_lang.compiler import compile_file_rv
             asm, _ = compile_file_rv(args.file)
@@ -130,6 +141,14 @@ def main(argv=None):
             if proc.returncode != 0:
                 raise ForgeError(f"big32 assembler failed:\n{proc.stdout}{proc.stderr}")
             print(f"built big32: {s_path} + {hex_path}")
+            return 0
+        if args.cmd == "build" and args.target == "wasm":
+            from forge_lang.compiler import compile_file_wasm
+            wasm, _ = compile_file_wasm(args.file)
+            out = args.output or (os.path.splitext(args.file)[0] + ".wasm")
+            with open(out, "wb") as f:
+                f.write(wasm)
+            print(f"built wasm: {out} ({len(wasm)} bytes)")
             return 0
         if args.cmd == "build":
             out = args.output or os.path.splitext(args.file)[0]

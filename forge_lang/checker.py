@@ -21,7 +21,7 @@ STMT_BUILTINS = {"print", "println", "push", "fail", "assert"}
 EXPR_BUILTINS = {"len", "range", "clock_micros", "sqrt", "exp", "log", "pow", "abs",
                  "read_file", "write_file", "args", "parse_int",
                  "split", "join", "substr", "trim", "starts_with", "ends_with",
-                 "http_get"}
+                 "http_get", "alloc_count", "free_count"}
 BUILTINS = STMT_BUILTINS | EXPR_BUILTINS
 
 
@@ -740,6 +740,10 @@ class Checker:
         if call.name == "clock_micros":
             if call.args:
                 raise ForgeError("clock_micros() takes no arguments", call.line, call.col)
+            return "int"
+        if call.name in ("alloc_count", "free_count"):
+            if call.args:
+                raise ForgeError(f"{call.name}() takes no arguments", call.line, call.col)
             return "int"
         if call.name in ("sqrt", "exp", "log"):
             if len(call.args) != 1 or self.check_expr(call.args[0]) != "float":

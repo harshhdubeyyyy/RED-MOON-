@@ -142,6 +142,16 @@ from scratch, and do not silently drop a phase.
   table.fg DONE (relational, no SQL parser). Full suite
   passes. Push this pass next; still NOT done: GPU, SQL
   parser, hosted registry, GC, WASM.
+- "Then do it" pass (26 Oct 2026): SQL parser DONE
+  (sql_query, SELECT/WHERE, bug: FROM table token fixed);
+  hosted registry DONE (HTTP server, publish-remote/
+  add-remote, septuple 6 = 42); WASM DONE (direct .wasm
+  binary, node-tested sum/fib = 55, opcode bugs fixed);
+  GC strings DONE (copy-on-call, free-on-reassign/return,
+  scope-tracked, allocs 103 frees 101, Assign temp fix).
+  Full suite + WASM suite pass. Push this pass next;
+  still NOT done: GPU kernels, full GC (arrays/structs),
+  Python interop, public hosted registry.
 
 ## Research findings that now lock v2's design (26 Oct 2026)
 

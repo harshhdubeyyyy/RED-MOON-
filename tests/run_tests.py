@@ -59,6 +59,10 @@ def main():
     expect("examples/generic_enums_demo.fg", "some 42\nnone\nerr div by zero\n")
     expect("examples/table_demo.fg",
            "rows = 3\ngorakhpur rows = 2\nfirst = jayant second = teju\n")
+    # SQL, WASM is tested separately (node), GC counters.
+    expect("examples/sql_demo.fg",
+           "gorakhpur = 2 jayant teju\nolder = 2 jayant teju\nall = 3\n")
+    expect("examples/gc_demo.fg", "g = hello\nallocs = 103 frees = 101\n")
     expect("examples/ecosystem/word_stats.fg",
            "words = 8\nlines = 4\nmean line length = 10.25\n"
            "median line length = 12\n")

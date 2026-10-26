@@ -183,14 +183,58 @@ and pull request.
   Tested: 3 rows, select city=Gorakhpur -> 2 rows,
   first=jayant, second=teju.
 
+## New in the "then do it" pass (26 Oct 2026)
+
+- **SQL parser:** `stdlib/sql.fg` — `sql_query(table, query)`
+  with `SELECT name, city FROM t WHERE city = 'Gorakhpur'`,
+  `SELECT * FROM t`, and numeric `WHERE age > '20'`.
+  Tested: Gorakhpur = 2 (jayant, teju), older = 2, all = 3.
+  A real bug found in testing: the parser forgot the table
+  name token after FROM, so WHERE was ignored until the
+  indices were fixed. NOT full SQL: no JOIN, ORDER BY,
+  INSERT/UPDATE, and string `<`/`>` need integer values
+  (Forge has no char codes for string ordering).
+- **Hosted registry:** `forge_lang/registry_server.py` — a
+  simple HTTP server (`forge pkg serve --dir D --port P`,
+  no auth, run it on your own machine/trusted network) plus
+  `forge pkg publish-remote <url>` and
+  `forge pkg add-remote <url> name@version`.
+  Tested end to end on localhost: publish hostlib, add-remote
+  into another package, septuple 6 = 42.
+- **WASM backend:** `forge_lang/codegen_wasm.py` —
+  `forge emit-wasm` / `forge build --target wasm` write a
+  real .wasm binary directly (no clang/wasm-ld needed),
+  run with node (`tools/run_wasm.mjs out.wasm`).
+  Subset v1: int (i64), bool (i32), void, functions,
+  let/assign, if/else, while, return, calls, recursion.
+  Tested: sum 1..10 = 55, fib(10) = 55, both via node.
+  Two real bugs found in testing: the i64 comparison opcode
+  table was off by one (gt/le/ge were actually gt_u/le_u/ge_u
+  neighbours) and integer neg was written as div_u — both
+  fixed, and WASM arithmetic wraps (like big32, unlike Forge
+  safe mode). NOT supported in v1: float, str, arrays,
+  structs, enums, match, spawn, print, file I/O.
+- **GC v1 for strings:** copy-on-call for string parameters
+  (so a callee owns its parameter), free-on-reassign for
+  owned string locals, free-on-return for owned string
+  locals, with scope tracking so a return never frees an
+  out-of-scope variable, and `alloc_count()`/`free_count()`
+  counters. Tested: a 100-iteration reassign loop gives
+  allocs = 103, frees = 101, leaving exactly 2 live strings
+  (the current value and the greeting) — without this, all
+  103 would leak. A real bug found in testing: Assign freed
+  the old string before evaluating the new one, so
+  `out = out + x` read freed memory — Assign now evaluates
+  into a temp first. NOT a full GC yet: arrays, struct
+  fields, and array elements are still never freed, and
+  string temporaries from concat/helpers are counted only
+  through the copy path.
+
 ## What is still not in the ecosystem
 
-No hosted registry (only the local one above), no SQL parser,
-no GPU kernels (fast mode already auto-vectorises with
+No GPU kernels (fast mode already auto-vectorises with
 `-O3 -march=native`, which is not the same as GPU kernels),
-no GC (arrays/strings are still never freed — freeing a
-reassigned string is unsafe for function parameters, which
-alias the caller's string, so a real GC needs ownership
-tracking first), and no WASM backend (Forge -> C is
-WASM-ready in principle via Emscripten, which is not installed
-here). Those are the next phases, in that order.
+no full GC (arrays/structs still leak, see above), no
+Python interop, and no public hosted registry (the HTTP
+server above is self-hosted, unauthenticated). Those are
+the next phases, in that order.

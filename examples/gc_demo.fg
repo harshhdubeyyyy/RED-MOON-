@@ -1,0 +1,20 @@
+// GC v1 for strings: copy-on-call, free-on-reassign, free-on-return.
+// alloc_count/free_count count string copies allocated/freed via
+// this path. Arrays, struct fields, and array elements are NOT
+// freed yet (see docs/ECOSYSTEM.md).
+fn greet(name: str) -> str {
+    return name;
+}
+
+fn main() -> int {
+    let mut s: str = "a";
+    let mut i: int = 0;
+    while i < 100 {
+        s = "hello";
+        i = i + 1;
+    }
+    let g: str = greet(s);
+    println("g =", g);
+    println("allocs =", alloc_count(), "frees =", free_count());
+    return 0;
+}

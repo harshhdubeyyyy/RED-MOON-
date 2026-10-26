@@ -209,7 +209,7 @@ class Infer:
                     return self.set(expr, fn.ret)
             for a in expr.args:
                 self.walk_expr(a)
-            if expr.name in ("len", "clock_micros", "abs", "parse_int"):
+            if expr.name in ("len", "clock_micros", "abs", "parse_int", "alloc_count", "free_count"):
                 return self.set(expr, "int")
             if expr.name == "range":
                 return self.set(expr, "[int]")

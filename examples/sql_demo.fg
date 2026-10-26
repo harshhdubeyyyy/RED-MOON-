@@ -1,0 +1,16 @@
+// SQL subset over a Table: SELECT columns, optional WHERE.
+import "sql.fg";
+
+fn main() -> int {
+    let mut t: Table = table_new(["name", "city", "age"]);
+    t = table_insert(t, ["jayant", "Gorakhpur", "21"]);
+    t = table_insert(t, ["aaru", "Delhi", "20"]);
+    t = table_insert(t, ["teju", "Gorakhpur", "22"]);
+    let g: Table = sql_query(t, "SELECT name FROM t WHERE city = 'Gorakhpur'");
+    println("gorakhpur =", table_row_count(g), table_get(g, 0, 0), table_get(g, 1, 0));
+    let older: Table = sql_query(t, "SELECT name, age FROM t WHERE age > '20'");
+    println("older =", table_row_count(older), table_get(older, 0, 0), table_get(older, 1, 0));
+    let all: Table = sql_query(t, "SELECT * FROM t");
+    println("all =", table_row_count(all));
+    return 0;
+}
