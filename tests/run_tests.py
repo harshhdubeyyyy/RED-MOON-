@@ -70,6 +70,8 @@ def main():
            "person = b 2 3\nstr allocs = 101 str frees = 100\narr allocs = 101 arr frees = 100\nshared q = b 2 3\n")
     expect("examples/jal_pari_demo.fg",
            "The Jal Pari Language\nFor Teju, my Jal Pari\nSafe. Simple. Natively fast.\n")
+    expect("examples/ml_train_xor.fg",
+           "epoch 0 loss = 0.558973\nepoch 10000 loss = 0.000267766\nxor 0 0 = 0 (raw 0.0115718 )\nxor 0 1 = 1 (raw 0.986735 )\nxor 1 0 = 1 (raw 0.989128 )\nxor 1 1 = 0 (raw 0.010358 )\n")
     expect("examples/ecosystem/word_stats.fg",
            "words = 8\nlines = 4\nmean line length = 10.25\n"
            "median line length = 12\n")

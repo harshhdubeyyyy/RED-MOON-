@@ -229,7 +229,7 @@ class Infer:
                 return self.set(expr, "str")
             if expr.name == "write_file":
                 return self.set(expr, "bool")
-            if expr.name in ("starts_with", "ends_with"):
+            if expr.name in ("starts_with", "ends_with", "file_exists"):
                 return self.set(expr, "bool")
             if expr.name == "http_get":
                 return self.set(expr, "str")

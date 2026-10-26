@@ -1,0 +1,72 @@
+// The Jal Pari Language — AI training, for real.
+// A 2-2-1 sigmoid MLP that LEARNS XOR from scratch by backprop,
+// not by hand-set weights (contrast examples/ml_mlp_xor.fg, which
+// is inference only). No random numbers in the language yet, so
+// the starting weights are fixed asymmetric values — enough to
+// break symmetry so the hidden units learn different features.
+import "ml.fg";
+
+fn main() -> int {
+    let xs: [float] = [0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0];
+    let ys: [float] = [0.0, 1.0, 1.0, 0.0];
+    let mut w11: float = 0.5;
+    let mut w12: float = -0.4;
+    let mut b1: float = 0.1;
+    let mut w21: float = 0.9;
+    let mut w22: float = 0.3;
+    let mut b2: float = -0.2;
+    let mut v1: float = 0.7;
+    let mut v2: float = -0.6;
+    let mut bo: float = 0.0;
+    let lr: float = 1.0;
+    let mut epoch: int = 0;
+    while epoch < 10000 {
+        let mut loss: float = 0.0;
+        let mut i: int = 0;
+        while i < 4 {
+            let x1: float = xs[i * 2];
+            let x2: float = xs[i * 2 + 1];
+            let y: float = ys[i];
+            let h1: float = sigmoid(w11 * x1 + w12 * x2 + b1);
+            let h2: float = sigmoid(w21 * x1 + w22 * x2 + b2);
+            let o: float = sigmoid(v1 * h1 + v2 * h2 + bo);
+            let err: float = o - y;
+            loss = loss + 0.5 * err * err;
+            let do_: float = err * o * (1.0 - o);
+            let dh1: float = do_ * v1 * h1 * (1.0 - h1);
+            let dh2: float = do_ * v2 * h2 * (1.0 - h2);
+            v1 = v1 - lr * do_ * h1;
+            v2 = v2 - lr * do_ * h2;
+            bo = bo - lr * do_;
+            w11 = w11 - lr * dh1 * x1;
+            w12 = w12 - lr * dh1 * x2;
+            b1 = b1 - lr * dh1;
+            w21 = w21 - lr * dh2 * x1;
+            w22 = w22 - lr * dh2 * x2;
+            b2 = b2 - lr * dh2;
+            i = i + 1;
+        }
+        if epoch == 0 {
+            println("epoch 0 loss =", loss);
+        }
+        if epoch == 9999 {
+            println("epoch 10000 loss =", loss);
+        }
+        epoch = epoch + 1;
+    }
+    let mut i: int = 0;
+    while i < 4 {
+        let x1: float = xs[i * 2];
+        let x2: float = xs[i * 2 + 1];
+        let h1: float = sigmoid(w11 * x1 + w12 * x2 + b1);
+        let h2: float = sigmoid(w21 * x1 + w22 * x2 + b2);
+        let o: float = sigmoid(v1 * h1 + v2 * h2 + bo);
+        if o > 0.5 {
+            println("xor", x1, x2, "= 1 (raw", o, ")");
+        } else {
+            println("xor", x1, x2, "= 0 (raw", o, ")");
+        }
+        i = i + 1;
+    }
+    return 0;
+}

@@ -25,7 +25,7 @@ KEYWORDS = ["fn", "let", "mut", "if", "else", "while", "for", "in",
             "enum", "match", "spawn", "extern"]
 BUILTINS = ["print", "println", "push", "fail", "len", "range",
             "clock_micros", "sqrt", "exp", "log", "pow", "abs",
-            "read_file", "write_file", "args", "parse_int",
+            "read_file", "write_file", "file_exists", "args", "parse_int",
             "split", "join", "substr", "trim", "starts_with", "ends_with",
             "http_get", "assert"]
 

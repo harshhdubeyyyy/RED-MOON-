@@ -174,6 +174,13 @@ static long long forge_clock_micros(void) {
 
 static ForgeStrArray forge_args_global;
 
+static bool forge_file_exists(const char *path) {
+    FILE *f = fopen(path, "rb");
+    if (!f) return false;
+    fclose(f);
+    return true;
+}
+
 static char *forge_read_file(const char *path) {
     FILE *f = fopen(path, "rb");
     if (!f) forge_fail("cannot read file");
@@ -1299,6 +1306,8 @@ class Codegen:
                 return f"pow({self.gen_expr(expr.args[0])}, {self.gen_expr(expr.args[1])})"
             if expr.name == "abs":
                 return f"llabs({self.gen_expr(expr.args[0])})"
+            if expr.name == "file_exists":
+                return f"forge_file_exists({self.gen_expr(expr.args[0])})"
             if expr.name == "read_file":
                 return f"forge_read_file({self.gen_expr(expr.args[0])})"
             if expr.name == "write_file":
