@@ -36,10 +36,37 @@ HEADER = r"""#include <stdio.h>
 #include <openssl/err.h>
 #include <time.h>
 
-typedef struct { long long *data; long long len; long long cap; } ForgeIntArray;
-typedef struct { double *data; long long len; long long cap; } ForgeFloatArray;
-typedef struct { bool *data; long long len; long long cap; } ForgeBoolArray;
-typedef struct { char **data; long long len; long long cap; } ForgeStrArray;
+static void forge_free_str(char *p);
+static void forge_fail(const char *msg);
+typedef struct { long long *data; long long len; long long cap; long long *ref; } ForgeIntArray;
+typedef struct { double *data; long long len; long long cap; long long *ref; } ForgeFloatArray;
+typedef struct { bool *data; long long len; long long cap; long long *ref; } ForgeBoolArray;
+typedef struct { char **data; long long len; long long cap; long long *ref; } ForgeStrArray;
+static long long forge_arr_allocs = 0;
+static long long forge_arr_frees = 0;
+static long long *forge_arr_ref_new(void) {
+    long long *r = (long long *)malloc(sizeof(long long));
+    if (!r) forge_fail("out of memory");
+    *r = 1;
+    forge_arr_allocs++;
+    return r;
+}
+static void forge_arr_inc(long long *ref) { if (ref) (*ref)++; }
+static void forge_int_array_free(ForgeIntArray a) {
+    if (a.ref && --(*a.ref) == 0) { free(a.data); free(a.ref); forge_arr_frees++; }
+}
+static void forge_float_array_free(ForgeFloatArray a) {
+    if (a.ref && --(*a.ref) == 0) { free(a.data); free(a.ref); forge_arr_frees++; }
+}
+static void forge_bool_array_free(ForgeBoolArray a) {
+    if (a.ref && --(*a.ref) == 0) { free(a.data); free(a.ref); forge_arr_frees++; }
+}
+static void forge_str_array_free(ForgeStrArray a) {
+    if (a.ref && --(*a.ref) == 0) {
+        for (long long i = 0; i < a.len; i++) forge_free_str(a.data[i]);
+        free(a.data); free(a.ref); forge_arr_frees++;
+    }
+}
 
 static void forge_fail(const char *msg) {
     fprintf(stderr, "forge: runtime error: %s\n", msg);
@@ -134,6 +161,7 @@ static ForgeIntArray forge_range(long long n) {
     a.cap = a.len;
     a.data = a.len ? (long long *)malloc(sizeof(long long) * (size_t)a.len) : NULL;
     if (a.len && !a.data) forge_fail("out of memory");
+    a.ref = forge_arr_ref_new();
     for (long long i = 0; i < a.len; i++) a.data[i] = i;
     return a;
 }
@@ -177,7 +205,7 @@ static long long forge_parse_int(const char *s) {
 }
 
 static ForgeStrArray forge_split(const char *s, const char *sep) {
-    ForgeStrArray out; out.len = 0; out.cap = 8;
+    ForgeStrArray out; out.len = 0; out.cap = 8; out.ref = forge_arr_ref_new();
     out.data = (char **)malloc(sizeof(char *) * 8);
     size_t sl = strlen(sep);
     if (sl == 0) { forge_str_push(&out, forge_copy_str(s)); return out; }
@@ -349,6 +377,70 @@ static char *forge_http_get(const char *url) {
     return forge_copy_str(sep + 4);
 }
 
+/* GPU-style parallel kernels, run on CPU threads here (no GPU in
+   this VM, no CUDA/OpenCL). Each kernel splits its work into
+   blocks, one pthread per block, like a GPU grid. Results are
+   bit-identical to the serial version; no speedup is claimed
+   on this 2-core VM, only correctness and the kernel shape. */
+typedef struct { ForgeFloatArray a; ForgeFloatArray b; long long lo; long long hi; double partial; } ForgeDotTask;
+static void *forge_dot_worker(void *arg) {
+    ForgeDotTask *t = (ForgeDotTask *)arg;
+    double s = 0.0;
+    for (long long i = t->lo; i < t->hi; i++) s += t->a.data[i] * t->b.data[i];
+    t->partial = s;
+    return NULL;
+}
+static double forge_parallel_dot(ForgeFloatArray a, ForgeFloatArray b) {
+    if (a.len != b.len) forge_fail("parallel_dot: length mismatch");
+    if (a.len == 0) return 0.0;
+    int nthreads = a.len < 4 ? (int)a.len : 4;
+    pthread_t th[4];
+    ForgeDotTask tasks[4];
+    long long chunk = (a.len + nthreads - 1) / nthreads;
+    for (int i = 0; i < nthreads; i++) {
+        tasks[i].a = a; tasks[i].b = b;
+        tasks[i].lo = (long long)i * chunk;
+        tasks[i].hi = tasks[i].lo + chunk > a.len ? a.len : tasks[i].lo + chunk;
+        tasks[i].partial = 0.0;
+        pthread_create(&th[i], NULL, forge_dot_worker, &tasks[i]);
+    }
+    double total = 0.0;
+    for (int i = 0; i < nthreads; i++) { pthread_join(th[i], NULL); total += tasks[i].partial; }
+    return total;
+}
+typedef struct { ForgeFloatArray a; ForgeFloatArray b; ForgeFloatArray out; long long n; long long rlo; long long rhi; } ForgeMatTask;
+static void *forge_mat_worker(void *arg) {
+    ForgeMatTask *t = (ForgeMatTask *)arg;
+    for (long long r = t->rlo; r < t->rhi; r++) {
+        for (long long c = 0; c < t->n; c++) {
+            double s = 0.0;
+            for (long long k = 0; k < t->n; k++) s += t->a.data[r * t->n + k] * t->b.data[k * t->n + c];
+            t->out.data[r * t->n + c] = s;
+        }
+    }
+    return NULL;
+}
+static ForgeFloatArray forge_parallel_matmul(ForgeFloatArray a, ForgeFloatArray b, long long n) {
+    ForgeFloatArray out;
+    out.len = n * n; out.cap = n * n;
+    out.data = (double *)malloc(sizeof(double) * (size_t)(n * n > 0 ? n * n : 1));
+    if (!out.data) forge_fail("out of memory");
+    out.ref = forge_arr_ref_new();
+    if (n == 0) return out;
+    int nthreads = n < 4 ? (int)n : 4;
+    pthread_t th[4];
+    ForgeMatTask tasks[4];
+    long long chunk = (n + nthreads - 1) / nthreads;
+    for (int i = 0; i < nthreads; i++) {
+        tasks[i].a = a; tasks[i].b = b; tasks[i].out = out; tasks[i].n = n;
+        tasks[i].rlo = (long long)i * chunk;
+        tasks[i].rhi = tasks[i].rlo + chunk > n ? n : tasks[i].rlo + chunk;
+        pthread_create(&th[i], NULL, forge_mat_worker, &tasks[i]);
+    }
+    for (int i = 0; i < nthreads; i++) pthread_join(th[i], NULL);
+    return out;
+}
+
 """
 
 
@@ -381,7 +473,7 @@ class Codegen:
                                for fn in program.funcs}
         self.try_counter = 0
         self.assign_counter = 0
-        self.owned_stack = [set()]
+        self.owned_stack = [{}]
         self.structs = {sd.name: dict(sd.fields)
                         for sd in (getattr(program, "structs", None) or [])}
         self.enums = {ed.name: list(ed.variants)
@@ -401,22 +493,48 @@ class Codegen:
         self.current_fn = None
         self._types = {}
 
-    def owned_add(self, name):
-        self.owned_stack[-1].add(name)
+    def owned_add(self, name, typ="str"):
+        self.owned_stack[-1][name] = typ
 
     def owned_contains(self, name):
         return any(name in s for s in reversed(self.owned_stack))
 
     def owned_all(self):
-        """Owned string variables currently in scope, innermost first, deduped."""
+        """Owned variables currently in scope, innermost first, deduped: [(name, type)]."""
         seen = set()
         out = []
         for s in reversed(self.owned_stack):
-            for name in s:
+            for name, typ in s.items():
                 if name not in seen:
                     seen.add(name)
-                    out.append(name)
+                    out.append((name, typ))
         return out
+
+    def emit_free_owned(self):
+        for name, typ in self.owned_all():
+            if typ == "str":
+                self.emit(f"forge_free_str({name});")
+            elif typ.startswith("[") and typ.endswith("]"):
+                elem = typ[1:-1]
+                free_fn = {"int": "forge_int_array_free", "float": "forge_float_array_free",
+                           "bool": "forge_bool_array_free", "str": "forge_str_array_free"}.get(elem)
+                if free_fn:
+                    self.emit(f"{free_fn}({name});")
+
+    def is_array_type(self, t):
+        return t.startswith("[") and t.endswith("]") and t[1:-1] in ("int", "float", "bool", "str")
+
+    def is_fresh_array(self, expr):
+        """True if the expression creates a fresh array (ref=1, sole owner)."""
+        if isinstance(expr, A.ArrayLit):
+            return True
+        if isinstance(expr, A.Call):
+            if expr.name in ("range", "split", "parallel_matmul", "args"):
+                return True
+            if self.func_ret.get(expr.name) and self.is_array_type(self.func_ret[expr.name]):
+                return True
+            return False
+        return False
 
     def is_fresh_str(self, expr):
         """True if the expression already returns a fresh, owned string
@@ -628,11 +746,12 @@ class Codegen:
 
     def gen_func(self, fn):
         self.current_fn = fn.name
-        self.owned_stack = [set()]
+        self.owned_stack = [{}]
         # String parameters own their copy after copy-on-call (see gen_expr Call).
+        # Array parameters own a reference after refcount-on-call (see gen_expr Call).
         for pn, pt in fn.params:
-            if pt == "str":
-                self.owned_stack[0].add(pn)
+            if pt == "str" or self.is_array_type(pt):
+                self.owned_stack[0][pn] = pt
         sig = ("int main(int __forge_argc, char **__forge_argv)"
                if fn.name == "main" else self.c_sig(fn))
         self.emit(sig + " {")
@@ -648,17 +767,15 @@ class Codegen:
         self.gen_block(fn.body, fn.ret)
         if fn.name == "main":
             self.emit("forge_join_threads();")
-            for name in self.owned_all():
-                self.emit(f"forge_free_str({name});")
+            self.emit_free_owned()
             self.emit("return 0;")
         elif fn.ret == "void":
-            for name in self.owned_all():
-                self.emit(f"forge_free_str({name});")
+            self.emit_free_owned()
         self.indent -= 1
         self.emit("}")
         self.lines.append("")
         self.current_fn = None
-        self.owned_stack = [set()]
+        self.owned_stack = [{}]
 
     def gen_block(self, block, ret_type):
         for stmt in block.stmts:
@@ -668,7 +785,7 @@ class Codegen:
         if isinstance(stmt, A.Block):
             self.emit("{")
             self.indent += 1
-            self.owned_stack.append(set())
+            self.owned_stack.append({})
             self.gen_block(stmt, ret_type)
             self.owned_stack.pop()
             self.indent -= 1
@@ -681,12 +798,21 @@ class Codegen:
             if t == "str":
                 if not self.is_fresh_str(stmt.expr):
                     expr = f"forge_copy_str({expr})"
-                self.owned_add(stmt.name)
+                self.owned_add(stmt.name, "str")
+            elif self.is_array_type(t):
+                # Fresh arrays are taken as-is (ref=1); shared arrays
+                # gain a reference for this new owner.
+                self.owned_add(stmt.name, t)
+                self.emit(f"{c_type(t)} {stmt.name} = {expr};")
+                if not self.is_fresh_array(stmt.expr):
+                    self.emit(f"forge_arr_inc({stmt.name}.ref);")
+                return
             self.emit(f"{c_type(t)} {stmt.name} = {expr};")
             return
         if isinstance(stmt, A.Assign):
             expr = self.gen_expr(stmt.expr)
-            if self.expr_type(stmt.expr) == "str":
+            et = self.expr_type(stmt.expr)
+            if et == "str":
                 if not self.is_fresh_str(stmt.expr):
                     expr = f"forge_copy_str({expr})"
                 # Evaluate first, then free the old value: the new
@@ -697,7 +823,22 @@ class Codegen:
                 if self.owned_contains(stmt.name):
                     self.emit(f"forge_free_str({stmt.name});")
                 self.emit(f"{stmt.name} = __forge_assign{n};")
-                self.owned_add(stmt.name)
+                self.owned_add(stmt.name, "str")
+            elif self.is_array_type(et):
+                # Evaluate into a temp, free the old array (refcounted),
+                # then take the new one, gaining a reference if shared.
+                n = self.assign_counter
+                self.assign_counter += 1
+                self.emit(f"{c_type(et)} __forge_assign{n} = {expr};")
+                if self.owned_contains(stmt.name):
+                    elem = et[1:-1]
+                    free_fn = {"int": "forge_int_array_free", "float": "forge_float_array_free",
+                               "bool": "forge_bool_array_free", "str": "forge_str_array_free"}[elem]
+                    self.emit(f"{free_fn}({stmt.name});")
+                self.emit(f"{stmt.name} = __forge_assign{n};")
+                if not self.is_fresh_array(stmt.expr):
+                    self.emit(f"forge_arr_inc({stmt.name}.ref);")
+                self.owned_add(stmt.name, et)
             else:
                 self.emit(f"{stmt.name} = {expr};")
             return
@@ -808,14 +949,14 @@ class Codegen:
         if isinstance(stmt, A.If):
             self.emit(f"if ({self.gen_expr(stmt.cond)}) {{")
             self.indent += 1
-            self.owned_stack.append(set())
+            self.owned_stack.append({})
             self.gen_block(stmt.then, ret_type)
             self.owned_stack.pop()
             self.indent -= 1
             if stmt.els is not None:
                 self.emit("} else {")
                 self.indent += 1
-                self.owned_stack.append(set())
+                self.owned_stack.append({})
                 self.gen_block(stmt.els, ret_type)
                 self.owned_stack.pop()
                 self.indent -= 1
@@ -824,7 +965,7 @@ class Codegen:
         if isinstance(stmt, A.While):
             self.emit(f"while ({self.gen_expr(stmt.cond)}) {{")
             self.indent += 1
-            self.owned_stack.append(set())
+            self.owned_stack.append({})
             self.gen_block(stmt.body, ret_type)
             self.owned_stack.pop()
             self.indent -= 1
@@ -843,7 +984,7 @@ class Codegen:
             self.emit(f"for (long long {idx} = 0; {idx} < {arr_tmp}.len; {idx}++) {{")
             self.indent += 1
             self.emit(f"{C_SCALAR[et]} {stmt.name} = {arr_tmp}.data[{idx}];")
-            self.owned_stack.append(set())
+            self.owned_stack.append({})
             self.gen_block(stmt.body, ret_type)
             self.owned_stack.pop()
             self.indent -= 1
@@ -855,16 +996,18 @@ class Codegen:
             if self.current_fn == "main":
                 self.emit("forge_join_threads();")
             if stmt.expr is None:
-                for name in self.owned_all():
-                    self.emit(f"forge_free_str({name});")
+                self.emit_free_owned()
                 self.emit("return 0;" if self.current_fn == "main" else "return;")
             else:
                 ret_code = self.gen_expr(stmt.expr)
                 if ret_type == "str" and not self.is_fresh_str(stmt.expr):
                     ret_code = f"forge_copy_str({ret_code})"
                 self.emit(f"{c_type(ret_type)} __forge_ret = {ret_code};")
-                for name in self.owned_all():
-                    self.emit(f"forge_free_str({name});")
+                if self.is_array_type(ret_type) and not self.is_fresh_array(stmt.expr):
+                    # Shared array return: gain a reference before
+                    # freeing owned locals, so the returned array survives.
+                    self.emit("forge_arr_inc(__forge_ret.ref);")
+                self.emit_free_owned()
                 self.emit("return __forge_ret;")
             return
         if isinstance(stmt, A.ExprStmt):
@@ -939,8 +1082,15 @@ class Codegen:
             parts = []
             for fname, fexpr in expr.fields:
                 code = self.gen_expr(fexpr)
-                if fields.get(fname) == "str":
+                ft = fields.get(fname)
+                if ft == "str":
                     code = f"forge_copy_str({code})"
+                elif ft and self.is_array_type(ft) and not self.is_fresh_array(fexpr):
+                    # Shared array stored in a struct: struct gains a reference.
+                    self.assign_counter += 1
+                    n = self.assign_counter
+                    code = (f"({{{c_type(ft)} __forge_arg{n} = {code}; "
+                            f"forge_arr_inc(__forge_arg{n}.ref); __forge_arg{n};}})")
                 parts.append(f".{fname} = {code}")
             return f"({cname}){{ {', '.join(parts)} }}"
         if isinstance(expr, A.FieldAccess):
@@ -959,7 +1109,7 @@ class Codegen:
             self.arr_counter += 1
             n = len(expr.elems)
             parts = [f"{struct} {tmp}"]
-            body = f"{tmp}.len = {n}; {tmp}.cap = {n}; "
+            body = f"{tmp}.len = {n}; {tmp}.cap = {n}; {tmp}.ref = forge_arr_ref_new(); "
             body += f"{tmp}.data = " + (f"( {elem_c} *)malloc(sizeof({elem_c}) * {n})" if n else "NULL") + "; "
             for i, e in enumerate(expr.elems):
                 code = self.gen_expr(e)
@@ -1080,6 +1230,13 @@ class Codegen:
                 return f"forge_http_get({self.gen_expr(expr.args[0])})"
             if expr.name in ("alloc_count", "free_count"):
                 return "forge_str_allocs" if expr.name == "alloc_count" else "forge_str_frees"
+            if expr.name in ("arr_alloc_count", "arr_free_count"):
+                return "forge_arr_allocs" if expr.name == "arr_alloc_count" else "forge_arr_frees"
+            if expr.name == "parallel_dot":
+                return f"forge_parallel_dot({self.gen_expr(expr.args[0])}, {self.gen_expr(expr.args[1])})"
+            if expr.name == "parallel_matmul":
+                return (f"forge_parallel_matmul({self.gen_expr(expr.args[0])}, "
+                        f"{self.gen_expr(expr.args[1])}, {self.gen_expr(expr.args[2])})")
             # Enum variant construction: Some(42), None(), Circle(3.0).
             if expr.name in self._enum_variant_map():
                 enum_name, tag, payload_type = self._enum_variant_map()[expr.name]
@@ -1107,6 +1264,12 @@ class Codegen:
                 code = self.gen_expr(a)
                 if pt == "str" and not self.is_fresh_str(a):
                     code = f"forge_copy_str({code})"
+                elif self.is_array_type(pt) and not self.is_fresh_array(a):
+                    # Shared array argument: callee gains a reference.
+                    self.assign_counter += 1
+                    n = self.assign_counter
+                    code = (f"({{{c_type(pt)} __forge_arg{n} = {code}; "
+                            f"forge_arr_inc(__forge_arg{n}.ref); __forge_arg{n};}})")
                 arg_codes.append(code)
             # Arguments beyond the known signature (should not happen
             # for checked code) are passed through unchanged.

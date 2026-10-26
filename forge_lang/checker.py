@@ -21,7 +21,9 @@ STMT_BUILTINS = {"print", "println", "push", "fail", "assert"}
 EXPR_BUILTINS = {"len", "range", "clock_micros", "sqrt", "exp", "log", "pow", "abs",
                  "read_file", "write_file", "args", "parse_int",
                  "split", "join", "substr", "trim", "starts_with", "ends_with",
-                 "http_get", "alloc_count", "free_count"}
+                 "http_get", "alloc_count", "free_count",
+                 "parallel_dot", "parallel_matmul",
+                 "arr_alloc_count", "arr_free_count"}
 BUILTINS = STMT_BUILTINS | EXPR_BUILTINS
 
 
@@ -186,7 +188,7 @@ class Checker:
                                      ed.line, ed.col)
             self.current_type_params = []
 
-    def check(self):
+    def check(self, require_main=True):
         self.check_structs()
         self.check_enums()
         original_funcs = list(self.program.funcs)
@@ -196,13 +198,14 @@ class Checker:
             if fn.name in BUILTINS:
                 raise ForgeError(f"'{fn.name}' is a builtin and cannot be redefined", fn.line, fn.col)
             self.funcs[fn.name] = fn
-        if "main" not in self.funcs:
+        if require_main and "main" not in self.funcs:
             raise ForgeError("a Forge program must define fn main()")
-        main = self.funcs["main"]
-        if main.params:
-            raise ForgeError("fn main() must take no arguments", main.line, main.col)
-        if main.ret not in ("int", "void"):
-            raise ForgeError("fn main() must return int or nothing", main.line, main.col)
+        if "main" in self.funcs:
+            main = self.funcs["main"]
+            if main.params:
+                raise ForgeError("fn main() must take no arguments", main.line, main.col)
+            if main.ret not in ("int", "void"):
+                raise ForgeError("fn main() must return int or nothing", main.line, main.col)
         for fn in original_funcs:
             self.check_func(fn)
         # Append every generic instantiation found during checking, so
@@ -741,10 +744,18 @@ class Checker:
             if call.args:
                 raise ForgeError("clock_micros() takes no arguments", call.line, call.col)
             return "int"
-        if call.name in ("alloc_count", "free_count"):
+        if call.name in ("alloc_count", "free_count", "arr_alloc_count", "arr_free_count"):
             if call.args:
                 raise ForgeError(f"{call.name}() takes no arguments", call.line, call.col)
             return "int"
+        if call.name == "parallel_dot":
+            if len(call.args) != 2 or self.check_expr(call.args[0]) != "[float]" or self.check_expr(call.args[1]) != "[float]":
+                raise ForgeError("parallel_dot() takes two [float] arguments", call.line, call.col)
+            return "float"
+        if call.name == "parallel_matmul":
+            if len(call.args) != 3 or self.check_expr(call.args[0]) != "[float]" or self.check_expr(call.args[1]) != "[float]" or self.check_expr(call.args[2]) != "int":
+                raise ForgeError("parallel_matmul() takes [float], [float], int", call.line, call.col)
+            return "[float]"
         if call.name in ("sqrt", "exp", "log"):
             if len(call.args) != 1 or self.check_expr(call.args[0]) != "float":
                 raise ForgeError(f"{call.name}() takes exactly one float argument",
@@ -919,5 +930,5 @@ class Checker:
         raise ForgeError(f"unknown operator '{op}'", node.line, node.col)
 
 
-def check(program):
-    Checker(program).check()
+def check(program, require_main=True):
+    Checker(program).check(require_main=require_main)

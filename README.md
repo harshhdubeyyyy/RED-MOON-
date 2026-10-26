@@ -305,11 +305,14 @@ enums+match, spawn threads, C FFI, HTTP, Map/JSON stdlib, assert,
 `forge doc`, a package lockfile, and now generics, `Option`/
 `Result`, TLS, a local registry, a tiny KV DB, a big32
 backend, `?`, generic enums with payloads, a table DB, a SQL
-parser, a self-hosted HTTP registry, a WASM backend, and
-string GC v1 are done (26 Oct 2026). It still has no GPU
-kernels, full GC (arrays/structs still leak), Python interop,
-or public hosted registry yet. Those are the next phases in
-`SPEC_V2.md`, not hidden features.
+parser, a self-hosted HTTP registry, a WASM backend, string
+GC v1, CPU-thread parallel kernels, Python interop via a
+shared library, public registry discovery, and array GC v2
+are done (26 Oct 2026). It still has no real GPU hardware
+backend, GC for struct variables themselves, Python interop
+for arrays/structs, or a centrally hosted registry yet.
+Those are the next phases in `SPEC_V2.md`, not hidden
+features.
 
 ## 🔁 Regenerate the figures
 

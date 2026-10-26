@@ -1,0 +1,9 @@
+fn add(a: int, b: int) -> int {
+    return a + b;
+}
+fn is_even(n: int) -> bool {
+    return n % 2 == 0;
+}
+fn greet(name: str) -> str {
+    return "hello " + name;
+}

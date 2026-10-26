@@ -230,11 +230,52 @@ and pull request.
   string temporaries from concat/helpers are counted only
   through the copy path.
 
+## New in the "do it that also" pass (26 Oct 2026)
+
+- **Parallel kernels:** `parallel_dot(a, b)` and
+  `parallel_matmul(a, b, n)` — GPU-style kernels (work split
+  into blocks, one pthread per block) that run on CPU threads
+  here, because this VM has no GPU, no CUDA, and no OpenCL.
+  Verified: dot = 70, matmul = 19 22 43 50, exactly matching
+  the serial results. No speedup is claimed on this 2-core
+  VM; the kernel shape and correctness are the deliverable,
+  and a real GPU backend still needs GPU hardware.
+- **Python interop:** `forge build --shared lib.fg -o lib.so`
+  compiles a Forge library with no main required, and
+  `tools/forge_py.py` calls it from Python via ctypes
+  (int/bool/float/str). Verified: add(40, 2) = 42,
+  is_even(42) = True, greet("Jayant") = "hello Jayant".
+  A real bug found: Forge frees string parameters on return,
+  but ctypes passed a Python-owned buffer — the helper now
+  mallocs string arguments so Forge can safely free them.
+  Arrays/structs are not passed through this helper in v1.
+- **Public registry discovery:** `forge pkg list-remote <url>`
+  lists every package and version on a registry, so a
+  registry you run is discoverable, not just add-by-name.
+  Verified: published hostlib@0.1.0, list-remote showed
+  "hostlib 0.1.0". This is still a self-hosted server,
+  not a centrally hosted service — "public" means anyone
+  with your URL can discover and pull from it.
+- **GC v2 for arrays:** array structs now carry a refcount
+  pointer. Assignment shares, function calls gain a
+  reference, struct fields gain a reference, and an array
+  is freed only when its last owner goes away. Verified:
+  a 100-iteration reassign loop gives arr allocs = 101,
+  arr frees = 100 (1 live); a shared array survives its
+  original variable's reassign (b = 4 5 after a = [9]);
+  a struct-held array survives too (s.arr = 4 5 after
+  b = [7]). Two real bugs found: array helpers were
+  declared before forge_fail/forge_free_str, so forward
+  declarations were added. NOT yet freed: struct variables
+  themselves (their fields leak, as before, but they hold
+  a reference so shared arrays are never freed under them),
+  and array elements inside structs are not counted
+  separately. Full suite still passes.
+
 ## What is still not in the ecosystem
 
-No GPU kernels (fast mode already auto-vectorises with
-`-O3 -march=native`, which is not the same as GPU kernels),
-no full GC (arrays/structs still leak, see above), no
-Python interop, and no public hosted registry (the HTTP
-server above is self-hosted, unauthenticated). Those are
-the next phases, in that order.
+No real GPU hardware backend (kernels above run on CPU
+threads), no GC for struct variables themselves, no Python
+interop for arrays/structs, and no centrally hosted public
+registry (the server above is self-hosted). Those are the
+next phases, in that order.

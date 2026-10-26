@@ -53,11 +53,35 @@ def compile_source(source, mode="safe"):
     return generate(program, types, mode=mode), program
 
 
-def compile_file(path, mode="safe"):
+def compile_file(path, mode="safe", require_main=True):
     program = load_program(path)
-    check(program)
+    check(program, require_main=require_main)
     types = infer_types(program)
     return generate(program, types, mode=mode), program
+
+
+def build_shared(source_path, output_path, mode="safe"):
+    """Compile a Forge library (no main required) to a .so for Python ctypes."""
+    c_source, _ = compile_file(source_path, mode=mode, require_main=False)
+    fd, c_path = tempfile.mkstemp(suffix=".c", prefix="forge2_")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(c_source)
+        flags = ["cc", "-shared", "-fPIC", "-O2", "-std=gnu11", "-Wall",
+                 "-Wno-unused-function", "-pthread"]
+        result = subprocess.run(flags + ["-o", output_path, c_path, "-lm", "-lssl", "-lcrypto"],
+                                capture_output=True, text=True)
+        if result.returncode != 0 and "cannot find -lssl" in result.stderr:
+            result = subprocess.run(flags + ["-o", output_path, c_path, "-lm"],
+                                    capture_output=True, text=True)
+        if result.returncode != 0:
+            raise ForgeError(f"C compiler failed:\n{result.stderr}")
+    finally:
+        try:
+            os.unlink(c_path)
+        except OSError:
+            pass
+    return output_path
 
 
 def compile_file_rv(path):

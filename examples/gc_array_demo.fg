@@ -1,0 +1,25 @@
+// GC v2 for arrays: refcounted, shared on assignment, freed
+// when the last owner goes away. Struct fields are NOT freed
+// yet (they leak, as before) — but they do hold a reference,
+// so a shared array is never freed while a struct holds it.
+struct Box {
+    arr: [int];
+}
+
+fn main() -> int {
+    let mut a: [int] = [1, 2, 3];
+    let mut i: int = 0;
+    while i < 100 {
+        a = [4, 5];
+        i = i + 1;
+    }
+    println("loop arr =", a[0], a[1]);
+    println("arr allocs =", arr_alloc_count(), "arr frees =", arr_free_count());
+    let mut b: [int] = a;
+    a = [9];
+    println("shared b =", b[0], b[1]);
+    let s: Box = Box { arr: b };
+    b = [7];
+    println("struct arr =", s.arr[0], s.arr[1]);
+    return 0;
+}

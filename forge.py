@@ -54,6 +54,8 @@ def main(argv=None):
     p.add_argument("--target", choices=["native", "big32", "wasm"], default="native")
     p.add_argument("-o", "--output", default=None)
     p.add_argument("--keep-c", default=None)
+    p.add_argument("--shared", action="store_true",
+                   help="build a shared library (.so) for Python ctypes, no main required")
     p = sub.add_parser("emit-big32")
     p.add_argument("file")
     p = sub.add_parser("emit-wasm")
@@ -149,6 +151,12 @@ def main(argv=None):
             with open(out, "wb") as f:
                 f.write(wasm)
             print(f"built wasm: {out} ({len(wasm)} bytes)")
+            return 0
+        if args.cmd == "build" and args.shared:
+            from forge_lang.compiler import build_shared
+            out = args.output or (os.path.splitext(args.file)[0] + ".so")
+            build_shared(args.file, out, mode=args.mode)
+            print(f"built shared library: {out}")
             return 0
         if args.cmd == "build":
             out = args.output or os.path.splitext(args.file)[0]

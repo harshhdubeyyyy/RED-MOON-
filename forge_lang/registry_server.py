@@ -4,6 +4,7 @@ Run:  python3 forge.py pkg serve --dir DIR --port 8765
   or: python3 -m forge_lang.registry_server --dir DIR --port 8765
 
 Endpoints (all JSON unless noted):
+  GET  /api/packages                        -> {"packages": [{name, versions}]}
   GET  /api/packages/<name>                 -> {"versions": [...]}
   GET  /api/packages/<name>/<version>       -> {"name":..., "version":..., "files": [...]}
   GET  /api/packages/<name>/<version>/<file> -> raw .fg text
@@ -42,6 +43,16 @@ def make_handler(root):
 
         def do_GET(self):
             parts = [unquote(p) for p in urlparse(self.path).path.split("/") if p]
+            if parts == ["api", "packages"]:
+                pkgs = []
+                if os.path.isdir(root):
+                    for name in sorted(os.listdir(root)):
+                        base = os.path.join(root, name)
+                        if os.path.isdir(base):
+                            pkgs.append({"name": name,
+                                         "versions": sorted(os.listdir(base))})
+                self._json({"packages": pkgs})
+                return
             if len(parts) >= 3 and parts[0] == "api" and parts[1] == "packages":
                 name = parts[2]
                 if not safe_name(name):

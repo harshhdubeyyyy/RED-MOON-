@@ -152,6 +152,17 @@ from scratch, and do not silently drop a phase.
   Full suite + WASM suite pass. Push this pass next;
   still NOT done: GPU kernels, full GC (arrays/structs),
   Python interop, public hosted registry.
+- "Do it that also" pass (26 Oct 2026): parallel kernels
+  DONE (parallel_dot/matmul on CPU threads, no GPU in VM,
+  dot 70, matmul 19 22 43 50); Python interop DONE
+  (build --shared + ctypes helper, add 42, greet hello
+  Jayant, FFI param-free bug fixed in helper); public
+  registry discovery DONE (list-remote, hostlib 0.1.0
+  listed, self-hosted only); array GC DONE v2 (refcount,
+  allocs 101 frees 100 in loop, shared/struct arrays
+  survive). Full suite passes. Push this pass next;
+  still NOT done: real GPU backend, struct-variable GC,
+  Python arrays/structs, centrally hosted registry.
 
 ## Research findings that now lock v2's design (26 Oct 2026)
 

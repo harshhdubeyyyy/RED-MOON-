@@ -1,0 +1,15 @@
+// GPU-style parallel kernels, run on CPU threads here (no GPU
+// in this VM). Results must match the serial versions exactly.
+fn main() -> int {
+    let a: [float] = [1.0, 2.0, 3.0, 4.0];
+    let b: [float] = [5.0, 6.0, 7.0, 8.0];
+    let d: float = parallel_dot(a, b);
+    println("parallel dot =", d);
+    // 2x2 matmul, flat row-major: [[1,2],[3,4]] x [[5,6],[7,8]]
+    // = [[19,22],[43,50]]
+    let m1: [float] = [1.0, 2.0, 3.0, 4.0];
+    let m2: [float] = [5.0, 6.0, 7.0, 8.0];
+    let out: [float] = parallel_matmul(m1, m2, 2);
+    println("matmul =", out[0], out[1], out[2], out[3]);
+    return 0;
+}

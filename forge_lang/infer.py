@@ -209,8 +209,16 @@ class Infer:
                     return self.set(expr, fn.ret)
             for a in expr.args:
                 self.walk_expr(a)
-            if expr.name in ("len", "clock_micros", "abs", "parse_int", "alloc_count", "free_count"):
+            if expr.name in ("len", "clock_micros", "abs", "parse_int", "alloc_count", "free_count", "arr_alloc_count", "arr_free_count"):
                 return self.set(expr, "int")
+            if expr.name == "parallel_dot":
+                for a in expr.args:
+                    self.walk_expr(a)
+                return self.set(expr, "float")
+            if expr.name == "parallel_matmul":
+                for a in expr.args:
+                    self.walk_expr(a)
+                return self.set(expr, "[float]")
             if expr.name == "range":
                 return self.set(expr, "[int]")
             if expr.name in ("args", "split"):

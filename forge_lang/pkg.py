@@ -297,6 +297,17 @@ def dispatch(argv, forge_path, cwd):
                 print("usage: forge pkg add-remote <url> name@version", file=sys.stderr)
                 return 1
             return cmd_add_remote(cwd, rest[0], rest[1])
+        if cmd == "list-remote":
+            if not rest:
+                print("usage: forge pkg list-remote <url>", file=sys.stderr)
+                return 1
+            status, body = _http_json(rest[0].rstrip("/") + "/api/packages")
+            if status != 200:
+                print(f"forge pkg: registry unreachable ({status})", file=sys.stderr)
+                return 1
+            for pkg in json.loads(body).get("packages", []):
+                print(f"{pkg['name']} {', '.join(pkg['versions'])}")
+            return 0
         if cmd == "build":
             mode = "safe"
             if "--mode" in rest:
