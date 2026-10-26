@@ -124,6 +124,17 @@ from scratch, and do not silently drop a phase.
   passes including enums/spawn/FFI/map-json tests. Push this pass
   next; still NOT done: generics, Option/Result (needs generic
   enums), GPU, TLS, DB stdlib, registry, GC, WASM backend.
+- "Do it then" pass (26 Oct 2026): generics DONE — generic fns
+  + generic structs, monomorphised, checker rewrites calls to
+  mangled names, save/restore scopes in check_func (nested
+  instantiation used to wipe the outer function's scopes).
+  Option/Result stdlib, TLS in http_get (OpenSSL, verify on,
+  addrinfo loop fix for localhost), local registry publish/add,
+  tiny KV db.fg, big32 backend found in workspace (11:53, not
+  this pass — emit/build to .hex verified, iverilog sim test
+  could not run here). Full suite passes. Push this pass next;
+  still NOT done: ? sugar, generic enums, GPU, SQL, hosted
+  registry, GC, WASM.
 
 ## Research findings that now lock v2's design (26 Oct 2026)
 

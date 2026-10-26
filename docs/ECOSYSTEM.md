@@ -115,11 +115,55 @@ and pull request.
   of every vendored file; `forge pkg verify` detects changes
   (tested: tampering a vendored file is reported as MISMATCH).
 
+## New in the "do it then" pass (26 Oct 2026)
+
+- **Generics:** `fn identity<T>(x: T) -> T`, `struct Option<T>`,
+  `struct Result<T, E>`, `struct Pair<T, U>` — monomorphised
+  (each concrete use gets its own C function/struct, no runtime
+  cost). Generic functions are inferred from call arguments;
+  generic structs are inferred from literal fields. Limitations:
+  no generic enums yet, no `?` sugar (check `.ok`/`.present`
+  explicitly), a generic function cannot be called with an
+  abstract type from another generic function, and arrays of
+  generic structs are not supported.
+- **Option/Result stdlib:** `stdlib/option.fg` (`opt_some`,
+  `opt_value_or`; none is a literal with a dummy value, because
+  Forge has no null) and `stdlib/result.fg` (`result_value_or`).
+- **TLS:** `http_get` now handles `https://` too, with
+  certificate verification on (OpenSSL, SNI, default verify
+  paths). Tested against a local TLS server with a private CA
+  (via `SSL_CERT_FILE`): body "hello https world". A real bug
+  found in testing: the HTTP/HTTPS helpers only tried the first
+  addrinfo result, so `localhost` (which resolves to ::1 first)
+  failed against an IPv4-only server — both helpers now loop
+  over all addrinfo results. Linking falls back without `-lssl`
+  if the machine lacks libssl (programs that never call
+  `http_get` still build).
+- **Local registry:** `forge pkg publish` copies a package into
+  `$FORGE_REGISTRY` (default `~/.forge_registry`) as
+  `<name>/<version>/`, and `forge pkg add name@version` vendors
+  it. Tested end to end (quad 7 = 28). This is a local registry,
+  not a hosted server.
+- **Tiny DB stdlib:** `stdlib/db.fg` — a tab-separated text
+  key-value store (str -> str) with serialise/parse, to pair
+  with `write_file`/`read_file`. NOT SQL, NOT SQLite, and values
+  must not contain tabs/newlines (no escaping yet).
+- **big32 backend (landed in the workspace 26 Oct 11:53, verified
+  here):** `forge emit-big32` / `forge build --target big32`
+  generate RV32IMAC assembly for the big32 v7 CPU (see
+  `forge_lang/codegen_rv.py`, `examples/big32/`). Emit and
+  assemble to .hex verified (sum.fg -> .hex); the Verilog
+  simulation test needs `iverilog`, which is not installed in
+  this VM, so it could not be run here.
+
 ## What is still not in the ecosystem
 
-No registry (packages are vendored by path, now with a lockfile),
-no TLS, no database stdlib, no generics/`Option`/`Result`
-(those need generic enums/structs, the hardest remaining type
-work), no GPU kernels, no GC (arrays/strings are still never
-freed), and no full WASM backend. Those are the next phases, in
-that order.
+No hosted registry (only the local one above), no SQL database,
+no `?` sugar, no generic enums, no GPU kernels (fast mode
+already auto-vectorises with `-O3 -march=native`, which is not
+the same as GPU kernels), no GC (arrays/strings are still never
+freed — freeing a reassigned string is unsafe for function
+parameters, which alias the caller's string, so a real GC needs
+ownership tracking first), and no WASM backend (Forge -> C is
+WASM-ready in principle via Emscripten, which is not installed
+here). Those are the next phases, in that order.

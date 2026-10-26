@@ -137,6 +137,88 @@ python3 forge.py build examples/benchmark.fg -o bench
 python3 tests/run_tests.py   # all tests pass
 ```
 
+## 🔴 Forge on big32 — your language, running on your own CPU
+
+Forge now has a second backend: instead of C (x86), it can compile
+straight to RISC-V assembly for **big32**, the 32-bit CPU in the
+`BIG-32` repo. A Forge program compiled this way runs on big32 in
+simulation — no x86, no C compiler in the middle. This is simulation
+only, and it is a subset (see below); it is not Linux, and big32 is
+not silicon.
+
+```sh
+python3 forge.py build --target big32 examples/big32/hello.fg -o out/hello
+# -> out/hello.s (big32 assembly) + out/hello.hex (for the simulator)
+python3 tests/run_big32_tests.py   # model + Verilog, compared with x86
+```
+
+How it works (see `forge_lang/codegen_rv.py` for the full contract):
+
+- **Pipeline:** Forge source → existing lexer/parser → existing
+  checker → existing type inference → new RISC-V code generator.
+  The language is not rewritten; only the backend is new.
+- **Calling convention:** args in a0–a7, return in a0, frame
+  pointer s0, locals in a fixed 2048-byte frame addressed via s0
+  (so sp may move for call spills). The callee saves ra + s0
+  only; the caller spills every live temp register across a call,
+  so recursion works (fib(10) is the proof).
+- **Stack:** starts at 65532, grows down. Static data (strings,
+  array slots) lives at 0x1000 and up, in the 64KB data memory.
+- **UART runtime:** `print`/`println` map to UART TX — a store of
+  each byte to 0x10000000. Integers go through a decimal routine
+  (including the INT_MIN case, printed unsigned after the `-`
+  sign); strings are null-terminated static data initialised by
+  `_start` before `main`; booleans print as `true`/`false`.
+- **Arrays:** a static slot per source site — first word is the
+  length, then the elements. An array literal inside a loop
+  re-initialises the same slot each iteration (a documented v1
+  limitation, not a hidden one).
+- **End of program:** `main`'s return (or falling off the end)
+  becomes ECALL, which halts big32 (mtvec == 0).
+
+Supported on big32 (v1): `int` (32-bit here, not Forge's 64-bit
+x86 int), `bool`, `str` literals/variables, `[int]`/`[bool]`/
+`[str]` arrays, `let`/`assign`, `if`/`else`, `while`, `for` over
+an array or over `range(n)`, functions/calls (≤ 8 args, recursion),
+`return`, `print`/`println` of int/bool/str, `len` of an array or
+a string, `assert`/`fail` (print, halt with a0 = 1).
+
+NOT supported on big32 (v1), and the backend rejects them with a
+clear error instead of silently miscompiling: `float` (would need
+soft-float), structs, enums/`match`, `spawn`/threads, `extern`/FFI,
+file I/O, `args()`, HTTP, clock, string concatenation/comparison,
+`push` (no dynamic allocation), generics, `Option`/`Result`, GC.
+Arithmetic is native RISC-V, not Forge safe mode: it wraps on
+overflow, div by zero gives -1, rem by zero gives the dividend.
+
+Verified programs (`examples/big32/`, each run on x86, in the
+big32 Python model, and in Icarus Verilog, with identical UART):
+
+| Program | UART output |
+|---|---|
+| `hello.fg` | `hello from Forge on big32` / `forge + big32` |
+| `sum.fg` | `sum = 55` |
+| `fib.fg` | `fib = 55` (recursive, the call-spill proof) |
+| `muldiv.fg` | `mul = 83810205`, `div = 14 rem = 2`, `neg = -42`, `flag = true false` |
+| `loop_call.fg` | `total = 14`, `len = 5 xs[2] = 4` |
+| `forge_os.fg` | Forge OS demo (below) |
+
+### Forge OS demo — the full-stack program
+
+`examples/big32/forge_os.fg` is a Forge program that boots on
+big32, prints a banner, runs two apps, prints their results, and
+halts via ECALL. It is an OS *demo* (a user program acting as an
+OS), not a trap handler — the assembly kernel `programs/kernel.s`
+in the big32 repo remains the real trap-handling supervisor:
+
+```
+forge OS on big32
+boot ok
+app_sum = 55
+app_mul = 42
+done
+```
+
 ## ✍️ Language in 30 seconds
 
 ```forge
@@ -219,12 +301,13 @@ The full tooling is documented in `docs/ECOSYSTEM.md`:
 
 Forge v2 is production-*oriented*, not a finished Rust/Go/Mojo
 rival. Structs, file I/O, CLI args, `forge test`, the ecosystem,
-and now enums+match, spawn threads, C FFI, HTTP, Map/JSON stdlib,
-assert, `forge doc`, and a package lockfile are done (26 Oct 2026).
-It still has no generics, `Option`/`Result` (needs generic enums),
-GPU kernels, TLS, database stdlib, registry, or GC yet. Array and
-string values are not yet freed. Those are the next phases in
-`SPEC_V2.md`, not hidden features.
+enums+match, spawn threads, C FFI, HTTP, Map/JSON stdlib, assert,
+`forge doc`, a package lockfile, and now generics, `Option`/
+`Result`, TLS, a local registry, a tiny KV DB, and a big32
+backend are done (26 Oct 2026). It still has no `?` sugar,
+generic enums, GPU kernels, SQL database, hosted registry, GC,
+or WASM backend yet. Array and string values are not yet freed.
+Those are the next phases in `SPEC_V2.md`, not hidden features.
 
 ## 🔁 Regenerate the figures
 

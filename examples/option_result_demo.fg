@@ -1,0 +1,25 @@
+import "option.fg";
+import "result.fg";
+
+fn div_result(a: int, b: int) -> Result<int, str> {
+    if b == 0 {
+        return Result { ok: false, value: 0, error: "division by zero" };
+    }
+    return Result { ok: true, value: a / b, error: "" };
+}
+
+fn main() -> int {
+    let o: Option<int> = opt_some(42);
+    println("opt =", opt_value_or(o, 0));
+    let n: Option<int> = Option { present: false, value: 0 };
+    println("none =", opt_value_or(n, 99));
+    let r: Result<int, str> = div_result(10, 2);
+    if r.ok {
+        println("div =", r.value);
+    }
+    let bad: Result<int, str> = div_result(10, 0);
+    if !bad.ok {
+        println("error =", bad.error);
+    }
+    return 0;
+}

@@ -86,7 +86,8 @@ class Formatter:
         if prog.imports and (prog.structs or prog.funcs or prog.enums):
             self.emit(0)
         for sd in (prog.structs or []):
-            self.emit(0, f"struct {sd.name} {{")
+            tp = f"<{', '.join(sd.type_params)}>" if getattr(sd, "type_params", None) else ""
+            self.emit(0, f"struct {sd.name}{tp} {{")
             for fname, ftype in sd.fields:
                 self.emit(1, f"{fname}: {ftype};")
             self.emit(0, "}")
@@ -97,10 +98,11 @@ class Formatter:
         for i, fn in enumerate(prog.funcs):
             params = ", ".join(f"{n}: {t}" for n, t in fn.params)
             ret = f" -> {fn.ret}" if fn.ret != "void" else ""
+            tp = f"<{', '.join(fn.type_params)}>" if getattr(fn, "type_params", None) else ""
             if getattr(fn, "is_extern", False):
                 self.emit(0, f"extern fn {fn.name}({params}){ret};")
             else:
-                self.emit(0, f"fn {fn.name}({params}){ret} {{")
+                self.emit(0, f"fn {fn.name}{tp}({params}){ret} {{")
                 self.fmt_block(fn.body, 1)
                 self.emit(0, "}")
             if i < len(prog.funcs) - 1:

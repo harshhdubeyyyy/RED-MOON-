@@ -51,8 +51,11 @@ def main(argv=None):
     p = sub.add_parser("build")
     p.add_argument("file")
     p.add_argument("--mode", choices=["safe", "fast"], default="safe")
+    p.add_argument("--target", choices=["native", "big32"], default="native")
     p.add_argument("-o", "--output", default=None)
     p.add_argument("--keep-c", default=None)
+    p = sub.add_parser("emit-big32")
+    p.add_argument("file")
 
     args = parser.parse_args(argv)
     try:
@@ -93,6 +96,41 @@ def main(argv=None):
             c_source, _ = compile_file(args.file, mode=args.mode)
             print(c_source)
             return 0
+        if args.cmd == "emit-big32":
+            from forge_lang.compiler import compile_file_rv
+            asm, _ = compile_file_rv(args.file)
+            print(asm, end="")
+            return 0
+        if args.cmd == "build" and args.target == "big32":
+            from forge_lang.compiler import compile_file_rv
+            asm, _ = compile_file_rv(args.file)
+            out = args.output or os.path.splitext(args.file)[0]
+            if out.endswith(".hex"):
+                out = out[:-4]
+            elif out.endswith(".s"):
+                out = out[:-2]
+            s_path = out + ".s"
+            hex_path = out + ".hex"
+            with open(s_path, "w", encoding="utf-8") as f:
+                f.write(asm)
+            # Assemble with big32's assembler if a checkout is available.
+            candidates = []
+            if os.environ.get("BIG32_DIR"):
+                candidates.append(os.path.join(os.environ["BIG32_DIR"], "tools", "asm.py"))
+            root = os.path.dirname(os.path.abspath(__file__))
+            candidates.append(os.path.join(os.path.dirname(root), "big32", "tools", "asm.py"))
+            candidates.append(os.path.expanduser("~/workspace/big32/tools/asm.py"))
+            asm_tool = next((c for c in candidates if os.path.exists(c)), None)
+            if asm_tool is None:
+                print(f"built big32 assembly: {s_path} (big32 assembler not found; "
+                      "set BIG32_DIR to assemble to .hex)")
+                return 0
+            proc = subprocess.run([sys.executable, asm_tool, s_path, hex_path],
+                                  capture_output=True, text=True)
+            if proc.returncode != 0:
+                raise ForgeError(f"big32 assembler failed:\n{proc.stdout}{proc.stderr}")
+            print(f"built big32: {s_path} + {hex_path}")
+            return 0
         if args.cmd == "build":
             out = args.output or os.path.splitext(args.file)[0]
             build(args.file, out, mode=args.mode, keep_c=args.keep_c)
@@ -112,8 +150,11 @@ def main(argv=None):
                     f.write(c_source)
                 flags = (["cc", "-O3", "-march=native", "-std=gnu11", "-pthread"] if args.mode == "fast"
                          else ["cc", "-O2", "-std=gnu11", "-pthread"])
-                cc = subprocess.run(flags + ["-o", exe, c_path, "-lm"],
+                cc = subprocess.run(flags + ["-o", exe, c_path, "-lm", "-lssl", "-lcrypto"],
                                     capture_output=True, text=True)
+                if cc.returncode != 0 and "cannot find -lssl" in cc.stderr:
+                    cc = subprocess.run(flags + ["-o", exe, c_path, "-lm"],
+                                        capture_output=True, text=True)
                 if cc.returncode != 0:
                     raise ForgeError(f"C compiler failed:\n{cc.stderr}")
                 prog_args = list(args.program_args)

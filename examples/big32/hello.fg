@@ -1,0 +1,5 @@
+fn main() -> int {
+    println("hello from Forge on big32");
+    println("forge + big32");
+    return 0;
+}

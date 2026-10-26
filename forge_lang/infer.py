@@ -8,6 +8,11 @@ class Infer:
         self.funcs = {fn.name: fn for fn in program.funcs}
         structs = getattr(program, "structs", None) or []
         self.structs = {sd.name: dict(sd.fields) for sd in structs}
+        # Concrete generic structs are appended by the checker with
+        # mangled names; also map the generic spelling to those fields.
+        from .generics import mangle_type, parse_generic
+        self._mangle = mangle_type
+        self._parse_generic = parse_generic
         enums = getattr(program, "enums", None) or []
         self.enum_variants = {}
         for ed in enums:
@@ -20,6 +25,8 @@ class Infer:
     def run(self, program):
         for fn in program.funcs:
             if getattr(fn, "is_extern", False):
+                continue
+            if getattr(fn, "type_params", None):
                 continue
             self.current_ret = fn.ret
             self.scopes = [{n: t for n, t in fn.params}]
@@ -118,16 +125,19 @@ class Infer:
                 return self.set(expr, f"[{t0}]")
             return self.set(expr, "[?]")
         if isinstance(expr, A.StructLit):
-            fields = self.structs.get(expr.name, {})
+            concrete = getattr(expr, "concrete_type", None) or expr.name
+            mangled = self._mangle(concrete) if self._parse_generic(concrete) else concrete
+            fields = self.structs.get(mangled, self.structs.get(expr.name, {}))
             for fname, fexpr in expr.fields:
                 if isinstance(fexpr, A.ArrayLit) and not fexpr.elems and fields.get(fname):
                     self.set(fexpr, fields[fname])
                 else:
                     self.walk_expr(fexpr)
-            return self.set(expr, expr.name)
+            return self.set(expr, concrete)
         if isinstance(expr, A.FieldAccess):
             bt = self.walk_expr(expr.base)
-            ft = self.structs.get(bt, {}).get(expr.field, "int")
+            mangled = self._mangle(bt) if self._parse_generic(bt) else bt
+            ft = self.structs.get(mangled, self.structs.get(bt, {})).get(expr.field, "int")
             return self.set(expr, ft)
         if isinstance(expr, A.Index):
             bt = self.walk_expr(expr.base)

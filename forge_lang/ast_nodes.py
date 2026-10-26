@@ -15,6 +15,7 @@ class StructDef:
     fields: list  # [(name, type)]
     line: int
     col: int
+    type_params: list = None  # [param name] for generic structs
 
 
 @dataclass
@@ -34,6 +35,7 @@ class FuncDef:
     line: int
     col: int
     is_extern: bool = False
+    type_params: list = None  # [param name] for generic functions
 
 
 @dataclass
@@ -163,6 +165,7 @@ class StructLit:
     fields: list  # [(field_name, expr)]
     line: int
     col: int
+    concrete_type: str = None  # set by checker: base name or "Base<args>"
 
 
 @dataclass

@@ -9,8 +9,12 @@ immutable by default, bool conditions only, checked calls, and a
 non-void function must end with a return.
 """
 
+import copy
+
 from .errors import ForgeError
 from . import ast_nodes as A
+from .generics import (parse_generic, mangle_type, substitute_type,
+                       unify, contains_type_param)
 
 SCALARS = {"int", "float", "bool", "str"}
 STMT_BUILTINS = {"print", "println", "push", "fail", "assert"}
@@ -30,22 +34,54 @@ class Checker:
         self.program = program
         self.funcs = {}
         self.structs = {}  # name -> {field: type}
+        self.struct_params = {}  # name -> [type params]
         self.enums = {}  # name -> [variants]
         self.enum_variants = {}  # variant -> enum name
         self.scopes = []
         self.current_ret = "void"
         self.current_fn = None
+        self.current_type_params = []
+        self.func_instantiations = {}  # (name, bindings tuple) -> FuncDef
+        self.struct_instantiations = {}  # concrete type -> {field: type}
+        self._instantiating = set()
 
     def valid_type(self, t):
         if t in SCALARS or t == "void":
             return True
+        if t in self.current_type_params:
+            return True
         if t in self.structs or t in self.enums:
             return True
+        g = parse_generic(t)
+        if g is not None:
+            base, args = g
+            if base not in self.structs:
+                return False
+            if len(args) != len(self.struct_params.get(base, [])):
+                return False
+            return all(self.valid_type(a) for a in args)
         if t.startswith("[") and t.endswith("]"):
             inner = t[1:-1]
             # Arrays of structs and nested arrays are not yet supported.
-            return inner in SCALARS
+            return inner in SCALARS or inner in self.current_type_params
         return False
+
+    def struct_fields_for(self, t):
+        """Concrete field dict for a struct type string, or None."""
+        if t in self.structs and not self.struct_params.get(t):
+            return self.structs[t]
+        g = parse_generic(t)
+        if g is not None:
+            base, args = g
+            if base not in self.structs:
+                return None
+            params = self.struct_params.get(base, [])
+            if len(args) != len(params):
+                return None
+            bindings = dict(zip(params, args))
+            return {f: substitute_type(ft, bindings)
+                    for f, ft in self.structs[base].items()}
+        return None
 
     def check_structs(self):
         structs = getattr(self.program, "structs", None) or []
@@ -63,13 +99,16 @@ class Checker:
                 seen.add(fname)
                 fields[fname] = ftype
             self.structs[sd.name] = fields
+            self.struct_params[sd.name] = list(getattr(sd, "type_params", None) or [])
         # Validate field types now that all struct names are known, and
         # reject recursive structs (C value fields cannot be recursive).
         for sd in structs:
+            self.current_type_params = list(getattr(sd, "type_params", None) or [])
             for fname, ftype in sd.fields:
                 if not self.valid_type(ftype):
                     raise ForgeError(f"unknown field type '{ftype}' in struct '{sd.name}'",
                                      sd.line, sd.col)
+            self.current_type_params = []
             # Cycle check: follow struct-typed fields.
             stack = [sd.name]
             visited = set()
@@ -101,7 +140,8 @@ class Checker:
     def check(self):
         self.check_structs()
         self.check_enums()
-        for fn in self.program.funcs:
+        original_funcs = list(self.program.funcs)
+        for fn in original_funcs:
             if fn.name in self.funcs:
                 raise ForgeError(f"duplicate function '{fn.name}'", fn.line, fn.col)
             if fn.name in BUILTINS:
@@ -114,27 +154,90 @@ class Checker:
             raise ForgeError("fn main() must take no arguments", main.line, main.col)
         if main.ret not in ("int", "void"):
             raise ForgeError("fn main() must return int or nothing", main.line, main.col)
-        for fn in self.program.funcs:
+        for fn in original_funcs:
             self.check_func(fn)
+        # Append every generic instantiation found during checking, so
+        # infer/codegen see them as ordinary concrete functions/structs.
+        for inst in self.func_instantiations.values():
+            if inst not in self.program.funcs:
+                self.program.funcs.append(inst)
+        for ctype, fields in self.struct_instantiations.items():
+            from . import ast_nodes as _A
+            self.program.structs.append(
+                _A.StructDef(mangle_type(ctype), list(fields.items()), 0, 0))
+        return self.program
+
+    def instantiate_func(self, fn, bindings, call_line, call_col):
+        """Check a concrete copy of a generic function; return it."""
+        key = (fn.name, tuple(bindings[p] for p in (fn.type_params or [])))
+        if key in self.func_instantiations:
+            return self.func_instantiations[key]
+        if key in self._instantiating:
+            # Recursive call with the same instantiation: the copy is
+            # being checked; its return type is already known.
+            return None
+        mangled = fn.name + "_" + "_".join(mangle_type(bindings[p]) for p in (fn.type_params or []))
+        spec = copy.deepcopy(fn)
+        spec.name = mangled
+        spec.type_params = []
+        spec.params = [(n, substitute_type(t, bindings)) for n, t in fn.params]
+        spec.ret = substitute_type(fn.ret, bindings)
+        self._substitute_let_ann(spec.body, bindings)
+        self.func_instantiations[key] = spec
+        self._instantiating.add(key)
+        try:
+            self.check_func(spec)
+        finally:
+            self._instantiating.discard(key)
+        return spec
+
+    def _substitute_let_ann(self, block, bindings):
+        for stmt in block.stmts:
+            if isinstance(stmt, A.Let) and stmt.ann:
+                stmt.ann = substitute_type(stmt.ann, bindings)
+            elif isinstance(stmt, A.Block):
+                self._substitute_let_ann(stmt, bindings)
+            elif isinstance(stmt, A.If):
+                self._substitute_let_ann(stmt.then, bindings)
+                if stmt.els is not None:
+                    self._substitute_let_ann(stmt.els, bindings)
+            elif isinstance(stmt, A.While):
+                self._substitute_let_ann(stmt.body, bindings)
+            elif isinstance(stmt, A.For):
+                self._substitute_let_ann(stmt.body, bindings)
+            elif isinstance(stmt, A.Match):
+                for _pat, body in stmt.arms:
+                    self._substitute_let_ann(body, bindings)
 
     def check_func(self, fn):
-        for _, pt in fn.params:
-            if not self.valid_type(pt) or pt == "void":
-                raise ForgeError(f"parameter type '{pt}' is not a value type", fn.line, fn.col)
-        if not self.valid_type(fn.ret):
-            raise ForgeError(f"unknown return type '{fn.ret}'", fn.line, fn.col)
-        if getattr(fn, "is_extern", False):
-            # No body to check; the C function must exist at link time.
-            return
-        self.current_ret = fn.ret
-        self.current_fn = fn
-        self.scopes = [{n: (t, False) for n, t in fn.params}]
-        self.check_block(fn.body)
-        self.scopes = []
-        if fn.ret != "void":
-            if not fn.body.stmts or not isinstance(fn.body.stmts[-1], A.Return):
-                raise ForgeError(f"function '{fn.name}' returns {fn.ret} but its body "
-                                 f"does not end with a return", fn.line, fn.col)
+        # Save outer state: checking a generic instantiation can happen
+        # in the middle of checking another function (a call site), and
+        # must not wipe that function's scopes/return type.
+        saved = (self.scopes, self.current_ret, self.current_fn, self.current_type_params)
+        try:
+            self.current_type_params = list(getattr(fn, "type_params", None) or [])
+            for _, pt in fn.params:
+                if not self.valid_type(pt) or pt == "void":
+                    raise ForgeError(f"parameter type '{pt}' is not a value type", fn.line, fn.col)
+            if not self.valid_type(fn.ret):
+                raise ForgeError(f"unknown return type '{fn.ret}'", fn.line, fn.col)
+            if getattr(fn, "is_extern", False):
+                # No body to check; the C function must exist at link time.
+                return
+            if self.current_type_params:
+                # Generic template: body is checked only on instantiation,
+                # when every type parameter is concrete.
+                return
+            self.current_ret = fn.ret
+            self.current_fn = fn
+            self.scopes = [{n: (t, False) for n, t in fn.params}]
+            self.check_block(fn.body)
+            if fn.ret != "void":
+                if not fn.body.stmts or not isinstance(fn.body.stmts[-1], A.Return):
+                    raise ForgeError(f"function '{fn.name}' returns {fn.ret} but its body "
+                                     f"does not end with a return", fn.line, fn.col)
+        finally:
+            self.scopes, self.current_ret, self.current_fn, self.current_type_params = saved
 
     def lookup(self, name, line, col):
         for scope in reversed(self.scopes):
@@ -380,20 +483,48 @@ class Checker:
         if isinstance(expr, A.StructLit):
             if expr.name not in self.structs:
                 raise ForgeError(f"undefined struct '{expr.name}'", expr.line, expr.col)
-            fields = self.structs[expr.name]
+            template_fields = self.structs[expr.name]
+            params = self.struct_params.get(expr.name, [])
             provided = {}
             for fname, fexpr in expr.fields:
-                if fname not in fields:
+                if fname not in template_fields:
                     raise ForgeError(f"struct '{expr.name}' has no field '{fname}'",
                                      expr.line, expr.col)
                 if fname in provided:
                     raise ForgeError(f"duplicate field '{fname}' in struct literal",
                                      expr.line, expr.col)
                 provided[fname] = self.check_expr(fexpr)
-            missing = [f for f in fields if f not in provided]
+            missing = [f for f in template_fields if f not in provided]
             if missing:
                 raise ForgeError(f"struct literal '{expr.name}' is missing field(s): "
                                  f"{', '.join(missing)}", expr.line, expr.col)
+            if params:
+                # Infer the concrete type from the field values.
+                bindings = {}
+                for fname, ftype in template_fields.items():
+                    if not unify(ftype, provided[fname], bindings, params):
+                        raise ForgeError(f"field '{fname}' of '{expr.name}' must match {ftype}, "
+                                         f"got {provided[fname]}", expr.line, expr.col)
+                missing_p = [p for p in params if p not in bindings]
+                if missing_p:
+                    raise ForgeError(f"could not infer type parameter(s) {', '.join(missing_p)} "
+                                     f"for struct '{expr.name}'", expr.line, expr.col)
+                concrete = expr.name + "<" + ", ".join(bindings[p] for p in params) + ">"
+                fields = {f: substitute_type(ft, bindings) for f, ft in template_fields.items()}
+                self.struct_instantiations[concrete] = fields
+                expr.concrete_type = concrete
+                # Re-check field types against the concrete fields
+                # (unify already ensured the type-param fields match;
+                # concrete fields must match exactly, except empty arrays).
+                for fname, ftype in fields.items():
+                    if provided[fname] != ftype:
+                        fexpr = dict(expr.fields)[fname]
+                        if not (isinstance(fexpr, A.ArrayLit) and not fexpr.elems
+                                and ftype.startswith("[")):
+                            raise ForgeError(f"field '{fname}' of '{expr.name}' must be {ftype}, "
+                                             f"got {provided[fname]}", expr.line, expr.col)
+                return concrete
+            fields = template_fields
             for fname, ftype in fields.items():
                 if provided[fname] != ftype:
                     # Empty array literal, like in let, takes the field type.
@@ -402,16 +533,18 @@ class Checker:
                             and ftype.startswith("[")):
                         raise ForgeError(f"field '{fname}' of '{expr.name}' must be {ftype}, "
                                          f"got {provided[fname]}", expr.line, expr.col)
+            expr.concrete_type = expr.name
             return expr.name
         if isinstance(expr, A.FieldAccess):
             bt = self.check_expr(expr.base)
-            if bt not in self.structs:
+            fields = self.struct_fields_for(bt)
+            if fields is None:
                 raise ForgeError(f"cannot access a field on a non-struct value of type {bt}",
                                  expr.line, expr.col)
-            if expr.field not in self.structs[bt]:
+            if expr.field not in fields:
                 raise ForgeError(f"struct '{bt}' has no field '{expr.field}'",
                                  expr.line, expr.col)
-            return self.structs[bt][expr.field]
+            return fields[expr.field]
         if isinstance(expr, A.Index):
             bt = self.check_expr(expr.base)
             et = elem_type(bt)
@@ -550,6 +683,46 @@ class Checker:
         if len(call.args) != len(fn.params):
             raise ForgeError(f"'{call.name}' takes {len(fn.params)} argument(s), "
                              f"got {len(call.args)}", call.line, call.col)
+        if getattr(fn, "type_params", None):
+            # Generic call: infer bindings from argument types, then
+            # check the concrete copy and rewrite this call to it.
+            type_params = fn.type_params
+            if self.current_type_params:
+                # The caller itself is generic (its body is only
+                # checked on instantiation, so this call will be
+                # re-checked then with concrete types).
+                arg_types = [self.check_expr(a) for a in call.args]
+                bindings = {}
+                ok = True
+                for (pn, pt), t in zip(fn.params, arg_types):
+                    if not unify(pt, t, bindings, type_params):
+                        ok = False
+                if not ok:
+                    raise ForgeError(f"argument types do not match generic function '{call.name}'",
+                                     call.line, call.col)
+                # Return the substituted return type for template checking;
+                # the concrete call is resolved when the caller is instantiated.
+                return substitute_type(fn.ret, bindings)
+            arg_types = [self.check_expr(a) for a in call.args]
+            for t in arg_types:
+                if contains_type_param(t, self.current_type_params):
+                    raise ForgeError("generic function cannot be called with an abstract type",
+                                     call.line, call.col)
+            bindings = {}
+            for (pn, pt), t in zip(fn.params, arg_types):
+                if not unify(pt, t, bindings, type_params):
+                    raise ForgeError(f"argument '{pn}' of '{call.name}' must match {pt}, got {t}",
+                                     call.line, call.col)
+            missing = [p for p in type_params if p not in bindings]
+            if missing:
+                raise ForgeError(f"could not infer type parameter(s) {', '.join(missing)} "
+                                 f"for '{call.name}'", call.line, call.col)
+            spec = self.instantiate_func(fn, bindings, call.line, call.col)
+            if spec is not None:
+                call.name = spec.name
+                return spec.ret
+            # Recursive instantiation in progress: return substituted ret.
+            return substitute_type(fn.ret, bindings)
         for arg, (pn, pt) in zip(call.args, fn.params):
             t = self.check_expr(arg)
             if t != pt:

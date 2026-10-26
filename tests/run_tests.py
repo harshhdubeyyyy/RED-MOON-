@@ -48,6 +48,11 @@ def main():
     # Map + JSON stdlib.
     expect("examples/map_json_demo.fg",
            "apples = 7\nhas pears = false\ncity = Gorakhpur\n")
+    # Generics + Option/Result + tiny DB.
+    expect("examples/generics_demo.fg", "42 hi 1.5 7 seven\n")
+    expect("examples/option_result_demo.fg",
+           "opt = 42\nnone = 99\ndiv = 5\nerror = division by zero\n")
+    expect("examples/db_demo.fg", "user = jayant\nlang = Forge\n")
     expect("examples/ecosystem/word_stats.fg",
            "words = 8\nlines = 4\nmean line length = 10.25\n"
            "median line length = 12\n")

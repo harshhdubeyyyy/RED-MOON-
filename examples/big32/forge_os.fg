@@ -1,0 +1,22 @@
+fn app_sum() -> int {
+    let mut total: int = 0;
+    let mut i: int = 1;
+    while i <= 10 {
+        total = total + i;
+        i = i + 1;
+    }
+    return total;
+}
+
+fn app_mul() -> int {
+    return 6 * 7;
+}
+
+fn main() -> int {
+    println("forge OS on big32");
+    println("boot ok");
+    println("app_sum =", app_sum());
+    println("app_mul =", app_mul());
+    println("done");
+    return 0;
+}

@@ -15,6 +15,9 @@ Commands (run from the package directory):
   forge pkg list            show name, version, dependencies
   forge pkg lock            write forge.lock with sha256 of vendor files
   forge pkg verify          check vendor files against forge.lock
+  forge pkg publish         copy this package into the local registry
+  forge pkg add name@ver    vendor a package from the local registry
+                            (registry dir: $FORGE_REGISTRY or ~/.forge_registry)
 
 Dependencies are vendored, Go-style, not downloaded: `forge pkg add`
 copies files, so a build never needs the network or a registry.
@@ -33,6 +36,10 @@ import sys
 
 from .errors import ForgeError
 from .compiler import build as forge_build
+
+
+def registry_dir():
+    return os.environ.get("FORGE_REGISTRY") or os.path.expanduser("~/.forge_registry")
 
 
 def read_manifest(cwd):
@@ -125,6 +132,39 @@ def cmd_add(cwd, src_path):
     return 0
 
 
+def cmd_publish(cwd):
+    _mp, _text, pkg, _deps = read_manifest(cwd)
+    name = pkg.get("name")
+    version = pkg.get("version", "0.1.0")
+    if not name:
+        print("forge pkg: package has no name", file=sys.stderr)
+        return 1
+    dest = os.path.join(registry_dir(), name, version)
+    os.makedirs(os.path.join(dest, "src"), exist_ok=True)
+    src_dir = os.path.join(cwd, "src")
+    copied = []
+    for fn in sorted(os.listdir(src_dir)):
+        if fn.endswith(".fg") and fn != "main.fg":
+            shutil.copy2(os.path.join(src_dir, fn), os.path.join(dest, "src", fn))
+            copied.append(fn)
+    shutil.copy2(os.path.join(cwd, "forge.toml"), os.path.join(dest, "forge.toml"))
+    print(f"published {name}@{version} to {dest} ({', '.join(copied)})")
+    return 0
+
+
+def cmd_add_registry(cwd, spec):
+    name, _, version = spec.partition("@")
+    if not name or not version:
+        print("usage: forge pkg add name@version", file=sys.stderr)
+        return 1
+    src = os.path.join(registry_dir(), name, version)
+    if not os.path.isdir(src):
+        print(f"forge pkg: {name}@{version} not in registry {registry_dir()}",
+              file=sys.stderr)
+        return 1
+    return cmd_add(cwd, src)
+
+
 def _build(cwd, mode):
     _mp, _text, pkg, _deps = read_manifest(cwd)
     name = pkg.get("name", "app")
@@ -155,9 +195,13 @@ def dispatch(argv, forge_path, cwd):
             return cmd_init(cwd, rest[0] if rest else None)
         if cmd == "add":
             if not rest:
-                print("usage: forge pkg add <path-to-package>", file=sys.stderr)
+                print("usage: forge pkg add <path-to-package> or <name@version>", file=sys.stderr)
                 return 1
+            if "@" in rest[0] and not os.path.exists(rest[0]):
+                return cmd_add_registry(cwd, rest[0])
             return cmd_add(cwd, rest[0])
+        if cmd == "publish":
+            return cmd_publish(cwd)
         if cmd == "build":
             mode = "safe"
             if "--mode" in rest:

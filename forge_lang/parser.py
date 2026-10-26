@@ -134,9 +134,25 @@ class Parser:
         return A.FuncDef(name.value, params, ret, A.Block([]),
                          kw.line, kw.col, is_extern=True)
 
+    def parse_type_params(self):
+        """Parse <T, U> after a fn/struct name; return [] if absent."""
+        if not self.at_op("<"):
+            return []
+        self.next()
+        params = []
+        while True:
+            params.append(self.expect_ident().value)
+            if self.at_op(","):
+                self.next()
+                continue
+            break
+        self.expect_op(">")
+        return params
+
     def parse_struct(self):
         kw = self.expect_kw("struct")
         name = self.expect_ident()
+        type_params = self.parse_type_params()
         self.expect_op("{")
         fields = []
         while not self.at_op("}"):
@@ -154,7 +170,7 @@ class Parser:
             raise ForgeError("expected ',' or ';' between struct fields",
                              self.peek().line, self.peek().col)
         self.expect_op("}")
-        return A.StructDef(name.value, fields, kw.line, kw.col)
+        return A.StructDef(name.value, fields, kw.line, kw.col, type_params)
 
     def parse_type(self):
         if self.at_op("["):
@@ -162,11 +178,24 @@ class Parser:
             inner = self.parse_type()
             self.expect_op("]")
             return f"[{inner}]"
-        return self.expect_ident().value
+        name = self.expect_ident().value
+        if self.at_op("<"):
+            self.next()
+            args = []
+            while True:
+                args.append(self.parse_type())
+                if self.at_op(","):
+                    self.next()
+                    continue
+                break
+            self.expect_op(">")
+            return f"{name}<{', '.join(args)}>"
+        return name
 
     def parse_func(self):
         kw = self.expect_kw("fn")
         name = self.expect_ident()
+        type_params = self.parse_type_params()
         self.expect_op("(")
         params = []
         if not self.at_op(")"):
@@ -185,7 +214,8 @@ class Parser:
             self.next()
             ret = self.parse_type()
         body = self.parse_block()
-        return A.FuncDef(name.value, params, ret, body, kw.line, kw.col)
+        return A.FuncDef(name.value, params, ret, body, kw.line, kw.col,
+                         type_params=type_params)
 
     def parse_block(self):
         self.expect_op("{")

@@ -32,6 +32,8 @@ HEADER = r"""#include <stdio.h>
 #include <sys/socket.h>
 #include <netdb.h>
 #include <unistd.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
 #include <time.h>
 
 typedef struct { long long *data; long long len; long long cap; } ForgeIntArray;
@@ -229,9 +231,66 @@ static void forge_join_threads(void) {
     forge_thread_count = 0;
 }
 
+static char *forge_https_get(const char *url) {
+    // https://host[:port]/path, with certificate verification on.
+    const char *rest = url + 8;
+    const char *slash = strchr(rest, '/');
+    char hostport[256];
+    const char *path = "/";
+    if (slash) {
+        size_t hl = (size_t)(slash - rest);
+        if (hl >= sizeof(hostport)) forge_fail("https_get: host too long");
+        memcpy(hostport, rest, hl); hostport[hl] = '\0';
+        path = slash;
+    } else {
+        if (strlen(rest) >= sizeof(hostport)) forge_fail("https_get: host too long");
+        strcpy(hostport, rest);
+    }
+    char host[256]; char portstr[16] = "443";
+    char *colon = strchr(hostport, ':');
+    if (colon) { size_t hl = (size_t)(colon - hostport); memcpy(host, hostport, hl); host[hl] = '\0'; strcpy(portstr, colon + 1); }
+    else strcpy(host, hostport);
+    struct addrinfo hints; memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC; hints.ai_socktype = SOCK_STREAM;
+    struct addrinfo *res = NULL;
+    if (getaddrinfo(host, portstr, &hints, &res) != 0) forge_fail("https_get: cannot resolve host");
+    int sock = -1;
+    for (struct addrinfo *ai = res; ai != NULL; ai = ai->ai_next) {
+        sock = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+        if (sock < 0) continue;
+        if (connect(sock, ai->ai_addr, ai->ai_addrlen) == 0) break;
+        close(sock); sock = -1;
+    }
+    freeaddrinfo(res);
+    if (sock < 0) forge_fail("https_get: cannot connect");
+    SSL_CTX *ctx = SSL_CTX_new(TLS_client_method());
+    if (!ctx) { close(sock); forge_fail("https_get: cannot create SSL context"); }
+    SSL_CTX_set_default_verify_paths(ctx);
+    SSL *ssl = SSL_new(ctx);
+    SSL_set_tlsext_host_name(ssl, host);
+    SSL_set_fd(ssl, sock);
+    if (SSL_connect(ssl) != 1) { SSL_free(ssl); SSL_CTX_free(ctx); close(sock); forge_fail("https_get: TLS handshake failed"); }
+    if (SSL_get_verify_result(ssl) != X509_V_OK) { SSL_free(ssl); SSL_CTX_free(ctx); close(sock); forge_fail("https_get: certificate verification failed"); }
+    char req[1024];
+    snprintf(req, sizeof(req), "GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n", path, host);
+    SSL_write(ssl, req, (int)strlen(req));
+    size_t cap = 8192, len = 0;
+    char *buf = (char *)malloc(cap);
+    int got;
+    while ((got = SSL_read(ssl, buf + len, (int)(cap - len - 1))) > 0) {
+        len += (size_t)got;
+        if (len + 1024 >= cap) { cap *= 2; buf = (char *)realloc(buf, cap); }
+    }
+    SSL_free(ssl); SSL_CTX_free(ctx); close(sock);
+    buf[len] = '\0';
+    char *sep = strstr(buf, "\r\n\r\n");
+    if (!sep) forge_fail("https_get: bad HTTP response");
+    return forge_copy_str(sep + 4);
+}
+
 static char *forge_http_get(const char *url) {
-    // HTTP only (no TLS): http://host[:port]/path . HTTPS fails cleanly.
-    if (strncmp(url, "http://", 7) != 0) forge_fail("http_get: only http:// URLs are supported (no TLS yet)");
+    if (strncmp(url, "https://", 8) == 0) return forge_https_get(url);
+    if (strncmp(url, "http://", 7) != 0) forge_fail("http_get: URL must start with http:// or https://");
     const char *rest = url + 7;
     const char *slash = strchr(rest, '/');
     char hostport[256];
@@ -253,10 +312,15 @@ static char *forge_http_get(const char *url) {
     hints.ai_family = AF_UNSPEC; hints.ai_socktype = SOCK_STREAM;
     struct addrinfo *res = NULL;
     if (getaddrinfo(host, portstr, &hints, &res) != 0) forge_fail("http_get: cannot resolve host");
-    int sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
-    if (sock < 0) { freeaddrinfo(res); forge_fail("http_get: cannot create socket"); }
-    if (connect(sock, res->ai_addr, res->ai_addrlen) != 0) { close(sock); freeaddrinfo(res); forge_fail("http_get: cannot connect"); }
+    int sock = -1;
+    for (struct addrinfo *ai = res; ai != NULL; ai = ai->ai_next) {
+        sock = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+        if (sock < 0) continue;
+        if (connect(sock, ai->ai_addr, ai->ai_addrlen) == 0) break;
+        close(sock); sock = -1;
+    }
     freeaddrinfo(res);
+    if (sock < 0) forge_fail("http_get: cannot connect");
     char req[1024];
     snprintf(req, sizeof(req), "GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n", path, host);
     if (send(sock, req, strlen(req), 0) < 0) { close(sock); forge_fail("http_get: send failed"); }
@@ -284,6 +348,10 @@ def c_type(t):
         inner = t[1:-1]
         if inner in ARRAY_STRUCT:
             return ARRAY_STRUCT[inner]
+    # Generic struct types use their mangled concrete name.
+    if "<" in t:
+        from .generics import mangle_type
+        return mangle_type(t)
     # Struct types use their typedef name directly.
     return t
 
@@ -329,6 +397,15 @@ class Codegen:
 
     def generate(self):
         self.lines.append(HEADER)
+        # Skip generic templates: only concrete structs are emitted.
+        # self.structs is built from program.structs, which includes
+        # templates; rebuild it from concrete structs only.
+        concrete_structs = {}
+        for sd in (getattr(self.program, "structs", None) or []):
+            if getattr(sd, "type_params", None):
+                continue
+            concrete_structs[sd.name] = dict(sd.fields)
+        self.structs = concrete_structs
         for name in self.structs:
             self.emit(f"typedef struct {name} {name};")
         for name, fields in self.structs.items():
@@ -343,6 +420,8 @@ class Codegen:
         if self.enums:
             self.lines.append("")
         for fn in self.program.funcs:
+            if getattr(fn, "type_params", None):
+                continue
             if fn.name != "main":
                 sig = self.c_sig_extern(fn) if getattr(fn, "is_extern", False) else self.c_sig(fn)
                 self.emit(f"{sig};")
@@ -350,6 +429,8 @@ class Codegen:
         # Thread wrappers for every spawned function (collected once).
         spawns = []
         for fn in self.program.funcs:
+            if getattr(fn, "type_params", None):
+                continue
             if not getattr(fn, "is_extern", False):
                 self.collect_spawns(fn.body, spawns)
         seen_wrappers = set()
@@ -368,6 +449,8 @@ class Codegen:
         if seen_wrappers:
             self.lines.append("")
         for fn in self.program.funcs:
+            if getattr(fn, "type_params", None):
+                continue
             if getattr(fn, "is_extern", False):
                 continue
             self.gen_func(fn)
@@ -624,14 +707,16 @@ class Codegen:
         if isinstance(expr, A.Var):
             return expr.name
         if isinstance(expr, A.StructLit):
-            fields = self.structs.get(expr.name, {})
+            concrete = getattr(expr, "concrete_type", None) or expr.name
+            cname = c_type(concrete)
+            fields = self.structs.get(cname, self.structs.get(expr.name, {}))
             parts = []
             for fname, fexpr in expr.fields:
                 code = self.gen_expr(fexpr)
                 if fields.get(fname) == "str":
                     code = f"forge_copy_str({code})"
                 parts.append(f".{fname} = {code}")
-            return f"({expr.name}){{ {', '.join(parts)} }}"
+            return f"({cname}){{ {', '.join(parts)} }}"
         if isinstance(expr, A.FieldAccess):
             base = self.gen_expr(expr.base)
             return f"({base}).{expr.field}"

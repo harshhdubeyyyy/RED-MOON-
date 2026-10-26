@@ -60,6 +60,15 @@ def compile_file(path, mode="safe"):
     return generate(program, types, mode=mode), program
 
 
+def compile_file_rv(path):
+    """Forge source -> big32 RISC-V assembly (no C, no x86)."""
+    from .codegen_rv import generate_rv
+    program = load_program(path)
+    check(program)
+    types = infer_types(program)
+    return generate_rv(program, types), program
+
+
 def _cc_flags(mode):
     # The generated header defines every builtin helper; unused ones
     # are expected, so silence that one warning (other -Wall warnings
@@ -82,8 +91,14 @@ def build(source_path, output_path, mode="safe", keep_c=None):
             f.write(c_source)
         cleanup = True
     try:
-        result = subprocess.run(_cc_flags(mode) + ["-o", output_path, c_path, "-lm"],
+        # HTTPS needs OpenSSL; if the machine lacks libssl, retry
+        # without it (programs that never call http_get still link,
+        # because the unused SSL helper is optimised away).
+        result = subprocess.run(_cc_flags(mode) + ["-o", output_path, c_path, "-lm", "-lssl", "-lcrypto"],
                                 capture_output=True, text=True)
+        if result.returncode != 0 and "cannot find -lssl" in result.stderr:
+            result = subprocess.run(_cc_flags(mode) + ["-o", output_path, c_path, "-lm"],
+                                    capture_output=True, text=True)
         if result.returncode != 0:
             raise ForgeError(f"C compiler failed:\n{result.stderr}")
         if result.stderr.strip():

@@ -1,0 +1,22 @@
+struct Pair<T, U> {
+    first: T;
+    second: U;
+}
+
+fn identity<T>(x: T) -> T {
+    return x;
+}
+
+fn first<T>(xs: [T]) -> T {
+    return xs[0];
+}
+
+fn main() -> int {
+    let a: int = identity(42);
+    let b: str = identity("hi");
+    let xs: [float] = [1.5, 2.5];
+    let f: float = first(xs);
+    let p: Pair<int, str> = Pair { first: 7, second: "seven" };
+    println(a, b, f, p.first, p.second);
+    return 0;
+}

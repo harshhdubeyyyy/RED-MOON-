@@ -1,0 +1,12 @@
+import "db.fg";
+
+fn main() -> int {
+    let mut d: MapStrStr = db_new();
+    d = db_put(d, "user", "jayant");
+    d = db_put(d, "lang", "Forge");
+    let text: str = db_serialize(d);
+    let back: MapStrStr = db_parse(text);
+    println("user =", db_get(back, "user", "?"));
+    println("lang =", db_get(back, "lang", "?"));
+    return 0;
+}
