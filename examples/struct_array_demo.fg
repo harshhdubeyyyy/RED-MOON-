@@ -1,0 +1,25 @@
+struct Point {
+    x: int;
+    y: int;
+    name: str;
+}
+
+fn main() -> int {
+    let mut pts: [Point] = [Point { x: 1, y: 2, name: "a" }, Point { x: 3, y: 4, name: "b" }];
+    println("count =", len(pts));
+    println("second =", pts[1].x, pts[1].y, pts[1].name);
+    let mut sx = 0;
+    let mut sy = 0;
+    for p in pts {
+        sx = sx + p.x;
+        sy = sy + p.y;
+    }
+    println("sums =", sx, sy);
+    push(pts, Point { x: 5, y: 6, name: "c" });
+    println("after push =", len(pts), pts[2].name);
+    pts[0] = Point { x: 10, y: 20, name: "z" };
+    println("after set =", pts[0].x, pts[0].name);
+    let q = pts[1];
+    println("copy =", q.x, q.y, q.name);
+    return 0;
+}

@@ -1,0 +1,6 @@
+[package]
+name = "cooking"
+version = "0.1.0"
+description = "Kitchen volume conversions and recipe scaling."
+
+[dependencies]

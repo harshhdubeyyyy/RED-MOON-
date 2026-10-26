@@ -1,0 +1,19 @@
+fn inner_worker() {
+    println("inner done");
+}
+
+fn outer_worker() {
+    println("outer done");
+}
+
+fn main() -> int {
+    scope {
+        scope {
+            spawn inner_worker();
+        }
+        println("inner joined");
+        spawn outer_worker();
+    }
+    println("outer joined");
+    return 0;
+}

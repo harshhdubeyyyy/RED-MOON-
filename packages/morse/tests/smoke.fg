@@ -1,0 +1,5 @@
+import "../src/morse.fg";
+fn main() -> int {
+    println("smoke: sos =", morse_encode("sos"));
+    return 0;
+}

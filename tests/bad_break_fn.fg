@@ -1,0 +1,13 @@
+fn helper() -> int {
+    break;
+    return 0;
+}
+
+fn main() -> int {
+    let mut i = 0;
+    while i < 3 {
+        let x = helper();
+        i = i + 1;
+    }
+    return 0;
+}

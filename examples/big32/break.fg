@@ -1,0 +1,13 @@
+fn main() -> int {
+    let mut i = 0;
+    let mut total = 0;
+    while true {
+        if i == 5 {
+            break;
+        }
+        total = total + i;
+        i = i + 1;
+    }
+    println("total =", total);
+    return 0;
+}

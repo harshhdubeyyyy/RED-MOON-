@@ -1,0 +1,24 @@
+import "polynomials.fg";
+fn approx(a: float, b: float, tol: float) -> bool {
+    let mut d: float = a - b;
+    if d < 0.0 { d = 0.0 - d; }
+    return d < tol;
+}
+fn main() -> int {
+    let mut bad: int = 0;
+    if !approx(poly_eval([1.0, 2.0, 3.0], 2.0), 17.0, 0.000001) { println("FAIL eval"); bad = 1; }
+    let s: [float] = poly_add([1.0, 2.0], [3.0, 4.0, 5.0]);
+    if !approx(s[0], 4.0, 0.000001) { println("FAIL add 0"); bad = 1; }
+    if !approx(s[1], 6.0, 0.000001) { println("FAIL add 1"); bad = 1; }
+    if !approx(s[2], 5.0, 0.000001) { println("FAIL add 2"); bad = 1; }
+    let m: [float] = poly_mul([1.0, 2.0], [3.0, 4.0]);
+    if !approx(m[0], 3.0, 0.000001) { println("FAIL mul 0"); bad = 1; }
+    if !approx(m[1], 10.0, 0.000001) { println("FAIL mul 1"); bad = 1; }
+    if !approx(m[2], 8.0, 0.000001) { println("FAIL mul 2"); bad = 1; }
+    let d: [float] = poly_deriv([3.0, 2.0, 1.0]);
+    if !approx(d[0], 2.0, 0.000001) { println("FAIL deriv 0"); bad = 1; }
+    if !approx(d[1], 2.0, 0.000001) { println("FAIL deriv 1"); bad = 1; }
+    println("polynomials demo: p(2) for [1,2,3] =", poly_eval([1.0, 2.0, 3.0], 2.0));
+    if bad == 0 { println("polynomials demo ok"); }
+    return bad;
+}

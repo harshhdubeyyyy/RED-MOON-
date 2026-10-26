@@ -1,0 +1,15 @@
+fn sub2(n: int) -> int {
+    if n < 2 { return n; }
+    return n - 1;
+}
+fn divpos(n: int) -> int {
+    if n > 0 { return 10 / n; }
+    return 0;
+}
+fn main() -> int {
+    println("s =", sub2(10));
+    println("t =", sub2(1));
+    println("d =", divpos(2));
+    println("e =", divpos(0));
+    return 0;
+}

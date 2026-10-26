@@ -1,0 +1,5 @@
+import "../src/primes.fg";
+fn main() -> int {
+    println("smoke: is 17 prime =", is_prime(17));
+    return 0;
+}

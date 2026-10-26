@@ -1,0 +1,18 @@
+import "cooking.fg";
+fn approx(a: float, b: float, tol: float) -> bool {
+    let mut d: float = a - b;
+    if d < 0.0 { d = 0.0 - d; }
+    return d < tol;
+}
+fn main() -> int {
+    let mut bad: int = 0;
+    if !approx(tsp_to_ml(3.0), 15.0, 0.000001) { println("FAIL tsp"); bad = 1; }
+    if !approx(tbsp_to_ml(2.0), 30.0, 0.000001) { println("FAIL tbsp"); bad = 1; }
+    if !approx(cup_to_ml(1.5), 360.0, 0.000001) { println("FAIL cup"); bad = 1; }
+    if !approx(ml_to_tsp(15.0), 3.0, 0.000001) { println("FAIL ml tsp"); bad = 1; }
+    if !approx(ml_to_cup(480.0), 2.0, 0.000001) { println("FAIL ml cup"); bad = 1; }
+    if !approx(scale_qty(200.0, 4.0, 6.0), 300.0, 0.000001) { println("FAIL scale"); bad = 1; }
+    println("cooking demo: 3 tsp =", tsp_to_ml(3.0), "ml");
+    if bad == 0 { println("cooking demo ok"); }
+    return bad;
+}

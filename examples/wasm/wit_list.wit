@@ -1,0 +1,3 @@
+world demo {
+    export total: func(xs: list<s64>) -> s64;
+}

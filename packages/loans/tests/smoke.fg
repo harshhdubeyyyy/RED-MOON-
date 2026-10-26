@@ -1,0 +1,5 @@
+import "../src/loans.fg";
+fn main() -> int {
+    println("smoke: EMI for 10000 at 12% over 12 months =", emi(10000.0, 12.0, 12));
+    return 0;
+}

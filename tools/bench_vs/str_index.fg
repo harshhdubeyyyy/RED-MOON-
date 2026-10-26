@@ -1,0 +1,22 @@
+fn main() -> int {
+    let mut text: str = "";
+    let mut b: int = 0;
+    while b < 100 {
+        text = text + "abcdefghij";
+        b = b + 1;
+    }
+    let start: int = clock_micros();
+    let mut total: int = 0;
+    let mut rep: int = 0;
+    while rep < 10000 {
+        let mut j: int = 0;
+        while j < 1000 {
+            if text[j] == "a" { total = total + 1; }
+            j = j + 1;
+        }
+        rep = rep + 1;
+    }
+    let elapsed: int = clock_micros() - start;
+    println("count =", total, "us =", elapsed);
+    return 0;
+}

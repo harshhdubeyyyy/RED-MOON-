@@ -1,0 +1,6 @@
+[package]
+name = "percentages"
+version = "0.1.0"
+description = "Everyday percent math: percent of, change, discount, markup, margin, tip."
+
+[dependencies]

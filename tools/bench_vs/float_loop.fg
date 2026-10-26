@@ -1,0 +1,12 @@
+fn main() -> int {
+    let start: int = clock_micros();
+    let mut x: float = 1.0;
+    let mut i: int = 0;
+    while i < 10000000 {
+        x = x * 1.0000001 + 0.0000001;
+        i = i + 1;
+    }
+    let elapsed: int = clock_micros() - start;
+    println("x =", x, "us =", elapsed);
+    return 0;
+}

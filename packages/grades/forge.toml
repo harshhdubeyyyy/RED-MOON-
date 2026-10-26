@@ -1,0 +1,6 @@
+[package]
+name = "grades"
+version = "0.1.0"
+description = "Letter grades, grade points, GPA."
+
+[dependencies]

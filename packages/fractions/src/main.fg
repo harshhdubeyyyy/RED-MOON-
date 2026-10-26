@@ -1,0 +1,29 @@
+import "fractions.fg";
+fn approx(a: float, b: float, tol: float) -> bool {
+    let mut d: float = a - b;
+    if d < 0.0 { d = 0.0 - d; }
+    return d < tol;
+}
+fn main() -> int {
+    let mut bad: int = 0;
+    let s: Fraction = frac_add(frac(1, 2), frac(1, 3));
+    if s.num != 5 { println("FAIL add num"); bad = 1; }
+    if s.den != 6 { println("FAIL add den"); bad = 1; }
+    let d: Fraction = frac_sub(frac(3, 4), frac(1, 4));
+    if d.num != 1 { println("FAIL sub num"); bad = 1; }
+    if d.den != 2 { println("FAIL sub den"); bad = 1; }
+    let m: Fraction = frac_mul(frac(2, 3), frac(3, 4));
+    if m.num != 1 { println("FAIL mul num"); bad = 1; }
+    if m.den != 2 { println("FAIL mul den"); bad = 1; }
+    let q: Fraction = frac_div(frac(1, 2), frac(1, 4));
+    if q.num != 2 { println("FAIL div num"); bad = 1; }
+    if q.den != 1 { println("FAIL div den"); bad = 1; }
+    if !approx(frac_to_float(frac(1, 4)), 0.25, 0.000001) { println("FAIL to float"); bad = 1; }
+    let r: Fraction = frac_reduce(frac(4, 8));
+    if r.num != 1 { println("FAIL reduce num"); bad = 1; }
+    if r.den != 2 { println("FAIL reduce den"); bad = 1; }
+    if !frac_equal(frac(1, 2), frac(2, 4)) { println("FAIL equal"); bad = 1; }
+    println("fractions demo: 1/2 + 1/3 =", s.num, "/", s.den);
+    if bad == 0 { println("fractions demo ok"); }
+    return bad;
+}

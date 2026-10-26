@@ -1,0 +1,13 @@
+import "morse.fg";
+fn main() -> int {
+    let mut bad: int = 0;
+    if morse_encode("sos") != "... --- ..." { println("FAIL encode sos"); bad = 1; }
+    if morse_encode("hi") != ".... .." { println("FAIL encode hi"); bad = 1; }
+    if morse_decode("... --- ...") != "sos" { println("FAIL decode sos"); bad = 1; }
+    if morse_of("a") != ".-" { println("FAIL morse_of a"); bad = 1; }
+    if morse_of("1") != ".----" { println("FAIL morse_of 1"); bad = 1; }
+    if morse_encode("a b") != ".- / -..." { println("FAIL encode space"); bad = 1; }
+    println("morse demo: sos =", morse_encode("sos"));
+    if bad == 0 { println("morse demo ok"); }
+    return bad;
+}

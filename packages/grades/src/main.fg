@@ -1,0 +1,21 @@
+import "grades.fg";
+fn approx(a: float, b: float, tol: float) -> bool {
+    let mut d: float = a - b;
+    if d < 0.0 { d = 0.0 - d; }
+    return d < tol;
+}
+fn main() -> int {
+    let mut bad: int = 0;
+    if letter_grade(95.0) != "A" { println("FAIL A"); bad = 1; }
+    if letter_grade(85.0) != "B" { println("FAIL B"); bad = 1; }
+    if letter_grade(75.0) != "C" { println("FAIL C"); bad = 1; }
+    if letter_grade(65.0) != "D" { println("FAIL D"); bad = 1; }
+    if letter_grade(55.0) != "F" { println("FAIL F"); bad = 1; }
+    if !approx(grade_point("A"), 4.0, 0.000001) { println("FAIL point A"); bad = 1; }
+    if !approx(grade_point("F"), 0.0, 0.000001) { println("FAIL point F"); bad = 1; }
+    if !approx(gpa([4.0, 3.0, 2.0]), 3.0, 0.000001) { println("FAIL gpa"); bad = 1; }
+    if !approx(gpa_from_percents([95.0, 85.0, 75.0]), 3.0, 0.000001) { println("FAIL gpa percents"); bad = 1; }
+    println("grades demo: 95% =", letter_grade(95.0));
+    if bad == 0 { println("grades demo ok"); }
+    return bad;
+}

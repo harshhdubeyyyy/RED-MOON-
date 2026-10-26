@@ -1,0 +1,5 @@
+import "../src/checks.fg";
+fn main() -> int {
+    println("smoke: luhn 79927398713 valid =", luhn_valid("79927398713"));
+    return 0;
+}

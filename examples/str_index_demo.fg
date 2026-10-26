@@ -1,0 +1,16 @@
+fn main() -> int {
+    let s = "hello";
+    println("first =", s[0], "third =", s[2], "last =", s[4]);
+    println("exclaim =", s[0] + "!");
+    let mut found = -1;
+    let mut i = 0;
+    while i < len(s) {
+        if s[i] == "l" {
+            found = i;
+            break;
+        }
+        i = i + 1;
+    }
+    println("found l at", found);
+    return 0;
+}

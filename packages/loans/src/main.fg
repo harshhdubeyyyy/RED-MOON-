@@ -1,0 +1,17 @@
+import "loans.fg";
+fn approx(a: float, b: float, tol: float) -> bool {
+    let mut d: float = a - b;
+    if d < 0.0 { d = 0.0 - d; }
+    return d < tol;
+}
+fn main() -> int {
+    let mut bad: int = 0;
+    let e: float = emi(10000.0, 12.0, 12);
+    if !approx(e, 888.487887, 0.001) { println("FAIL emi"); bad = 1; }
+    if !approx(emi(12000.0, 0.0, 12), 1000.0, 0.000001) { println("FAIL emi zero rate"); bad = 1; }
+    if !approx(total_payment(e, 12), 10661.854641, 0.01) { println("FAIL total_payment"); bad = 1; }
+    if !approx(total_interest(e, 12, 10000.0), 661.854641, 0.01) { println("FAIL total_interest"); bad = 1; }
+    println("loans demo: EMI for 10000 at 12% over 12 months =", e);
+    if bad == 0 { println("loans demo ok"); }
+    return bad;
+}

@@ -22,6 +22,7 @@ EXPECTED = {
     "fib": "fib = 55\n",
     "muldiv": "mul = 83810205\ndiv = 14 rem = 2\nneg = -42\nflag = true false\n",
     "loop_call": "total = 14\nlen = 5 xs[2] = 4\n",
+    "break": "total = 10\n",
     "forge_os": "forge OS on big32\nboot ok\napp_sum = 55\napp_mul = 42\ndone\n",
 }
 

@@ -1,0 +1,14 @@
+fn f(n: int) -> int {
+    let mut k: int = n;
+    if k < 2 { return 0; }
+    let mut i: int = 0;
+    while i < 1 {
+        k = 0 - 9223372036854775807 - 1;
+        i = i + 1;
+    }
+    return k - 1;
+}
+fn main() -> int {
+    println(f(5));
+    return 0;
+}

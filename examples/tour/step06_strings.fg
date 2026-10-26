@@ -1,0 +1,6 @@
+fn main() -> int {
+    let s: str = "banana";
+    println(s[0], s[1], s[2]);
+    println("upper check:", s[1] == "a");
+    return 0;
+}

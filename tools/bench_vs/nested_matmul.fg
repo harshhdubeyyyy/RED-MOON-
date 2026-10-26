@@ -1,0 +1,60 @@
+fn main() -> int {
+    let n: int = 128;
+    let mut a: [[float]] = [];
+    let mut b: [[float]] = [];
+    let mut i: int = 0;
+    while i < n {
+        let mut ra: [float] = [];
+        let mut rb: [float] = [];
+        let mut j: int = 0;
+        while j < n {
+            push(ra, 1.0);
+            push(rb, 2.0);
+            j = j + 1;
+        }
+        push(a, ra);
+        push(b, rb);
+        i = i + 1;
+    }
+    let start: int = clock_micros();
+    let mut c: [[float]] = [];
+    i = 0;
+    while i < n {
+        let mut row: [float] = [];
+        let mut j: int = 0;
+        while j < n {
+            push(row, 0.0);
+            j = j + 1;
+        }
+        push(c, row);
+        i = i + 1;
+    }
+    let mut r: int = 0;
+    while r < n {
+        let mut col: int = 0;
+        while col < n {
+            let mut s: float = 0.0;
+            let mut k: int = 0;
+            while k < n {
+                s = s + a[r][k] * b[k][col];
+                k = k + 1;
+            }
+            c[r][col] = s;
+            col = col + 1;
+        }
+        r = r + 1;
+    }
+    let mut total: float = 0.0;
+    i = 0;
+    while i < n {
+        let mut j: int = 0;
+        while j < n {
+            total = total + c[i][j];
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    let elapsed: int = clock_micros() - start;
+    println("nested checksum =", total, "us =", elapsed);
+    return 0;
+}

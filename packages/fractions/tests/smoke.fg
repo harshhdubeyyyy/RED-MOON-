@@ -1,0 +1,5 @@
+import "../src/fractions.fg";
+fn main() -> int {
+    println("smoke: 1/2 + 1/3 =", frac_add(frac(1, 2), frac(1, 3)).num, "/", frac_add(frac(1, 2), frac(1, 3)).den);
+    return 0;
+}

@@ -1,0 +1,5 @@
+import "../src/search.fg";
+fn main() -> int {
+    println("smoke: index of 20 =", linear_search_int([10, 20, 30], 20));
+    return 0;
+}

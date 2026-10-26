@@ -1,0 +1,9 @@
+fn main() -> int {
+    let name: str = "teju";
+    let mut count: int = 0;
+    count = count + 5;
+    let pi: float = 3.14159;
+    let ok: bool = true;
+    println(name, count, pi, ok);
+    return 0;
+}

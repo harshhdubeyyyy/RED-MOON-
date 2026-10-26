@@ -1,0 +1,5 @@
+import "../src/colors.fg";
+fn main() -> int {
+    println("smoke: #ff8000 =", hex_to_rgb("#ff8000")[0], hex_to_rgb("#ff8000")[1], hex_to_rgb("#ff8000")[2]);
+    return 0;
+}

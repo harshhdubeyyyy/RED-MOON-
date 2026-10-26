@@ -1,0 +1,18 @@
+import "tax.fg";
+fn approx(a: float, b: float, tol: float) -> bool {
+    let mut d: float = a - b;
+    if d < 0.0 { d = 0.0 - d; }
+    return d < tol;
+}
+fn main() -> int {
+    let mut bad: int = 0;
+    if !approx(tax_amount(1000.0, 18.0), 180.0, 0.000001) { println("FAIL tax_amount"); bad = 1; }
+    if !approx(add_tax(1000.0, 18.0), 1180.0, 0.000001) { println("FAIL add_tax"); bad = 1; }
+    if !approx(remove_tax(1180.0, 18.0), 1000.0, 0.000001) { println("FAIL remove_tax"); bad = 1; }
+    let sp: [float] = tax_split(1180.0, 18.0);
+    if !approx(sp[0], 1000.0, 0.000001) { println("FAIL split net"); bad = 1; }
+    if !approx(sp[1], 180.0, 0.000001) { println("FAIL split tax"); bad = 1; }
+    println("tax demo: 18% on 1000 =", tax_amount(1000.0, 18.0));
+    if bad == 0 { println("tax demo ok"); }
+    return bad;
+}

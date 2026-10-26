@@ -40,6 +40,43 @@ def main():
     for needle in ("main done, waiting for workers", "worker done 1", "worker done 2"):
         if r.returncode != 0 or needle not in r.stdout:
             failures.append(f"spawn_demo: missing {needle!r} in {r.stdout!r} err={r.stderr!r}")
+    # Structured concurrency: a scope joins its tasks before the
+    # code after it runs, so ordering (not just presence) is the
+    # assertion. Nested scopes, return, break, transitive spawns
+    # (a callee spawning inside a scope), and `scope` still working
+    # as an ordinary variable name are all covered.
+    def check_order(name, path, pairs, absent=(), mode="safe"):
+        rr = run_forge("run", path, "--mode", mode) if mode != "safe" else run_forge("run", path)
+        if rr.returncode != 0:
+            failures.append(f"{name} ({mode}): exit {rr.returncode} err={rr.stderr!r}")
+            return
+        for first, second in pairs:
+            if rr.stdout.find(first) < 0 or rr.stdout.find(second) < 0 \
+                    or rr.stdout.find(first) > rr.stdout.find(second):
+                failures.append(f"{name} ({mode}): expected {first!r} before {second!r} "
+                                f"in {rr.stdout!r}")
+        for needle in absent:
+            if needle in rr.stdout:
+                failures.append(f"{name} ({mode}): unexpected {needle!r} in {rr.stdout!r}")
+    check_order("scope_demo", "examples/scope_demo.fg",
+                [("worker done 1", "after scope"),
+                 ("worker done 2", "after scope")])
+    check_order("scope_demo", "examples/scope_demo.fg",
+                [("worker done 1", "after scope"),
+                 ("worker done 2", "after scope")], mode="fast")
+    check_order("scope_nested", "tests/scope_nested.fg",
+                [("inner done", "inner joined"),
+                 ("inner joined", "outer joined"),
+                 ("outer done", "outer joined")])
+    check_order("scope_return", "tests/scope_return.fg",
+                [("worker done", "v = 42"),
+                 ("v = 42", "main after")])
+    check_order("scope_break", "tests/scope_break.fg",
+                [("worker done", "after loop")],
+                absent=("in loop after scope",))
+    check_order("scope_transitive", "tests/scope_transitive.fg",
+                [("worker done", "after scope")])
+    expect("tests/scope_ident.fg", "scope = 5\nscope = 6\n")
     # FFI: puts returns length+newline, system returns 0.
     r = run_forge("run", "examples/ffi_demo.fg")
     for needle in ("puts returned 18", "system returned 0"):
@@ -328,14 +365,117 @@ def main():
     # Safety: div by zero and overflow must abort cleanly in safe mode.
     for path, needle in (("tests/safety_div_zero.fg", "division by zero"),
                          ("tests/safety_overflow.fg", "integer overflow"),
-                         ("tests/safety_oob.fg", "index out of bounds")):
+                         ("tests/safety_oob.fg", "index out of bounds"),
+                         ("tests/safety_str_oob.fg", "index out of bounds"),
+                         ("tests/safety_struct_arr_oob.fg", "index out of bounds"),
+                         ("tests/safety_nested_oob.fg", "index out of bounds")):
         r = run_forge("run", path)
         if r.returncode == 0 or needle not in r.stderr:
             failures.append(f"{path}: expected abort {needle!r}, got rc={r.returncode} "
                             f"out={r.stdout!r} err={r.stderr!r}")
     # Compile rejections.
     for path, needle in (("tests/bad_type.fg", "declared str"),
-                         ("tests/bad_immutable.fg", "immutable")):
+                         ("tests/bad_immutable.fg", "immutable"),
+                         ("tests/bad_str_index_assign.fg", "cannot assign to a string index"),
+                         ("tests/bad_ckeyword_fn.fg", "is a C keyword"),
+                         ("tests/bad_ckeyword_let.fg", "is a C keyword")):
+        r = run_forge("check", path)
+        if r.returncode == 0 or needle not in r.stderr:
+            failures.append(f"{path}: expected error {needle!r}, got rc={r.returncode} "
+                            f"out={r.stdout!r} err={r.stderr!r}")
+    # Fix-ending diagnostics: errors end with a suggested fix, not
+    # just a complaint (did-you-mean names, int/float conversions,
+    # missing returns).
+    for path, needle in (("tests/diag_undef_var.fg", "Did you mean 'count'?"),
+                         ("tests/diag_undef_fn.fg", "Did you mean 'println'?"),
+                         ("tests/diag_cast.fg", "convert the value with 'value as float'"),
+                         ("tests/diag_noreturn.fg", "add a return statement of type int")):
+        r = run_forge("check", path)
+        if r.returncode == 0 or needle not in r.stderr:
+            failures.append(f"{path}: expected fix hint {needle!r}, got rc={r.returncode} "
+                            f"out={r.stdout!r} err={r.stderr!r}")
+    # LSP smoke test: drives `forge.py lsp` over stdio end to end
+    # (initialize, diagnostics, completions, clean shutdown).
+    r = subprocess.run([sys.executable, os.path.join(ROOT, "tests", "lsp_smoke.py")],
+                       capture_output=True, text=True, cwd=ROOT)
+    if r.returncode != 0:
+        failures.append(f"lsp_smoke: rc={r.returncode} out={r.stdout!r} err={r.stderr!r}")
+    # break: while, for, nested loops; break outside a loop is rejected,
+    # including inside a function called from a loop.
+    expect("examples/break_demo.fg",
+           "while total = 3\nfor sum = 6\nnested count = 6\n")
+    expect("examples/break_gc_demo.fg", "allocs = 4 frees = 4\n")
+    # String indexing: s[i] is a 1-char str (byte indexing).
+    expect("examples/str_index_demo.fg",
+           "first = h third = l last = o\nexclaim = h!\nfound l at 2\n")
+    # Arrays of structs: element get owns a copy, field reads on
+    # xs[i] go direct (no leaked sibling fields), set frees the old
+    # element, and array free frees element str fields.
+    expect("examples/struct_array_demo.fg",
+           "count = 2\nsecond = 3 4 b\nsums = 4 6\nafter push = 3 c\n"
+           "after set = 10 z\ncopy = 3 4 b\n")
+    expect("examples/struct_array_gc.fg",
+           "inside = 2 a b\narr allocs = 1 arr frees = 1\n"
+           "str allocs = 2 str frees = 2\n")
+    # Nested arrays: matrices, chained reads/writes, shared rows,
+    # row push and row replacement, balanced nested frees.
+    expect("examples/nested_array_demo.fg",
+           "rows = 2 cols = 3\nm01 = 2 m12 = 6\ntotal = 21\n"
+           "after push rows = 3 m20 = 7\nafter set = 20\n"
+           "shared row = 40\nafter row set = 10 20\n")
+    expect("examples/nested_array_gc.fg",
+           "inside = 2 2 3 5\narr allocs = 3 arr frees = 3\n")
+    # Check elimination: duplicate checks, guard intervals, and
+    # string-index comparisons keep identical results in both modes.
+    expect("tests/opt_probe_dedupe.fg", "a = 66\n")
+    expect("tests/opt_probe_dedupe.fg", "a = 66\n", "fast")
+    expect("tests/opt_probe_guard.fg", "9\n99\n")
+    expect("tests/opt_probe_guard.fg", "9\n99\n", "fast")
+    expect("tests/opt_guard.fg",
+           "s = 9\nt = 1\nd = 5\ne = 0\n")
+    expect("tests/opt_guard.fg",
+           "s = 9\nt = 1\nd = 5\ne = 0\n", "fast")
+    expect("tests/opt_strcmp.fg",
+           "a = true\nb = false\nc = true\nd = false\ne = false\nf = false\n")
+    expect("tests/opt_strcmp.fg",
+           "a = true\nb = false\nc = true\nd = false\ne = false\nf = false\n", "fast")
+    # Check elimination must not remove a check that can fire:
+    # unproven overflow, reassignment-invalidated guards, guards
+    # around loops, out-of-bounds string compares, and duplicate
+    # reads must all still abort in safe mode.
+    for path, needle in (("tests/opt_guard_overflow.fg", "integer overflow"),
+                         ("tests/opt_guard_reassign.fg", "integer overflow"),
+                         ("tests/opt_guard_loop.fg", "integer overflow"),
+                         ("tests/opt_str_oob.fg", "index out of bounds"),
+                         ("tests/opt_dedupe_oob.fg", "index out of bounds")):
+        r = run_forge("run", path)
+        if r.returncode == 0 or needle not in r.stderr:
+            failures.append(f"{path}: expected abort {needle!r}, got rc={r.returncode} "
+                            f"out={r.stdout!r} err={r.stderr!r}")
+    # The optimizations must actually be present in the emitted C:
+    # the duplicate read issues one checked get (the repeat is a
+    # direct access), and the guard-proven subtraction issues no
+    # forge_sub at all. Only the function bodies are inspected, so
+    # the runtime helpers defined in the header do not count.
+    import tempfile
+    with tempfile.TemporaryDirectory() as _td:
+        _c = os.path.join(_td, "probe.c")
+        _o = os.path.join(_td, "probe")
+        r = run_forge("build", "tests/opt_probe_dedupe.fg", "-o", _o, "--keep-c", _c)
+        _src = open(_c).read() if r.returncode == 0 else ""
+        _body = _src[_src.index("int main("):] if "int main(" in _src else ""
+        if _body.count("forge_int_get(") != 1 or "(xs).data[i]" not in _body:
+            failures.append("opt_probe_dedupe: expected 1 checked get + direct repeat, "
+                            f"got {_body.count('forge_int_get(')} gets, "
+                            f"direct={('(xs).data[i]' in _body)}")
+        r = run_forge("build", "tests/opt_probe_guard.fg", "-o", _o, "--keep-c", _c)
+        _src = open(_c).read() if r.returncode == 0 else ""
+        _start = _src.index("long long h2(") if "long long h2(" in _src else -1
+        _body = _src[_start:_src.index("\n}\n", _start)] if _start >= 0 else ""
+        if "forge_sub" in _body:
+            failures.append("opt_probe_guard: guard-proven subtraction still uses forge_sub")
+    for path, needle in (("tests/bad_break.fg", "break outside a loop"),
+                         ("tests/bad_break_fn.fg", "break outside a loop")):
         r = run_forge("check", path)
         if r.returncode == 0 or needle not in r.stderr:
             failures.append(f"{path}: expected error {needle!r}, got rc={r.returncode} "

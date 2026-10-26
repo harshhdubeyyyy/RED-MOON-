@@ -156,6 +156,11 @@ class Formatter:
         if isinstance(stmt, A.Spawn):
             self.emit(indent, f"spawn {fmt_expr(stmt.call)};")
             return
+        if isinstance(stmt, A.Scope):
+            self.emit(indent, "scope {")
+            self.fmt_block(stmt.body, indent + 1)
+            self.emit(indent, "}")
+            return
         if isinstance(stmt, A.If):
             self.emit(indent, f"if {fmt_expr(stmt.cond)} {{")
             self.fmt_block(stmt.then, indent + 1)
@@ -185,6 +190,9 @@ class Formatter:
             self.emit(indent, f"for {stmt.name} in {fmt_expr(stmt.expr)} {{")
             self.fmt_block(stmt.body, indent + 1)
             self.emit(indent, "}")
+            return
+        if isinstance(stmt, A.Break):
+            self.emit(indent, "break;")
             return
         if isinstance(stmt, A.Return):
             if stmt.expr is None:

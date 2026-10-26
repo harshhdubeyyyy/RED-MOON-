@@ -475,6 +475,11 @@ class WasmGen:
         # Static string table, filled by the pre-pass in gen().
         self.lit_addr = {}
         self.heap_base = STATIC_BASE
+        # Structured-label depth tracking for `break`: every if/block/
+        # loop opcode is a label, so a break must branch to the loop's
+        # enclosing block at its absolute depth.
+        self.wasm_label_depth = 0
+        self.wasm_loop_exits = []
 
     def expr_type(self, expr):
         return self.types.get(id(expr), "int")
@@ -670,21 +675,36 @@ class WasmGen:
         if isinstance(stmt, A.If):
             cond = self.gen_expr(stmt.cond)
             out = cond + b"\x04\x40"  # if, empty blocktype
+            self.wasm_label_depth += 1
             out += self.gen_block(stmt.then)
             if stmt.els is not None:
                 out += b"\x05" + self.gen_block(stmt.els)
             out += b"\x0b"
+            self.wasm_label_depth -= 1
             return out
+        if isinstance(stmt, A.Break):
+            if not self.wasm_loop_exits:
+                raise ForgeError("wasm: break outside a loop", stmt.line, stmt.col)
+            rel = self.wasm_label_depth - self.wasm_loop_exits[-1]
+            return b"\x0c" + uleb(rel)  # br to the loop's enclosing block
         if isinstance(stmt, A.While):
             # block { loop { if !cond br 1; body; br 0 } }
             out = b"\x02\x40\x03\x40"
+            self.wasm_loop_exits.append(self.wasm_label_depth + 1)  # the block
+            self.wasm_label_depth += 2
             out += self.gen_expr(stmt.cond)
             out += b"\x45\x0d\x01"  # i32.eqz, br_if 1 (exit block)
             out += self.gen_block(stmt.body)
             out += b"\x0c\x00\x0b\x0b"  # br 0, end loop, end block
+            self.wasm_label_depth -= 2
+            self.wasm_loop_exits.pop()
             return out
         if isinstance(stmt, A.Block):
             return self.gen_block(stmt)
+        if isinstance(stmt, A.Scope):
+            # No threads on WASM: a scope without spawn runs as its
+            # block, and a spawn inside still fails as before.
+            return self.gen_block(stmt.body)
         if isinstance(stmt, A.ExprStmt):
             e = stmt.expr
             if isinstance(e, A.Call):
@@ -765,6 +785,25 @@ class WasmGen:
             return bytes(out)
         if isinstance(expr, A.Index):
             btype = self.expr_type(expr.base)
+            if btype == "str":
+                # str value = pointer to [len:i32][bytes...]. Indexing
+                # returns a fresh 1-char string: alloc 5 bytes, store
+                # len 1, copy the byte. Bounds check traps like arrays.
+                p = self.new_local(I32)
+                ix = self.new_local(I32)
+                outp = self.new_local(I32)
+                out = bytearray()
+                out += self.gen_expr(expr.base) + local_set(p)
+                out += self.gen_expr(expr.index) + b"\xa7" + local_set(ix)  # i32.wrap_i64
+                out += local_get(ix) + local_get(p) + i32_load() + b"\x4f"  # i32.ge_u
+                out += IF + EMPTY + UNREACHABLE + END
+                out += i32_const(5) + call_fn(self.helper_index["alloc"]) + local_set(outp)
+                out += local_get(outp) + i32_const(1) + i32_store()
+                out += local_get(outp) + i32_const(4) + b"\x6a"
+                out += local_get(p) + i32_const(4) + b"\x6a" + local_get(ix) + b"\x6a"
+                out += i32_load8_u() + i32_store8()
+                out += local_get(outp)
+                return bytes(out)
             if not (btype.startswith("[") and btype.endswith("]")):
                 raise ForgeError(f"wasm: indexing non-array {btype}")
             etype = btype[1:-1]

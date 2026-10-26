@@ -94,6 +94,26 @@ static void forge_free_str(char *p) {
     }
 }
 
+static char *forge_str_at(const char *s, long long i) {
+    long long n = (long long)strlen(s);
+    if (i < 0 || i >= n) forge_fail("string index out of bounds");
+    char *p = (char *)malloc(2);
+    if (!p) forge_fail("out of memory");
+    p[0] = s[i];
+    p[1] = '\0';
+    forge_str_allocs++;
+    return p;
+}
+
+static char *forge_str_at_fast(const char *s, long long i) {
+    char *p = (char *)malloc(2);
+    if (!p) forge_fail("out of memory");
+    p[0] = s[i];
+    p[1] = '\0';
+    forge_str_allocs++;
+    return p;
+}
+
 static char *forge_concat(const char *a, const char *b) {
     size_t na = strlen(a), nb = strlen(b);
     char *p = (char *)malloc(na + nb + 1);
@@ -310,10 +330,20 @@ static char *forge_trim(const char *s) {
 
 static pthread_t forge_threads[1024];
 static long long forge_thread_count = 0;
+static long long forge_thread_joined[1024];
 
+static void forge_join_scope(long long start) {
+    for (long long i = start; i < forge_thread_count; i++) {
+        if (!forge_thread_joined[i]) {
+            pthread_join(forge_threads[i], NULL);
+            forge_thread_joined[i] = 1;
+        }
+    }
+}
 static void forge_join_threads(void) {
-    for (long long i = 0; i < forge_thread_count; i++) pthread_join(forge_threads[i], NULL);
+    forge_join_scope(0);
     forge_thread_count = 0;
+    for (long long i = 0; i < 1024; i++) forge_thread_joined[i] = 0;
 }
 
 static char *forge_https_get(const char *url) {
@@ -470,6 +500,8 @@ static long long forge_http_respond_status(long long client, long long status, c
     if (status == 404) reason = "Not Found";
     else if (status == 500) reason = "Internal Server Error";
     else if (status == 400) reason = "Bad Request";
+    else if (status == 401) reason = "Unauthorized";
+    else if (status == 409) reason = "Conflict";
     else if (status == 201) reason = "Created";
     return forge_http_send_response(client, status, reason, body);
 }
@@ -551,6 +583,15 @@ def c_type(t):
         inner = t[1:-1]
         if inner in ARRAY_STRUCT:
             return ARRAY_STRUCT[inner]
+        if inner == "?":
+            return t
+        if inner.startswith("["):
+            # Nested array: ForgeArray_<inner C array type>.
+            return f"ForgeArray_{c_type(inner)}"
+        if "<" in inner:
+            from .generics import mangle_type
+            return f"ForgeArray_{mangle_type(inner)}"
+        return f"ForgeArray_{inner}"
     # Generic struct types use their mangled concrete name.
     if "<" in t:
         from .generics import mangle_type
@@ -595,9 +636,30 @@ class Codegen:
         self.indent = 0
         self.arr_counter = 0
         self.loop_counter = 0
+        self.loop_frames = []
         self.spawn_counter = 0
         self.current_fn = None
         self._types = {}
+        # Check-elimination state (native codegen only, safe mode only
+        # for the checks themselves; the state is reset per statement
+        # for the duplicate cache and per function for the facts).
+        # _check_cache: identical checked operations already proven
+        # in-bounds / non-overflowing within the current statement,
+        # so a repeat may use the unchecked (fast-mode) emission.
+        # _facts: int variable intervals proven by if-guards, used to
+        # skip overflow/div-zero checks that cannot fire.
+        # _let_stack: names bound by `let` inside each open branch,
+        # so a branch-local binding never leaks into join facts.
+        self._check_cache = {}
+        self._facts = {}
+        self._let_stack = []
+        # Structured concurrency: open scopes as (start-variable,
+        # loop depth at entry). A scope joins every task spawned
+        # while it is open (watermark into forge_threads); the
+        # joined flags keep nested scopes and the main-exit join
+        # from joining any thread twice.
+        self.scope_stack = []
+        self.scope_counter = 0
 
     def owned_add(self, name, typ="str"):
         self.owned_stack[-1][name] = typ
@@ -620,11 +682,8 @@ class Codegen:
         if typ == "str":
             self.emit(f"forge_free_str({name});")
         elif typ.startswith("[") and typ.endswith("]"):
-            elem = typ[1:-1]
-            free_fn = {"int": "forge_int_array_free", "float": "forge_float_array_free",
-                       "bool": "forge_bool_array_free", "str": "forge_str_array_free"}.get(elem)
-            if free_fn:
-                self.emit(f"{free_fn}({name});")
+            if self.is_array_type(typ):
+                self.emit(self.array_free_code(name, typ))
         elif self.is_struct_type(typ):
             self.emit_struct_free(name, typ)
 
@@ -656,8 +715,49 @@ class Codegen:
             if name not in outer:
                 self._emit_free_one(name, typ)
 
+    def emit_free_frames_downto(self, idx):
+        # Free every ownership frame from the innermost down to frame
+        # idx (inclusive), without popping: used by `break`, which must
+        # free the loop body's locals (and any nested block's locals)
+        # that the normal block-end frees would otherwise handle, since
+        # breaking jumps past them. A name is freed by exactly one
+        # frame: the frame below it that also holds it wins, matching
+        # emit_free_frame — so process innermost-first and skip names
+        # held by any frame below the one being freed.
+        for i in range(len(self.owned_stack) - 1, idx - 1, -1):
+            frame = self.owned_stack[i]
+            below = set()
+            for f in self.owned_stack[:i]:
+                below.update(f.keys())
+            for name, typ in frame.items():
+                if name not in below:
+                    self._emit_free_one(name, typ)
+
     def is_array_type(self, t):
-        return t.startswith("[") and t.endswith("]") and t[1:-1] in ("int", "float", "bool", "str")
+        if not (t.startswith("[") and t.endswith("]")):
+            return False
+        inner = t[1:-1]
+        return (inner in ("int", "float", "bool", "str")
+                or self.is_struct_type(inner) or self.is_array_type(inner))
+
+    def array_free_code(self, var_code, typ):
+        """C statements freeing the array value var_code of type typ
+        (refcounted; nested arrays free element arrays first)."""
+        inner = typ[1:-1]
+        if inner in ("int", "float", "bool", "str"):
+            fn = {"int": "forge_int_array_free", "float": "forge_float_array_free",
+                  "bool": "forge_bool_array_free", "str": "forge_str_array_free"}[inner]
+            return f"{fn}({var_code});"
+        if self.is_struct_type(inner):
+            return f"forge_{self.struct_type_name(inner)}_array_free({var_code});"
+        # Nested array: refcount the outer, free each element array,
+        # then the outer buffer.
+        i = f"__forge_fi{self.assign_counter}"
+        self.assign_counter += 1
+        inner_code = self.array_free_code(f"{var_code}.data[{i}]", inner)
+        return (f"if ({var_code}.ref && --(*{var_code}.ref) == 0) {{ "
+                f"for (long long {i} = 0; {i} < {var_code}.len; {i}++) {{ {inner_code} }} "
+                f"free({var_code}.data); free({var_code}.ref); forge_arr_frees++; }}")
 
     def struct_type_name(self, t):
         if "<" in t:
@@ -700,10 +800,7 @@ class Codegen:
             if ftype == "str":
                 parts.append(f"forge_free_str({code});")
             elif self.is_array_type(ftype):
-                elem = ftype[1:-1]
-                free_fn = {"int": "forge_int_array_free", "float": "forge_float_array_free",
-                           "bool": "forge_bool_array_free", "str": "forge_str_array_free"}[elem]
-                parts.append(f"{free_fn}({code});")
+                parts.append(self.array_free_code(code, ftype))
             elif self.is_struct_type(ftype):
                 parts.append(self.struct_free_code(code, ftype))
         return " ".join(parts)
@@ -721,6 +818,9 @@ class Codegen:
             if rt and self.is_struct_type(rt):
                 return True
             return False
+        if isinstance(expr, A.Index) and self.is_struct_type(self.expr_type(expr)):
+            # A struct-array get already returns an owned copy.
+            return True
         return False
 
     def is_fresh_array(self, expr):
@@ -747,6 +847,8 @@ class Codegen:
             return False
         if isinstance(expr, A.BinOp) and expr.op == "+" and self.expr_type(expr.left) == "str":
             return True
+        if isinstance(expr, A.Index) and self.expr_type(expr.base) == "str":
+            return True
         return False
 
     def collect_spawns(self, block, out):
@@ -755,6 +857,8 @@ class Codegen:
                 out.append(stmt.call)
             elif isinstance(stmt, A.Block):
                 self.collect_spawns(stmt, out)
+            elif isinstance(stmt, A.Scope):
+                self.collect_spawns(stmt.body, out)
             elif isinstance(stmt, A.If):
                 self.collect_spawns(stmt.then, out)
                 if stmt.els is not None:
@@ -816,6 +920,55 @@ class Codegen:
                 out.add(t)
         return out
 
+    def collect_nested_array_types(self):
+        """All nested array types used (signatures, fields, Let
+        annotations, and infer types), innermost first."""
+        out = set()
+
+        def add(t):
+            # Add t and every nested array prefix it contains.
+            while t.startswith("[") and t.endswith("]"):
+                inner = t[1:-1]
+                if inner.startswith("["):
+                    out.add(t)
+                t = inner
+
+        def walk_block(block):
+            for s in getattr(block, "stmts", []):
+                ann = getattr(s, "ann", None)
+                if ann:
+                    add(ann)
+                if isinstance(s, A.Block):
+                    walk_block(s)
+                for attr in ("body", "then", "els"):
+                    b = getattr(s, attr, None)
+                    if b is not None:
+                        walk_block(b)
+                for _pat, _bind, arm_body in getattr(s, "arms", []) or []:
+                    walk_block(arm_body)
+
+        for fn in self.program.funcs:
+            if getattr(fn, "type_params", None):
+                continue
+            for _n, pt in fn.params:
+                add(pt)
+            add(fn.ret)
+            if getattr(fn, "body", None) is not None:
+                walk_block(fn.body)
+        for sd in (getattr(self.program, "structs", None) or []):
+            if getattr(sd, "type_params", None):
+                continue
+            fields = sd.fields
+            pairs = fields.items() if isinstance(fields, dict) else fields
+            for _fname, ft in pairs:
+                add(ft)
+        for t in self._types.values():
+            add(t)
+        # Innermost first: a typedef may only reference types
+        # already defined (scalar arrays are in the preamble,
+        # struct arrays are emitted just before this section).
+        return sorted(out, key=lambda t: t.count("["))
+
     def generate(self):
         self.lines.append(HEADER)
         # Skip generic templates: only concrete structs are emitted.
@@ -871,6 +1024,62 @@ class Codegen:
                 self.emit(f"    {c_type(ftype)} {fname};")
             self.emit("};")
         if self.structs:
+            self.lines.append("")
+        # Per-struct array types and helpers: a [Point] value is a
+        # ForgeArray_Point (same refcounted layout as scalar arrays).
+        # Element get returns an independently owned copy; set frees
+        # the old element before storing; push appends as-is (the
+        # caller owns the value first, mirroring str push).
+        for name in self.structs:
+            arr_t = f"ForgeArray_{name}"
+            self.emit(f"typedef struct {{ {name} *data; long long len; long long cap; "
+                      f"long long *ref; }} {arr_t};")
+            self.emit(f"static void forge_{name}_array_free({arr_t} a) {{")
+            self.emit("    if (a.ref && --(*a.ref) == 0) {")
+            self.emit("        for (long long i = 0; i < a.len; i++) {")
+            free_code = self.struct_free_code("a.data[i]", name)
+            if free_code:
+                self.emit(f"            {free_code}")
+            self.emit("        }")
+            self.emit("        free(a.data); free(a.ref); forge_arr_frees++;")
+            self.emit("    }")
+            self.emit("}")
+            for suffix, check in (("", True), ("_fast", False)):
+                self.emit(f"static {name} forge_{name}_get{suffix}({arr_t} a, long long i) {{")
+                if check:
+                    self.emit('    if (i < 0 || i >= a.len) forge_fail("array index out of bounds");')
+                self.emit(f"    {name} v = a.data[i];")
+                own_code = self.struct_own_code("v", name)
+                if own_code:
+                    self.emit(f"    {own_code}")
+                self.emit("    return v;")
+                self.emit("}")
+                self.emit(f"static void forge_{name}_set{suffix}({arr_t} *a, long long i, {name} v) {{")
+                if check:
+                    self.emit('    if (i < 0 || i >= a->len) forge_fail("array index out of bounds");')
+                old_free = self.struct_free_code("a->data[i]", name)
+                if old_free:
+                    self.emit(f"    {old_free}")
+                self.emit("    a->data[i] = v;")
+                self.emit("}")
+            self.emit(f"static void forge_{name}_push({arr_t} *a, {name} v) {{")
+            self.emit("    if (a->len >= a->cap) {")
+            self.emit("        long long nc = a->cap ? a->cap * 2 : 4;")
+            self.emit(f"        {name} *nd = ({name} *)realloc(a->data, sizeof({name}) * (size_t)nc);")
+            self.emit('        if (!nd) forge_fail("out of memory");')
+            self.emit("        a->data = nd; a->cap = nc;")
+            self.emit("    }")
+            self.emit("    a->data[a->len++] = v;")
+            self.emit("}")
+        if self.structs:
+            self.lines.append("")
+        # Nested array types: one typedef per nesting level used,
+        # innermost first so each references only defined types.
+        nested = self.collect_nested_array_types()
+        for t in nested:
+            self.emit(f"typedef struct {{ {c_type(t[1:-1])} *data; long long len; "
+                      f"long long cap; long long *ref; }} {c_type(t)};")
+        if nested:
             self.lines.append("")
         for fn in self.program.funcs:
             if getattr(fn, "type_params", None):
@@ -945,8 +1154,13 @@ class Codegen:
 
     def gen_func(self, fn):
         self.current_fn = fn.name
+        self._check_cache = {}
+        self._facts = {}
+        self._let_stack = []
+        self.scope_stack = []
         self.current_file = getattr(fn, "file", "") or ""
         self.owned_stack = [{}]
+        self.loop_frames = []
         # String parameters own their copy after copy-on-call (see gen_expr Call).
         # Array parameters own a reference after refcount-on-call (see gen_expr Call).
         # Struct parameters own their fields after own-on-call (see gen_expr Call).
@@ -977,6 +1191,222 @@ class Codegen:
         self.lines.append("")
         self.current_fn = None
         self.owned_stack = [{}]
+        self.loop_frames = []
+
+    # ---- Check elimination: intervals, duplicate checks, comparisons ----
+    INT_MIN = -(2 ** 63)
+    INT_MAX = 2 ** 63 - 1
+
+    def _subtree_has_call(self, node):
+        """True if the AST subtree contains a call (a possible mutation)."""
+        if isinstance(node, A.Call):
+            return True
+        if isinstance(node, (list, tuple)):
+            return any(self._subtree_has_call(x) for x in node)
+        if isinstance(node, dict):
+            return any(self._subtree_has_call(v) for v in node.values())
+        if hasattr(node, "__dict__"):
+            return any(self._subtree_has_call(v) for v in vars(node).values())
+        return False
+
+    def _int_interval(self, node):
+        """Proven (lo, hi) for an int expression, or None if unknown.
+
+        Intervals are always clamped to the int64 range: an int
+        variable's true value is always inside it, so a fact like
+        n >= 2 is (2, INT_MAX), and n - 1 is then provably safe.
+        """
+        if isinstance(node, A.IntLit):
+            v = node.value
+            return (max(v, self.INT_MIN), min(v, self.INT_MAX))
+        if isinstance(node, A.Var):
+            return self._facts.get(node.name, (self.INT_MIN, self.INT_MAX))
+        return None
+
+    def _narrow(self, facts, var, lo, hi):
+        """Intersect facts[var] with (lo, hi); drop var if empty.
+
+        None means unbounded on that side. Mutates and returns facts.
+        """
+        lo = self.INT_MIN if lo is None else max(lo, self.INT_MIN)
+        hi = self.INT_MAX if hi is None else min(hi, self.INT_MAX)
+        if lo > hi:
+            facts.pop(var, None)
+            return facts
+        old = facts.get(var)
+        if old is None:
+            facts[var] = (lo, hi)
+        else:
+            nlo, nhi = max(old[0], lo), min(old[1], hi)
+            if nlo > nhi:
+                facts.pop(var, None)
+            else:
+                facts[var] = (nlo, nhi)
+        return facts
+
+    def _cond_fact(self, cond, truth):
+        """(var, lo, hi) proven by a comparison, or None.
+
+        truth=True: the comparison holds; truth=False: it does not.
+        Only var-vs-int-literal comparisons are tracked; anything
+        else (including !=) yields no fact.
+        """
+        if not isinstance(cond, A.BinOp):
+            return None
+        if cond.op not in ("<", "<=", ">", ">=", "=="):
+            return None
+        left, right, op = cond.left, cond.right, cond.op
+        if isinstance(left, A.IntLit) and isinstance(right, A.Var):
+            left, right = right, left
+            op = {"<": ">", "<=": ">=", ">": "<", ">=": "<=", "==": "=="}[op]
+        if not (isinstance(left, A.Var) and isinstance(right, A.IntLit)):
+            return None
+        if self.expr_type(left) != "int":
+            return None
+        lit = right.value
+        if not truth:
+            if op == "==":
+                return None
+            op = {"<": ">=", "<=": ">", ">": "<=", ">=": "<"}[op]
+        table = {"<": (None, lit - 1), "<=": (None, lit),
+                 ">": (lit + 1, None), ">=": (lit, None),
+                 "==": (lit, lit)}
+        lo, hi = table[op]
+        return (left.name, lo, hi)
+
+    def _apply_cond_facts(self, cond, truth):
+        fact = self._cond_fact(cond, truth)
+        if fact is not None:
+            var, lo, hi = fact
+            self._narrow(self._facts, var, lo, hi)
+
+    def _hull_facts(self, f1, f2):
+        """Join across two paths: a var keeps the hull of both
+        intervals, and only if both paths know it. Anything known on
+        one path only is unknown after the join (the other path may
+        hold any value)."""
+        out = {}
+        for var, (lo1, hi1) in f1.items():
+            if var in f2:
+                lo2, hi2 = f2[var]
+                out[var] = (min(lo1, lo2), max(hi1, hi2))
+        return out
+
+    def _binop_safe(self, op, lnode, rnode):
+        """True if the checked int op provably cannot fail."""
+        li = self._int_interval(lnode)
+        ri = self._int_interval(rnode)
+        if li is None or ri is None:
+            return False
+        if op == "+":
+            lo, hi = li[0] + ri[0], li[1] + ri[1]
+        elif op == "-":
+            lo, hi = li[0] - ri[1], li[1] - ri[0]
+        elif op == "*":
+            prods = [a * b for a in li for b in ri]
+            lo, hi = min(prods), max(prods)
+        elif op in ("/", "%"):
+            # forge_div/forge_mod fail on a zero divisor, and on
+            # INT_MIN / -1 (div aborts, mod special-cases it, but
+            # plain C % on that pair is still UB, so exclude it).
+            if not (ri[1] < 0 or ri[0] > 0):
+                return False
+            if li[0] == self.INT_MIN and ri[0] <= -1 <= ri[1]:
+                return False
+            return True
+        else:
+            return False
+        return self.INT_MIN <= lo and hi <= self.INT_MAX
+
+    def _branch_exits(self, block):
+        """True if a block's last statement always leaves it.
+
+        Return and fail() exit the function; a bare break exits the
+        enclosing loop, so following code in the same iteration is
+        skipped. Anything else (including a nested if) may fall
+        through, so it does not count."""
+        stmts = getattr(block, "stmts", None)
+        if not stmts:
+            return False
+        last = stmts[-1]
+        if isinstance(last, (A.Return, A.Break)):
+            return True
+        if (isinstance(last, A.ExprStmt) and isinstance(last.expr, A.Call)
+                and last.expr.name == "fail"):
+            return True
+        return False
+
+    def _str_index_cmp(self, expr):
+        """Specialized `s[i] == "a"` / `s[i] == s[j]` / `!=` variants.
+
+        String indexing allocates a fresh 1-char string per access,
+        so a bare `s[i] == "a"` pays a malloc, a bounds check, and a
+        strcmp. When one side is a string index and the other is a
+        1-byte literal (or another string index), compare the bytes
+        directly: the bounds check is still emitted in safe mode
+        (out-of-bounds must abort exactly as forge_str_at does), but
+        no string is allocated. Returns C code, or None to use the
+        generic strcmp path. The literal must be exactly 1 byte
+        (not 1 character: a multi-byte character's first byte alone
+        would compare unequal to the full literal under strcmp).
+        """
+        def idx_side(node):
+            return (isinstance(node, A.Index)
+                    and self.expr_type(node.base) == "str")
+
+        def lit1_side(node):
+            return (isinstance(node, A.StrLit)
+                    and len(node.value.encode("utf-8")) == 1)
+
+        left, right = expr.left, expr.right
+        op = "==" if expr.op == "==" else "!="
+        sides = []
+        if idx_side(left) and lit1_side(right):
+            sides = [("idx", left), ("lit", right)]
+        elif lit1_side(left) and idx_side(right):
+            sides = [("lit", left), ("idx", right)]
+        elif idx_side(left) and idx_side(right):
+            sides = [("idx", left), ("idx", right)]
+        else:
+            return None
+        n = self.arr_counter
+        self.arr_counter += 1
+        decls = []
+        cmps = []
+        for k, (kind, node) in enumerate(sides):
+            if kind == "lit":
+                cmps.append(f"{self.c_str_literal(node.value)}[0]")
+                continue
+            base = self.gen_expr(node.base)
+            idx = self.gen_expr(node.index)
+            ts = f"__forge_sc{n}s{k}"
+            ti = f"__forge_sc{n}i{k}"
+            tn = f"__forge_sc{n}n{k}"
+            decls.append(f"const char *{ts} = {base}; long long {ti} = {idx}; ")
+            if self.mode == "safe":
+                decls.append(
+                    f"long long {tn} = (long long)strlen({ts}); "
+                    f"if ({ti} < 0 || {ti} >= {tn}) "
+                    f"forge_fail(\"string index out of bounds\"); ")
+            cmps.append(f"{ts}[{ti}]")
+        return "({ " + "".join(decls) + f"({cmps[0]} {op} {cmps[1]}); }})"
+
+    def _facts_update_from_rhs(self, name, rhs, is_let):
+        """After `let name = rhs` / `name = rhs`, refresh name's facts.
+
+        Only a `let` is a new binding: branch joins drop let-bound
+        names (the binding is gone after the branch), while an
+        assignment to an outer variable keeps its joined facts."""
+        if isinstance(rhs, A.IntLit):
+            v = max(min(rhs.value, self.INT_MAX), self.INT_MIN)
+            self._facts[name] = (v, v)
+        elif isinstance(rhs, A.Var) and rhs.name in self._facts:
+            self._facts[name] = self._facts[rhs.name]
+        else:
+            self._facts.pop(name, None)
+        if is_let:
+            for s in self._let_stack:
+                s.add(name)
 
     def gen_block(self, block, ret_type):
         for stmt in block.stmts:
@@ -991,11 +1421,17 @@ class Codegen:
             self.gen_stmt(stmt, ret_type)
 
     def gen_stmt(self, stmt, ret_type):
+        # Duplicate checks live within one statement only: every
+        # statement starts with an empty cache (a later statement may
+        # reassign the array or the index, and calls clear it too).
+        self._check_cache = {}
         if isinstance(stmt, A.Block):
+            saved_facts = dict(self._facts)
             self.emit("{")
             self.indent += 1
             self.owned_stack.append({})
             self.gen_block(stmt, ret_type)
+            self._facts = saved_facts
             self.emit_free_frame()
             self.owned_stack.pop()
             self.indent -= 1
@@ -1005,6 +1441,7 @@ class Codegen:
             t = stmt.ann if (stmt.ann and isinstance(stmt.expr, A.ArrayLit)
                              and not stmt.expr.elems) else self.expr_type(stmt.expr)
             expr = self.gen_expr(stmt.expr)
+            self._facts_update_from_rhs(stmt.name, stmt.expr, True)
             if t == "str":
                 if not self.is_fresh_str(stmt.expr):
                     expr = f"forge_copy_str({expr})"
@@ -1029,6 +1466,7 @@ class Codegen:
             return
         if isinstance(stmt, A.Assign):
             expr = self.gen_expr(stmt.expr)
+            self._facts_update_from_rhs(stmt.name, stmt.expr, False)
             et = self.expr_type(stmt.expr)
             if et == "str":
                 if not self.is_fresh_str(stmt.expr):
@@ -1049,10 +1487,7 @@ class Codegen:
                 self.assign_counter += 1
                 self.emit(f"{c_type(et)} __forge_assign{n} = {expr};")
                 if self.owned_contains(stmt.name):
-                    elem = et[1:-1]
-                    free_fn = {"int": "forge_int_array_free", "float": "forge_float_array_free",
-                               "bool": "forge_bool_array_free", "str": "forge_str_array_free"}[elem]
-                    self.emit(f"{free_fn}({stmt.name});")
+                    self.emit(self.array_free_code(stmt.name, et))
                 self.emit(f"{stmt.name} = __forge_assign{n};")
                 if not self.is_fresh_array(stmt.expr):
                     self.emit(f"forge_arr_inc({stmt.name}.ref);")
@@ -1083,15 +1518,61 @@ class Codegen:
             return
         if isinstance(stmt, A.IndexAssign):
             base = stmt.base.base
-            if not isinstance(base, (A.Var, A.FieldAccess)):
+            if isinstance(base, A.Index) and self.is_array_type(self.expr_type(base)):
+                # Chained index assignment (m[i][j] = v): the inner
+                # array is a shared reference, so storing through a
+                # temp still mutates the shared buffer.
+                inner_code = self.gen_expr(base)
+                inner_t = c_type(self.expr_type(base))
+                tmp = f"__forge_base{self.assign_counter}"
+                self.assign_counter += 1
+                self.emit(f"{inner_t} {tmp} = {inner_code};")
+                base_code = tmp
+                base_is_temp = True
+            elif isinstance(base, (A.Var, A.FieldAccess)):
+                base_code = self.gen_expr(base)
+                base_is_temp = False
+            else:
                 raise ForgeError("index assignment target must be a variable or a field")
-            base_code = self.gen_expr(base)
             et = self.expr_type(stmt.base)
             idx = self.gen_expr(stmt.base.index)
             val = self.gen_expr(stmt.expr)
             if et == "str":
                 val = f"forge_copy_str({val})"
-            if self.mode == "safe":
+            if self.is_struct_type(et):
+                if not self.is_fresh_struct(stmt.expr):
+                    tmp = f"__forge_setv{self.assign_counter}"
+                    self.assign_counter += 1
+                    self.emit(f"{c_type(et)} {tmp} = {val};")
+                    self.emit_struct_own(tmp, et)
+                    val = tmp
+                suffix = "" if self.mode == "safe" else "_fast"
+                self.emit(f"forge_{self.struct_type_name(et)}_set{suffix}(&{base_code}, {idx}, {val});")
+            elif self.is_array_type(et):
+                # Array element assignment: gain a reference for the
+                # slot (unless fresh), free the old element, store.
+                # Bind base and index to temps first: they are used
+                # more than once below.
+                if not isinstance(base, A.Var) and not base_is_temp:
+                    btmp = f"__forge_sb{self.assign_counter}"
+                    self.assign_counter += 1
+                    self.emit(f"{c_type(self.expr_type(stmt.base.base))} {btmp} = {base_code};")
+                    base_code = btmp
+                if not self.is_fresh_array(stmt.expr):
+                    tmp = f"__forge_seta{self.assign_counter}"
+                    self.assign_counter += 1
+                    self.emit(f"{c_type(et)} {tmp} = {val};")
+                    self.emit(f"forge_arr_inc({tmp}.ref);")
+                    val = tmp
+                itmp = f"__forge_si{self.assign_counter}"
+                self.assign_counter += 1
+                self.emit(f"long long {itmp} = {idx};")
+                if self.mode == "safe":
+                    self.emit(f"if ({itmp} < 0 || {itmp} >= {base_code}.len) "
+                              f"forge_fail(\"array index out of bounds\");")
+                self.emit(self.array_free_code(f"{base_code}.data[{itmp}]", et))
+                self.emit(f"{base_code}.data[{itmp}] = {val};")
+            elif self.mode == "safe":
                 self.emit(f"{SET_FN[et]}(&{base_code}, {idx}, {val});")
             else:
                 self.emit(f"({base_code}).data[{idx}] = {val};")
@@ -1105,6 +1586,10 @@ class Codegen:
                 is_payload = any(pt is not None for _tag, pt in variant_info.values())
             if not is_payload:
                 target = self.gen_expr(stmt.expr)
+                # Match arms are alternatives, not sequential code:
+                # each arm starts from the pre-match facts, and no
+                # arm's facts propagate past the match.
+                match_pre = dict(self._facts)
                 for idx, (pat, _binding, body) in enumerate(stmt.arms):
                     if pat == "_":
                         if idx == 0:
@@ -1112,6 +1597,7 @@ class Codegen:
                         else:
                             self.emit("} else {")
                         self.indent += 1
+                        self._facts = dict(match_pre)
                         self.gen_block(body, ret_type)
                         self.indent -= 1
                         self.emit("}")
@@ -1119,10 +1605,12 @@ class Codegen:
                         kw = "if" if idx == 0 else "} else if"
                         self.emit(f"{kw} ({target} == {pat}) {{")
                         self.indent += 1
+                        self._facts = dict(match_pre)
                         self.gen_block(body, ret_type)
                         self.indent -= 1
                         if idx == len(stmt.arms) - 1:
                             self.emit("}")
+                self._facts = {}
                 return
             # Payload enum: evaluate once into a temp, match on .tag,
             # bind the payload into a local for arms that bind it.
@@ -1132,6 +1620,7 @@ class Codegen:
             self.emit("{")
             self.indent += 1
             self.emit(f"{c_type(et)} {temp} = {self.gen_expr(stmt.expr)};")
+            match_pre = dict(self._facts)
             for idx, (pat, binding, body) in enumerate(stmt.arms):
                 if pat == "_":
                     if idx == 0:
@@ -1139,6 +1628,7 @@ class Codegen:
                     else:
                         self.emit("} else {")
                     self.indent += 1
+                    self._facts = dict(match_pre)
                     self.gen_block(body, ret_type)
                     self.indent -= 1
                     self.emit("}")
@@ -1147,17 +1637,23 @@ class Codegen:
                     kw = "if" if idx == 0 else "} else if"
                     self.emit(f"{kw} ({temp}.tag == {tag}) {{")
                     self.indent += 1
+                    self._facts = dict(match_pre)
                     if binding is not None:
                         payload_code = f"{temp}.payload.payload_{pat}"
                         if pt == "str":
                             payload_code = f"forge_copy_str({payload_code})"
                         self.emit(f"{c_type(pt)} {binding} = {payload_code};")
+                        # The payload binding shadows any outer variable
+                        # of the same name for this arm: its value is
+                        # unknown, so drop the outer variable's facts.
+                        self._facts.pop(binding, None)
                     self.gen_block(body, ret_type)
                     self.indent -= 1
                     if idx == len(stmt.arms) - 1:
                         self.emit("}")
             self.indent -= 1
             self.emit("}")
+            self._facts = {}
             return
         if isinstance(stmt, A.Spawn):
             call = stmt.call
@@ -1178,34 +1674,89 @@ class Codegen:
             self.emit("}")
             return
         if isinstance(stmt, A.If):
-            self.emit(f"if ({self.gen_expr(stmt.cond)}) {{")
+            # Facts flow: the condition's facts hold inside each arm
+            # (true facts in `then`, false facts in `else`), and the
+            # code after the if sees the hull of both arms' facts —
+            # or only the surviving arm's facts when the other arm
+            # always exits. The emitted C is unchanged; only the
+            # check elision inside the arms and after the if differs.
+            pre = dict(self._facts)
+            cond_code = self.gen_expr(stmt.cond)
+            self.emit(f"if ({cond_code}) {{")
             self.indent += 1
             self.owned_stack.append({})
+            self._apply_cond_facts(stmt.cond, True)
+            then_lets = set()
+            self._let_stack.append(then_lets)
             self.gen_block(stmt.then, ret_type)
+            self._let_stack.pop()
+            then_facts = {k: v for k, v in self._facts.items()
+                          if k not in then_lets}
+            then_exits = self._branch_exits(stmt.then)
             self.emit_free_frame()
             self.owned_stack.pop()
             self.indent -= 1
+            self._facts = dict(pre)
+            self._apply_cond_facts(stmt.cond, False)
             if stmt.els is not None:
                 self.emit("} else {")
                 self.indent += 1
                 self.owned_stack.append({})
+                else_lets = set()
+                self._let_stack.append(else_lets)
                 self.gen_block(stmt.els, ret_type)
+                self._let_stack.pop()
+                else_facts = {k: v for k, v in self._facts.items()
+                              if k not in else_lets}
+                else_exits = self._branch_exits(stmt.els)
                 self.emit_free_frame()
                 self.owned_stack.pop()
                 self.indent -= 1
+            else:
+                else_facts = dict(self._facts)
+                else_exits = False
+            if then_exits and else_exits:
+                self._facts = {}
+            elif then_exits:
+                self._facts = else_facts
+            elif else_exits:
+                self._facts = then_facts
+            else:
+                self._facts = self._hull_facts(then_facts, else_facts)
             self.emit("}")
             return
+        if isinstance(stmt, A.Break):
+            if not self.loop_frames:
+                raise ForgeError("break outside a loop", stmt.line, stmt.col)
+            # A break leaves every scope entered inside the innermost
+            # loop's body (those scopes' blocks are abandoned, so
+            # their normal-end join never runs). Scopes entered
+            # outside that loop survive the break and are not joined.
+            for start_var, depth in reversed(self.scope_stack):
+                if depth == len(self.loop_frames):
+                    self.emit(f"forge_join_scope({start_var});")
+            self.emit_free_frames_downto(self.loop_frames[-1])
+            self.emit("break;")
+            return
         if isinstance(stmt, A.While):
+            # A loop body runs many times: facts proven before the
+            # loop may be stale by the second iteration, so no facts
+            # cross a loop boundary in either direction.
+            self._facts = {}
             self.emit(f"while ({self.gen_expr(stmt.cond)}) {{")
             self.indent += 1
             self.owned_stack.append({})
+            self.loop_frames.append(len(self.owned_stack) - 1)
             self.gen_block(stmt.body, ret_type)
+            self.loop_frames.pop()
             self.emit_free_frame()
             self.owned_stack.pop()
             self.indent -= 1
             self.emit("}")
+            self._facts = {}
             return
         if isinstance(stmt, A.For):
+            self._facts = {}
             arr_type = self.expr_type(stmt.expr)
             et = elem_of(arr_type)
             arr_tmp = f"__forge_arr{self.arr_counter}"
@@ -1217,17 +1768,58 @@ class Codegen:
             self.emit(f"{c_type(arr_type)} {arr_tmp} = {self.gen_expr(stmt.expr)};")
             self.emit(f"for (long long {idx} = 0; {idx} < {arr_tmp}.len; {idx}++) {{")
             self.indent += 1
-            self.emit(f"{C_SCALAR[et]} {stmt.name} = {arr_tmp}.data[{idx}];")
+            # Borrowed element view (like str loop vars): the array
+            # owns the fields; uses that need ownership copy on use.
+            self.emit(f"{c_type(et)} {stmt.name} = {arr_tmp}.data[{idx}];")
             self.owned_stack.append({})
+            self.loop_frames.append(len(self.owned_stack) - 1)
             self.gen_block(stmt.body, ret_type)
+            self.loop_frames.pop()
             self.emit_free_frame()
             self.owned_stack.pop()
             self.indent -= 1
             self.emit("}")
             self.indent -= 1
             self.emit("}")
+            self._facts = {}
+            return
+        if isinstance(stmt, A.Scope):
+            n = self.scope_counter
+            self.scope_counter += 1
+            start_var = f"__forge_scope{n}"
+            self.emit(f"long long {start_var} = forge_thread_count;")
+            self.scope_stack.append((start_var, len(self.loop_frames)))
+            scope_pre = dict(self._facts)
+            scope_lets = set()
+            self._let_stack.append(scope_lets)
+            self.emit("{")
+            self.indent += 1
+            self.owned_stack.append({})
+            self.gen_block(stmt.body, ret_type)
+            self._let_stack.pop()
+            # Join before freeing the frame: tasks finish before
+            # their spawning frame is torn down. Lets bound inside
+            # the scope are gone after it, so their facts revert to
+            # the pre-scope facts; assignments to outer variables
+            # keep their updated facts (the scope always executes).
+            for name in scope_lets:
+                if name in scope_pre:
+                    self._facts[name] = scope_pre[name]
+                else:
+                    self._facts.pop(name, None)
+            self.emit(f"forge_join_scope({start_var});")
+            self.emit_free_frame()
+            self.owned_stack.pop()
+            self.indent -= 1
+            self.emit("}")
+            self.scope_stack.pop()
             return
         if isinstance(stmt, A.Return):
+            # A return leaves every enclosing scope: join innermost
+            # first (an outer join would skip the already-joined
+            # threads via the flags, but the order documents intent).
+            for start_var, _depth in reversed(self.scope_stack):
+                self.emit(f"forge_join_scope({start_var});")
             if self.current_fn == "main":
                 self.emit("forge_join_threads();")
             if stmt.expr is None:
@@ -1265,7 +1857,40 @@ class Codegen:
                 val = self.gen_expr(call.args[1])
                 if et == "str":
                     val = f"forge_copy_str({val})"
-                self.emit(f"{PUSH_FN[et]}(&{var_code}, {val});")
+                if self.is_struct_type(et):
+                    if not self.is_fresh_struct(call.args[1]):
+                        tmp = f"__forge_pushv{self.assign_counter}"
+                        self.assign_counter += 1
+                        self.emit(f"{c_type(et)} {tmp} = {val};")
+                        self.emit_struct_own(tmp, et)
+                        val = tmp
+                    self.emit(f"forge_{self.struct_type_name(et)}_push(&{var_code}, {val});")
+                elif self.is_array_type(et):
+                    # Nested push: gain a reference for the slot
+                    # (unless fresh), then grow + append inline
+                    # through a pointer (single evaluation of the
+                    # target, which may be a field access).
+                    if not self.is_fresh_array(call.args[1]):
+                        tmp = f"__forge_pusha{self.assign_counter}"
+                        self.assign_counter += 1
+                        self.emit(f"{c_type(et)} {tmp} = {val};")
+                        self.emit(f"forge_arr_inc({tmp}.ref);")
+                        val = tmp
+                    ptr = f"__forge_pp{self.assign_counter}"
+                    self.assign_counter += 1
+                    self.emit(f"{c_type(self.expr_type(call.args[0]))} *{ptr} = &{var_code};")
+                    elem_c = c_type(et)
+                    ncap = f"__forge_ncap{self.assign_counter}"
+                    self.assign_counter += 1
+                    self.emit(f"if ({ptr}->len >= {ptr}->cap) {{")
+                    self.emit(f"    long long {ncap} = {ptr}->cap ? {ptr}->cap * 2 : 4;")
+                    self.emit(f"    {elem_c} *nd = ({elem_c} *)realloc({ptr}->data, sizeof({elem_c}) * (size_t){ncap});")
+                    self.emit('    if (!nd) forge_fail("out of memory");')
+                    self.emit(f"    {ptr}->data = nd; {ptr}->cap = {ncap};")
+                    self.emit("}")
+                    self.emit(f"{ptr}->data[{ptr}->len++] = {val};")
+                else:
+                    self.emit(f"{PUSH_FN[et]}(&{var_code}, {val});")
                 return
             if isinstance(call, A.Call) and call.name == "fail":
                 self.emit(f'fprintf(stderr, "jalpari: %s\\n", {self.gen_expr(call.args[0])});')
@@ -1340,6 +1965,30 @@ class Codegen:
                 parts.append(f".{fname} = {code}")
             return f"({cname}){{ {', '.join(parts)} }}"
         if isinstance(expr, A.FieldAccess):
+            if (isinstance(expr.base, A.Index)
+                    and self.is_array_type(self.expr_type(expr.base.base))
+                    and self.is_struct_type(self.expr_type(expr.base))):
+                # Direct field read from a struct-array element: no
+                # full owned copy, so no leaked sibling fields.
+                arr_t = c_type(self.expr_type(expr.base.base))
+                arr = self.gen_expr(expr.base.base)
+                idx = self.gen_expr(expr.base.index)
+                if self.mode == "safe":
+                    fa_key = ("fa", arr, idx, expr.field)
+                    fa_pure = (not self._subtree_has_call(expr.base.base)
+                               and not self._subtree_has_call(expr.base.index))
+                    if fa_pure and fa_key in self._check_cache:
+                        return f"({arr}).data[{idx}].{expr.field}"
+                    tmp_a = f"__forge_fa{self.arr_counter}"
+                    tmp_i = f"__forge_fi{self.arr_counter}"
+                    self.arr_counter += 1
+                    if fa_pure:
+                        self._check_cache[fa_key] = True
+                    return (f"({{ {arr_t} {tmp_a} = {arr}; long long {tmp_i} = {idx}; "
+                            f"if ({tmp_i} < 0 || {tmp_i} >= {tmp_a}.len) "
+                            f"forge_fail(\"array index out of bounds\"); "
+                            f"{tmp_a}.data[{tmp_i}].{expr.field}; }})")
+                return f"({arr}).data[{idx}].{expr.field}"
             base = self.gen_expr(expr.base)
             return f"({base}).{expr.field}"
         if isinstance(expr, A.ArrayLit):
@@ -1349,8 +1998,8 @@ class Codegen:
                                  "(annotate the variable or use non-empty literal)",
                                  expr.line, expr.col)
             et = elem_of(arr_type)
-            struct = ARRAY_STRUCT[et]
-            elem_c = ARRAY_ELEM_C[et]
+            struct = c_type(arr_type)
+            elem_c = c_type(et)
             tmp = f"__forge_arr{self.arr_counter}"
             self.arr_counter += 1
             n = len(expr.elems)
@@ -1362,13 +2011,69 @@ class Codegen:
                 if et == "str":
                     code = f"forge_copy_str({code})"
                 body += f"{tmp}.data[{i}] = {code}; "
+                if self.is_struct_type(et) and not self.is_fresh_struct(e):
+                    # Shared struct element: gain independent fields
+                    # for the array's copy.
+                    own = self.struct_own_code(f"{tmp}.data[{i}]", et)
+                    if own:
+                        body += f"{own} "
+                elif self.is_array_type(et) and not self.is_fresh_array(e):
+                    # Shared array element: gain a reference for the
+                    # outer array's copy.
+                    body += f"forge_arr_inc({tmp}.data[{i}].ref); "
             body += f"{tmp}"
             return "({" + " ".join(parts) + "; " + body + "; })"
         if isinstance(expr, A.Index):
+            idx_pure = (not self._subtree_has_call(expr.base)
+                        and not self._subtree_has_call(expr.index))
+            if self.expr_type(expr.base) == "str":
+                base = self.gen_expr(expr.base)
+                idx = self.gen_expr(expr.index)
+                if self.mode == "safe":
+                    key = ("str", base, idx)
+                    if idx_pure and key in self._check_cache:
+                        return f"forge_str_at_fast({base}, {idx})"
+                    if idx_pure:
+                        self._check_cache[key] = True
+                    return f"forge_str_at({base}, {idx})"
+                return f"forge_str_at_fast({base}, {idx})"
             et = self.expr_type(expr)
             base = self.gen_expr(expr.base)
             idx = self.gen_expr(expr.index)
+            if self.is_struct_type(et):
+                if self.mode == "safe":
+                    key = ("arr", base, idx)
+                    if idx_pure and key in self._check_cache:
+                        return f"forge_{self.struct_type_name(et)}_get_fast({base}, {idx})"
+                    if idx_pure:
+                        self._check_cache[key] = True
+                    return f"forge_{self.struct_type_name(et)}_get({base}, {idx})"
+                return f"forge_{self.struct_type_name(et)}_get_fast({base}, {idx})"
+            if self.is_array_type(et):
+                # Array element: a shared refcounted value. Safe mode
+                # bounds-checks via temps (single evaluation); the
+                # caller gains a reference when storing it.
+                if self.mode == "safe":
+                    key = ("arr", base, idx)
+                    if idx_pure and key in self._check_cache:
+                        return f"({base}).data[{idx}]"
+                    arr_t = c_type(self.expr_type(expr.base))
+                    tmp_a = f"__forge_ia{self.arr_counter}"
+                    tmp_i = f"__forge_ii{self.arr_counter}"
+                    self.arr_counter += 1
+                    if idx_pure:
+                        self._check_cache[key] = True
+                    return (f"({{ {arr_t} {tmp_a} = {base}; long long {tmp_i} = {idx}; "
+                            f"if ({tmp_i} < 0 || {tmp_i} >= {tmp_a}.len) "
+                            f"forge_fail(\"array index out of bounds\"); "
+                            f"{tmp_a}.data[{tmp_i}]; }})")
+                return f"({base}).data[{idx}]"
             if self.mode == "safe":
+                key = ("arr", base, idx)
+                if idx_pure and key in self._check_cache:
+                    return f"({base}).data[{idx}]"
+                if idx_pure:
+                    self._check_cache[key] = True
                 return f"{GET_FN[et]}({base}, {idx})"
             return f"({base}).data[{idx}]"
         if isinstance(expr, A.Cast):
@@ -1411,9 +2116,17 @@ class Codegen:
             raise ForgeError("? expression was not checked as Option/Result")
         if isinstance(expr, A.UnaryOp):
             if expr.op == "-" and self.expr_type(expr.expr) == "int" and self.mode == "safe":
-                return f"forge_neg({self.gen_expr(expr.expr)})"
+                code = self.gen_expr(expr.expr)
+                iv = self._int_interval(expr.expr)
+                if iv is not None and iv[0] > self.INT_MIN:
+                    return f"(-{code})"
+                return f"forge_neg({code})"
             return f"({expr.op}{self.gen_expr(expr.expr)})"
         if isinstance(expr, A.BinOp):
+            if expr.op in ("==", "!=") and self.expr_type(expr.left) == "str":
+                spec = self._str_index_cmp(expr)
+                if spec is not None:
+                    return spec
             left = self.gen_expr(expr.left)
             right = self.gen_expr(expr.right)
             if expr.op == "+" and self.expr_type(expr.left) == "str":
@@ -1427,9 +2140,22 @@ class Codegen:
                     checked = {"+": "forge_add", "-": "forge_sub", "*": "forge_mul",
                                "/": "forge_div", "%": "forge_mod"}
                     if expr.op in checked:
+                        if self._binop_safe(expr.op, expr.left, expr.right):
+                            return f"({left} {expr.op} {right})"
+                        pure = (not self._subtree_has_call(expr.left)
+                                and not self._subtree_has_call(expr.right))
+                        key = ("bin", expr.op, left, right)
+                        if pure and key in self._check_cache:
+                            return f"({left} {expr.op} {right})"
+                        if pure:
+                            self._check_cache[key] = True
                         return f"{checked[expr.op]}({left}, {right})"
             return f"({left} {expr.op} {right})"
         if isinstance(expr, A.Call):
+            # A call may mutate shared state (an array passed to it
+            # can be written through its parameter), so it ends any
+            # duplicate-check run inside this expression.
+            self._check_cache = {}
             if expr.name == "len":
                 arg = expr.args[0]
                 code = self.gen_expr(arg)

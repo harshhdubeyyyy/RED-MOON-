@@ -1,0 +1,18 @@
+import "speed.fg";
+fn approx(a: float, b: float, tol: float) -> bool {
+    let mut d: float = a - b;
+    if d < 0.0 { d = 0.0 - d; }
+    return d < tol;
+}
+fn main() -> int {
+    let mut bad: int = 0;
+    if !approx(kmh_to_ms(36.0), 10.0, 0.000001) { println("FAIL kmh ms"); bad = 1; }
+    if !approx(ms_to_kmh(10.0), 36.0, 0.000001) { println("FAIL ms kmh"); bad = 1; }
+    if !approx(kmh_to_mph(100.0), 62.1371, 0.0001) { println("FAIL kmh mph"); bad = 1; }
+    if !approx(mph_to_kmh(60.0), 96.56064, 0.0001) { println("FAIL mph kmh"); bad = 1; }
+    if !approx(ms_to_mph(10.0), 22.3694, 0.0001) { println("FAIL ms mph"); bad = 1; }
+    if !approx(mph_to_ms(60.0), 26.8224, 0.0001) { println("FAIL mph ms"); bad = 1; }
+    println("speed demo: 36 km/h =", kmh_to_ms(36.0), "m/s");
+    if bad == 0 { println("speed demo ok"); }
+    return bad;
+}

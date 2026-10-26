@@ -1,0 +1,5 @@
+import "../src/grades.fg";
+fn main() -> int {
+    println("smoke: 95% =", letter_grade(95.0));
+    return 0;
+}

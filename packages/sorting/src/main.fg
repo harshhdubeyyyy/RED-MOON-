@@ -1,0 +1,30 @@
+import "sorting.fg";
+fn approx(a: float, b: float, tol: float) -> bool {
+    let mut d: float = a - b;
+    if d < 0.0 { d = 0.0 - d; }
+    return d < tol;
+}
+fn main() -> int {
+    let mut bad: int = 0;
+    let s: [int] = bubble_sort_int([5, 2, 8, 1]);
+    if s[0] != 1 { println("FAIL sort int 0"); bad = 1; }
+    if s[1] != 2 { println("FAIL sort int 1"); bad = 1; }
+    if s[2] != 5 { println("FAIL sort int 2"); bad = 1; }
+    if s[3] != 8 { println("FAIL sort int 3"); bad = 1; }
+    let f: [float] = bubble_sort_float([3.5, 1.5, 2.5]);
+    if !approx(f[0], 1.5, 0.000001) { println("FAIL sort float 0"); bad = 1; }
+    if !approx(f[1], 2.5, 0.000001) { println("FAIL sort float 1"); bad = 1; }
+    if !approx(f[2], 3.5, 0.000001) { println("FAIL sort float 2"); bad = 1; }
+    if !is_sorted_int([1, 2, 3]) { println("FAIL is_sorted true"); bad = 1; }
+    if is_sorted_int([3, 1]) { println("FAIL is_sorted false"); bad = 1; }
+    if !is_sorted_float([1.0, 2.0]) { println("FAIL is_sorted float"); bad = 1; }
+    let r: [int] = reverse_int([1, 2, 3]);
+    if r[0] != 3 { println("FAIL reverse 0"); bad = 1; }
+    if r[1] != 2 { println("FAIL reverse 1"); bad = 1; }
+    if r[2] != 1 { println("FAIL reverse 2"); bad = 1; }
+    let rf: [float] = reverse_float([1.0, 2.0]);
+    if !approx(rf[0], 2.0, 0.000001) { println("FAIL reverse float"); bad = 1; }
+    println("sorting demo: sorted [5,2,8,1] =", s[0], s[1], s[2], s[3]);
+    if bad == 0 { println("sorting demo ok"); }
+    return bad;
+}

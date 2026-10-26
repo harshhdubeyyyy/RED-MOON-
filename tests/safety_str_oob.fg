@@ -1,0 +1,5 @@
+fn main() -> int {
+    let s = "hello";
+    println(s[10]);
+    return 0;
+}

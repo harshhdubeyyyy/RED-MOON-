@@ -1,0 +1,18 @@
+import "budget.fg";
+fn approx(a: float, b: float, tol: float) -> bool {
+    let mut d: float = a - b;
+    if d < 0.0 { d = 0.0 - d; }
+    return d < tol;
+}
+fn main() -> int {
+    let mut bad: int = 0;
+    let ex: [float] = [1200.0, 800.0, 300.0, 700.0];
+    if !approx(total_expenses(ex), 3000.0, 0.000001) { println("FAIL total"); bad = 1; }
+    if !approx(remaining(5000.0, ex), 2000.0, 0.000001) { println("FAIL remaining"); bad = 1; }
+    if !approx(savings_rate(5000.0, ex), 40.0, 0.000001) { println("FAIL savings"); bad = 1; }
+    if !approx(expense_ratio(5000.0, ex), 60.0, 0.000001) { println("FAIL ratio"); bad = 1; }
+    if !approx(biggest_expense(ex), 1200.0, 0.000001) { println("FAIL biggest"); bad = 1; }
+    println("budget demo: remaining from 5000 =", remaining(5000.0, ex));
+    if bad == 0 { println("budget demo ok"); }
+    return bad;
+}

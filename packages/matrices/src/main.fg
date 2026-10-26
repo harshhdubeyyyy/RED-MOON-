@@ -1,0 +1,29 @@
+import "matrices.fg";
+fn approx(a: float, b: float, tol: float) -> bool {
+    let mut d: float = a - b;
+    if d < 0.0 { d = 0.0 - d; }
+    return d < tol;
+}
+fn main() -> int {
+    let mut bad: int = 0;
+    let a: [[float]] = [[1.0, 2.0], [3.0, 4.0]];
+    let b: [[float]] = [[5.0, 6.0], [7.0, 8.0]];
+    if mat_rows(a) != 2 { println("FAIL rows"); bad = 1; }
+    if mat_cols(a) != 2 { println("FAIL cols"); bad = 1; }
+    let s: [[float]] = mat_add(a, b);
+    if !approx(s[0][0], 6.0, 0.000001) { println("FAIL add 00"); bad = 1; }
+    if !approx(s[1][1], 12.0, 0.000001) { println("FAIL add 11"); bad = 1; }
+    let m: [[float]] = mat_mul(a, b);
+    if !approx(m[0][0], 19.0, 0.000001) { println("FAIL mul 00"); bad = 1; }
+    if !approx(m[0][1], 22.0, 0.000001) { println("FAIL mul 01"); bad = 1; }
+    if !approx(m[1][0], 43.0, 0.000001) { println("FAIL mul 10"); bad = 1; }
+    if !approx(m[1][1], 50.0, 0.000001) { println("FAIL mul 11"); bad = 1; }
+    let t: [[float]] = mat_transpose(a);
+    if !approx(t[0][1], 3.0, 0.000001) { println("FAIL transpose 01"); bad = 1; }
+    if !approx(t[1][0], 2.0, 0.000001) { println("FAIL transpose 10"); bad = 1; }
+    let c: [[float]] = mat_scale(a, 2.0);
+    if !approx(c[1][1], 8.0, 0.000001) { println("FAIL scale"); bad = 1; }
+    println("matrices demo: A x B [0][0] =", m[0][0]);
+    if bad == 0 { println("matrices demo ok"); }
+    return bad;
+}

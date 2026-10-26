@@ -75,6 +75,7 @@ class RVGen:
         self.lines = []
         self.init_lines = []          # _start static-string initialisation
         self.label_n = 0
+        self.loop_ends = []
         self.free = list(TEMPS)
         self.live = []                # temps currently holding values
         self.funcs = {fn.name: fn for fn in program.funcs}
@@ -656,6 +657,11 @@ class RVGen:
         if isinstance(stmt, A.Block):
             self.gen_block(stmt)
             return
+        if isinstance(stmt, A.Scope):
+            # No threads on big32: a scope without spawn runs as its
+            # block, and a spawn inside still fails as before.
+            self.gen_block(stmt.body)
+            return
         if isinstance(stmt, A.Let):
             t = stmt.ann if stmt.ann else self.expr_type(stmt.expr)
             if t in self.struct_layout:
@@ -724,6 +730,10 @@ class RVGen:
             if not isinstance(base, A.Var):
                 raise ForgeError("index assignment target must be a variable on big32")
             slot, _t = self.lookup(base.name)
+            if _t == "str":
+                raise ForgeError("cannot assign to a string index on big32")
+            if _t.startswith("[") and _t.endswith("]") and _t[1:-1] in self.struct_layout:
+                raise ForgeError("arrays of structs are not supported on big32 (v1)")
             ptr = self.alloc()
             self.emit(f"    lw {ptr}, {self.slot_off(slot)}(s0)")
             idx = self.gen_expr(stmt.base.index)
@@ -771,6 +781,11 @@ class RVGen:
                 self.gen_block(stmt.els)
             self.emit(f"{end}:")
             return
+        if isinstance(stmt, A.Break):
+            if not self.loop_ends:
+                raise ForgeError("big32: break outside a loop", stmt.line, stmt.col)
+            self.emit(f"    j {self.loop_ends[-1]}")
+            return
         if isinstance(stmt, A.While):
             cond_l = self.label("while")
             end = self.label("wend")
@@ -778,7 +793,9 @@ class RVGen:
             cond = self.gen_expr(stmt.cond)
             self.emit(f"    beq {cond}, zero, {end}")
             self.free_reg(cond)
+            self.loop_ends.append(end)
             self.gen_block(stmt.body)
+            self.loop_ends.pop()
             self.emit(f"    j {cond_l}")
             self.emit(f"{end}:")
             return
@@ -849,7 +866,9 @@ class RVGen:
             self.emit(f"    sw {val}, {self.slot_off(var_slot)}(s0)")
             self.free_reg(val)
             self.env.append({stmt.name: (var_slot, "int")})
+            self.loop_ends.append(end)
             self.gen_block(stmt.body)
+            self.loop_ends.pop()
             self.env.pop()
             inc = self.alloc()
             self.emit(f"    lw {inc}, {self.slot_off(cnt_slot)}(s0)")
@@ -865,6 +884,8 @@ class RVGen:
         if not arr_t.startswith("["):
             raise ForgeError("for loop over a non-array is not supported on big32")
         et = arr_t[1:-1]
+        if et in self.struct_layout:
+            raise ForgeError("arrays of structs are not supported on big32 (v1)")
         ptr = self.gen_expr(stmt.expr)
         len_slot = self.alloc_slot()
         idx_slot = self.alloc_slot()
@@ -896,7 +917,9 @@ class RVGen:
         self.free_reg(idx2)
         self.free_reg(addr)
         self.env.append({stmt.name: (var_slot, et)})
+        self.loop_ends.append(end)
         self.gen_block(stmt.body)
+        self.loop_ends.pop()
         self.env.pop()
         inc = self.alloc()
         self.emit(f"    lw {inc}, {self.slot_off(idx_slot)}(s0)")
@@ -981,6 +1004,8 @@ class RVGen:
             if et in ("[?]", "int"):
                 raise ForgeError("array literal needs a known element type on big32")
             inner = et[1:-1]
+            if inner in self.struct_layout:
+                raise ForgeError("arrays of structs are not supported on big32 (v1)")
             n = len(expr.elems)
             addr = self.static_addr(4 * (n + 1))
             ptr = self.alloc()
@@ -1014,6 +1039,11 @@ class RVGen:
                     return r
             raise ForgeError(f"struct {t} has no field {expr.field}")
         if isinstance(expr, A.Index):
+            if self.expr_type(expr.base) == "str":
+                raise ForgeError("string indexing is not supported on big32 (v1)")
+            bt = self.expr_type(expr.base)
+            if bt.startswith("[") and bt.endswith("]") and bt[1:-1] in self.struct_layout:
+                raise ForgeError("arrays of structs are not supported on big32 (v1)")
             # Float elements load as bit patterns, same as ints.
             base = self.gen_expr(expr.base)
             idx = self.gen_expr(expr.index)

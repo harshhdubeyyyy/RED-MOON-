@@ -1,0 +1,18 @@
+fn add(a: int, b: int) -> int {
+    return a + b;
+}
+
+fn greet(name: str) -> str {
+    return "hi " + name;
+}
+
+fn shout(msg: str) {
+    println(msg);
+}
+
+fn main() -> int {
+    println(add(40, 2));
+    println(greet("teju"));
+    shout("done");
+    return add(40, 2);
+}

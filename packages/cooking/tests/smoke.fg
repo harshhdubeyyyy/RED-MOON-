@@ -1,0 +1,5 @@
+import "../src/cooking.fg";
+fn main() -> int {
+    println("smoke: 3 tsp =", tsp_to_ml(3.0), "ml");
+    return 0;
+}

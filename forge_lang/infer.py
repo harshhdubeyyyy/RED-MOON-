@@ -60,6 +60,8 @@ class Infer:
     def walk_stmt(self, stmt):
         if isinstance(stmt, A.Block):
             self.walk_block(stmt)
+        elif isinstance(stmt, A.Scope):
+            self.walk_block(stmt.body)
         elif isinstance(stmt, A.Let):
             if isinstance(stmt.expr, A.ArrayLit) and stmt.ann:
                 t = stmt.ann
@@ -164,6 +166,8 @@ class Infer:
         if isinstance(expr, A.Index):
             bt = self.walk_expr(expr.base)
             self.walk_expr(expr.index)
+            if bt == "str":
+                return self.set(expr, "str")
             et = bt[1:-1] if bt.startswith("[") else "int"
             return self.set(expr, et)
         if isinstance(expr, A.Cast):

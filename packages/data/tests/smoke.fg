@@ -1,0 +1,5 @@
+import "../src/data.fg";
+fn main() -> int {
+    println("smoke: 2048 bytes =", bytes_to_kb(2048.0), "KB");
+    return 0;
+}

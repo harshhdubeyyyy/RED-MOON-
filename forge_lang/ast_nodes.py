@@ -60,6 +60,13 @@ class Spawn:
 
 
 @dataclass
+class Scope:
+    body: object  # Block node: tasks spawned inside are joined at its end
+    line: int
+    col: int
+
+
+@dataclass
 class Try:
     expr: object
     line: int
@@ -95,7 +102,7 @@ class Assign:
 
 @dataclass
 class IndexAssign:
-    base: object  # Index node whose base is a Var
+    base: object  # Index node whose base is a Var, a field, or another index
     expr: object
     line: int
     col: int
@@ -123,6 +130,12 @@ class For:
     name: str
     expr: object
     body: object
+    line: int
+    col: int
+
+
+@dataclass
+class Break:
     line: int
     col: int
 

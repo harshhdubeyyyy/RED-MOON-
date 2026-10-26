@@ -1,0 +1,494 @@
+// registry_server: a package registry server written in Jal Pari itself.
+//
+// The killer-app test of the language's HTTP server, JSON, string,
+// and file builtins: it speaks the same HTTP API as the Python
+// reference server (forge_lang/registry_server.py), so the real
+// `forge pkg publish-remote` / `forge pkg add-remote` clients work
+// against it unchanged.
+//
+// Run (from an empty directory that will hold the registry):
+//   forge.py build examples/apps/registry_server.fg -o regserver
+//   ./regserver [port] [token]
+// Defaults: port 8765, no token (open publishing, like the Python
+// server with no --token). With a token, publishing requires
+// header `Authorization: Bearer <token>`.
+//
+// API (all JSON unless noted):
+//   GET  /api/packages                        -> {"packages": [{name, versions}]}
+//   GET  /api/packages/<name>                 -> {"name", "versions"}
+//   GET  /api/packages/<name>/<version>       -> {"name", "version", "files"}
+//   GET  /api/packages/<name>/<version>/<file> -> raw .fg text
+//   POST /api/publish {name, version, files}  -> {"ok": true, ...}
+// Errors: 400 bad name/file/body, 401 unauthorized, 404 not found,
+// 409 version already exists (published versions are immutable).
+//
+// Storage (this port's own layout — the HTTP API is the contract,
+// not the disk layout, so it is NOT interchangeable on disk with
+// the Python server's nested directories):
+//   registry-index.txt  — one line per file: "name version file"
+//   reg_<name>__<version>__<file> — flat file contents
+// The index exists because Jal Pari has no directory-listing
+// builtin: the server tracks what it published instead of
+// scanning the disk.
+//
+// Honest limits (same as the HTTP server underneath):
+//   - One request per connection, no TLS. Put it behind a
+//     reverse proxy for public use.
+//   - Requests are read until headers plus Content-Length body
+//     bytes arrive (up to 100 recvs), so clients that send
+//     headers and body as separate writes work; each recv is
+//     still at most 8191 bytes, so a single huge body needs
+//     many packets and is bounded by the read cap.
+//   - Publish bodies are parsed as JSON; non-ASCII file contents
+//     arrive as \u escapes, which this port renders as "?" —
+//     publish ASCII-only packages (all 30 seed packages are).
+//   - Listings come back in publish order, not sorted (Jal Pari
+//     has no string ordering); clients look names up, so order
+//     does not matter.
+
+import "json.fg";
+
+struct Req {
+    method: str;
+    path: str;
+    auth: str;
+    body: str;
+}
+struct FilePair {
+    name: str;
+    text: str;
+}
+struct Outcome {
+    code: int;
+    body: str;
+    idx: [str];
+}
+
+fn is_safe_name(s: str) -> bool {
+    if len(s) == 0 { return false; }
+    let first_ok: str = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_";
+    let rest_ok: str = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.-";
+    let mut i: int = 0;
+    while i < len(s) {
+        let mut allowed: str = first_ok;
+        if i > 0 { allowed = rest_ok; }
+        let mut ok: bool = false;
+        let mut j: int = 0;
+        while j < len(allowed) {
+            if s[i] == allowed[j] { ok = true; }
+            j = j + 1;
+        }
+        if !ok { return false; }
+        i = i + 1;
+    }
+    return true;
+}
+
+fn find_str(xs: [str], target: str) -> int {
+    let mut i: int = 0;
+    while i < len(xs) {
+        if xs[i] == target { return i; }
+        i = i + 1;
+    }
+    return -1;
+}
+
+fn idx_names(idx: [str]) -> [str] {
+    let mut out: [str] = [];
+    let mut i: int = 0;
+    while i < len(idx) {
+        let parts: [str] = split(idx[i], " ");
+        if len(parts) >= 3 {
+            if find_str(out, parts[0]) < 0 { push(out, parts[0]); }
+        }
+        i = i + 1;
+    }
+    return out;
+}
+
+fn idx_versions(idx: [str], name: str) -> [str] {
+    let mut out: [str] = [];
+    let mut i: int = 0;
+    while i < len(idx) {
+        let parts: [str] = split(idx[i], " ");
+        if len(parts) >= 3 {
+            if parts[0] == name {
+                if find_str(out, parts[1]) < 0 { push(out, parts[1]); }
+            }
+        }
+        i = i + 1;
+    }
+    return out;
+}
+
+fn idx_files(idx: [str], name: str, version: str) -> [str] {
+    let mut out: [str] = [];
+    let mut i: int = 0;
+    while i < len(idx) {
+        let parts: [str] = split(idx[i], " ");
+        if len(parts) >= 3 {
+            if parts[0] == name {
+                if parts[1] == version { push(out, parts[2]); }
+            }
+        }
+        i = i + 1;
+    }
+    return out;
+}
+
+fn idx_has_version(idx: [str], name: str, version: str) -> bool {
+    let mut i: int = 0;
+    while i < len(idx) {
+        let parts: [str] = split(idx[i], " ");
+        if len(parts) >= 3 {
+            if parts[0] == name {
+                if parts[1] == version { return true; }
+            }
+        }
+        i = i + 1;
+    }
+    return false;
+}
+
+fn json_str_array(xs: [str]) -> str {
+    let mut out: str = "[";
+    let mut i: int = 0;
+    while i < len(xs) {
+        if i > 0 { out = out + ", "; }
+        out = out + "\"" + xs[i] + "\"";
+        i = i + 1;
+    }
+    return out + "]";
+}
+
+fn packages_json(idx: [str]) -> str {
+    let names: [str] = idx_names(idx);
+    let mut out: str = "{\"packages\": [";
+    let mut i: int = 0;
+    while i < len(names) {
+        if i > 0 { out = out + ", "; }
+        out = out + "{\"name\": \"" + names[i] + "\", \"versions\": " + json_str_array(idx_versions(idx, names[i])) + "}";
+        i = i + 1;
+    }
+    return out + "]}";
+}
+
+fn err_json(msg: str) -> str { return "{\"error\": \"" + msg + "\"}"; }
+
+fn header_content_length(head: str) -> int {
+    let lines: [str] = split(head, "\r\n");
+    let mut i: int = 0;
+    while i < len(lines) {
+        if starts_with(lines[i], "Content-Length:") {
+            return parse_int(trim(substr(lines[i], 15, len(lines[i]) - 15)));
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn request_body_len(hb: [str]) -> int {
+    let mut n: int = 0;
+    let mut i: int = 1;
+    while i < len(hb) {
+        n = n + len(hb[i]);
+        if i > 1 { n = n + 4; }
+        i = i + 1;
+    }
+    return n;
+}
+
+// Read until the request is complete: headers (up to the blank line)
+// plus Content-Length body bytes when present. One recv is not
+// enough in general — urllib-style clients send headers and body
+// as separate writes, and a single recv can return headers only.
+// An empty read means the client went away; stop instead of
+// spinning. Caps at 100 reads.
+fn read_full_request(client: int) -> str {
+    let mut full: str = http_read_request(client);
+    let mut reads: int = 1;
+    while reads < 100 {
+        let hb: [str] = split(full, "\r\n\r\n");
+        if len(hb) >= 2 {
+            let cl: int = header_content_length(hb[0]);
+            if cl <= 0 { return full; }
+            if request_body_len(hb) >= cl { return full; }
+        }
+        let more: str = http_read_request(client);
+        if more == "" { return full; }
+        full = full + more;
+        reads = reads + 1;
+    }
+    return full;
+}
+
+fn parse_request(req: str) -> Req {
+    let hb: [str] = split(req, "\r\n\r\n");
+    let head: str = hb[0];
+    let mut body: str = "";
+    if len(hb) > 1 {
+        body = hb[1];
+        let mut k: int = 2;
+        while k < len(hb) { body = body + "\r\n\r\n" + hb[k]; k = k + 1; }
+    }
+    let lines: [str] = split(head, "\r\n");
+    let mut method: str = "";
+    let mut path: str = "/";
+    if len(lines) > 0 {
+        let first: [str] = split(lines[0], " ");
+        if len(first) >= 2 { method = first[0]; path = first[1]; }
+    }
+    let qp: [str] = split(path, "?");
+    path = qp[0];
+    let mut auth: str = "";
+    let mut i: int = 0;
+    while i < len(lines) {
+        if starts_with(lines[i], "Authorization:") {
+            auth = trim(substr(lines[i], 14, len(lines[i]) - 14));
+        }
+        i = i + 1;
+    }
+    return Req { method: method, path: path, auth: auth, body: body };
+}
+
+fn path_parts(path: str) -> [str] {
+    let raw: [str] = split(path, "/");
+    let mut out: [str] = [];
+    let mut i: int = 0;
+    while i < len(raw) {
+        if raw[i] != "" { push(out, raw[i]); }
+        i = i + 1;
+    }
+    return out;
+}
+
+fn json_unescape(s: str) -> str {
+    let mut out: str = "";
+    let mut i: int = 0;
+    while i < len(s) {
+        let ch: str = s[i];
+        if ch == "\\" {
+            if i + 1 < len(s) {
+                let nx: str = s[i + 1];
+                if nx == "u" {
+                    out = out + "?";
+                    i = i + 6;
+                    if i > len(s) { i = len(s); }
+                } else {
+                    if nx == "n" { out = out + "\n"; }
+                    else if nx == "r" { out = out + "\r"; }
+                    else if nx == "t" { out = out + "\t"; }
+                    else if nx == "\"" { out = out + "\""; }
+                    else if nx == "\\" { out = out + "\\"; }
+                    else if nx == "/" { out = out + "/"; }
+                    else { out = out + nx; }
+                    i = i + 2;
+                }
+            } else {
+                out = out + ch;
+                i = i + 1;
+            }
+        } else {
+            out = out + ch;
+            i = i + 1;
+        }
+    }
+    return out;
+}
+
+fn parse_files(body: str) -> [FilePair] {
+    let mut out: [FilePair] = [];
+    let fparts: [str] = split(body, "\"files\"");
+    if len(fparts) < 2 { return out; }
+    let rest: str = fparts[1];
+    let mut i: int = 0;
+    while i < len(rest) {
+        if rest[i] == "{" { break; }
+        i = i + 1;
+    }
+    if i >= len(rest) { return out; }
+    i = i + 1;
+    while i < len(rest) {
+        while i < len(rest) {
+            if rest[i] == " " { i = i + 1; }
+            else if rest[i] == "\n" { i = i + 1; }
+            else if rest[i] == "\r" { i = i + 1; }
+            else if rest[i] == "\t" { i = i + 1; }
+            else if rest[i] == "," { i = i + 1; }
+            else { break; }
+        }
+        if i >= len(rest) { return out; }
+        if rest[i] == "}" { return out; }
+        if rest[i] != "\"" { return out; }
+        let mut key: str = "";
+        i = i + 1;
+        while i < len(rest) {
+            if rest[i] == "\\" {
+                if i + 1 < len(rest) { key = key + rest[i] + rest[i + 1]; i = i + 2; } else { i = i + 1; }
+            } else if rest[i] == "\"" { break; }
+            else { key = key + rest[i]; i = i + 1; }
+        }
+        key = json_unescape(key);
+        if i >= len(rest) { return out; }
+        i = i + 1;
+        while i < len(rest) {
+            if rest[i] == " " { i = i + 1; }
+            else if rest[i] == "\n" { i = i + 1; }
+            else if rest[i] == "\r" { i = i + 1; }
+            else if rest[i] == "\t" { i = i + 1; }
+            else { break; }
+        }
+        if i >= len(rest) { return out; }
+        if rest[i] != ":" { return out; }
+        i = i + 1;
+        while i < len(rest) {
+            if rest[i] == " " { i = i + 1; }
+            else if rest[i] == "\n" { i = i + 1; }
+            else if rest[i] == "\r" { i = i + 1; }
+            else if rest[i] == "\t" { i = i + 1; }
+            else { break; }
+        }
+        if i >= len(rest) { return out; }
+        if rest[i] != "\"" { return out; }
+        let mut val: str = "";
+        i = i + 1;
+        while i < len(rest) {
+            if rest[i] == "\\" {
+                if i + 1 < len(rest) { val = val + rest[i] + rest[i + 1]; i = i + 2; } else { i = i + 1; }
+            } else if rest[i] == "\"" { break; }
+            else { val = val + rest[i]; i = i + 1; }
+        }
+        val = json_unescape(val);
+        if i >= len(rest) { return out; }
+        i = i + 1;
+        push(out, FilePair { name: key, text: val });
+    }
+    return out;
+}
+
+fn load_index() -> [str] {
+    let mut out: [str] = [];
+    if file_exists("registry-index.txt") {
+        let text: str = read_file("registry-index.txt");
+        let lines: [str] = split(text, "\n");
+        let mut i: int = 0;
+        while i < len(lines) {
+            if lines[i] != "" { push(out, lines[i]); }
+            i = i + 1;
+        }
+    }
+    return out;
+}
+
+fn route(idx: [str], method: str, path: str, auth: str, body: str, token: str) -> Outcome {
+    let parts: [str] = path_parts(path);
+    if method == "GET" {
+        if len(parts) == 2 {
+            if parts[0] == "api" {
+                if parts[1] == "packages" {
+                    return Outcome { code: 200, body: packages_json(idx), idx: idx };
+                }
+            }
+        }
+        if len(parts) == 3 {
+            if parts[0] == "api" {
+                if parts[1] == "packages" {
+                    let name: str = parts[2];
+                    if !is_safe_name(name) { return Outcome { code: 400, body: err_json("bad name"), idx: idx }; }
+                    return Outcome { code: 200, body: "{\"name\": \"" + name + "\", \"versions\": " + json_str_array(idx_versions(idx, name)) + "}", idx: idx };
+                }
+            }
+        }
+        if len(parts) == 4 {
+            if parts[0] == "api" {
+                if parts[1] == "packages" {
+                    let name: str = parts[2];
+                    let version: str = parts[3];
+                    if !is_safe_name(name) { return Outcome { code: 400, body: err_json("bad name"), idx: idx }; }
+                    if !is_safe_name(version) { return Outcome { code: 400, body: err_json("bad version"), idx: idx }; }
+                    if !idx_has_version(idx, name, version) { return Outcome { code: 404, body: err_json("not found"), idx: idx }; }
+                    let files: [str] = idx_files(idx, name, version);
+                    return Outcome { code: 200, body: "{\"name\": \"" + name + "\", \"version\": \"" + version + "\", \"files\": " + json_str_array(files) + "}", idx: idx };
+                }
+            }
+        }
+        if len(parts) == 5 {
+            if parts[0] == "api" {
+                if parts[1] == "packages" {
+                    let name: str = parts[2];
+                    let version: str = parts[3];
+                    let file: str = parts[4];
+                    if !is_safe_name(name) { return Outcome { code: 400, body: err_json("bad name"), idx: idx }; }
+                    if !is_safe_name(version) { return Outcome { code: 400, body: err_json("bad version"), idx: idx }; }
+                    if !is_safe_name(file) { return Outcome { code: 400, body: err_json("bad file"), idx: idx }; }
+                    if !ends_with(file, ".fg") { return Outcome { code: 400, body: err_json("bad file"), idx: idx }; }
+                    if find_str(idx_files(idx, name, version), file) < 0 { return Outcome { code: 404, body: err_json("not found"), idx: idx }; }
+                    let flat: str = "reg_" + name + "__" + version + "__" + file;
+                    if !file_exists(flat) { return Outcome { code: 404, body: err_json("not found"), idx: idx }; }
+                    return Outcome { code: 200, body: read_file(flat), idx: idx };
+                }
+            }
+        }
+        return Outcome { code: 404, body: err_json("not found"), idx: idx };
+    }
+    if method == "POST" {
+        if len(parts) == 2 {
+            if parts[0] == "api" {
+                if parts[1] == "publish" {
+                    if token != "" {
+                        if auth != "Bearer " + token { return Outcome { code: 401, body: err_json("unauthorized"), idx: idx }; }
+                    }
+                    let name: str = json_get(body, "name");
+                    let version: str = json_get(body, "version");
+                    let files: [FilePair] = parse_files(body);
+                    if name == "" { return Outcome { code: 400, body: err_json("bad publish body"), idx: idx }; }
+                    if !is_safe_name(name) { return Outcome { code: 400, body: err_json("bad publish body"), idx: idx }; }
+                    if version == "" { return Outcome { code: 400, body: err_json("bad publish body"), idx: idx }; }
+                    if !is_safe_name(version) { return Outcome { code: 400, body: err_json("bad publish body"), idx: idx }; }
+                    if len(files) == 0 { return Outcome { code: 400, body: err_json("bad publish body"), idx: idx }; }
+                    let mut fi: int = 0;
+                    while fi < len(files) {
+                        if !is_safe_name(files[fi].name) { return Outcome { code: 400, body: err_json("bad publish body"), idx: idx }; }
+                        if !ends_with(files[fi].name, ".fg") { return Outcome { code: 400, body: err_json("bad publish body"), idx: idx }; }
+                        fi = fi + 1;
+                    }
+                    if idx_has_version(idx, name, version) { return Outcome { code: 409, body: err_json("version already exists"), idx: idx }; }
+                    let mut nidx: [str] = [];
+                    let mut li: int = 0;
+                    while li < len(idx) { push(nidx, idx[li]); li = li + 1; }
+                    fi = 0;
+                    while fi < len(files) {
+                        let flat: str = "reg_" + name + "__" + version + "__" + files[fi].name;
+                        let _w: bool = write_file(flat, files[fi].text);
+                        push(nidx, name + " " + version + " " + files[fi].name);
+                        fi = fi + 1;
+                    }
+                    let _wi: bool = write_file("registry-index.txt", join(nidx, "\n") + "\n");
+                    return Outcome { code: 200, body: "{\"ok\": true, \"name\": \"" + name + "\", \"version\": \"" + version + "\"}", idx: nidx };
+                }
+            }
+        }
+        return Outcome { code: 404, body: err_json("not found"), idx: idx };
+    }
+    return Outcome { code: 404, body: err_json("not found"), idx: idx };
+}
+
+fn main() -> int {
+    let a: [str] = args();
+    let mut port: int = 8765;
+    if len(a) >= 1 { port = parse_int(a[0]); }
+    let mut token: str = "";
+    if len(a) >= 2 { token = a[1]; }
+    let mut idx: [str] = load_index();
+    let fd: int = http_listen(port);
+    println("jalpari registry on port", port);
+    while true {
+        let client: int = http_accept(fd);
+        let req: str = read_full_request(client);
+        let r: Req = parse_request(req);
+        let o: Outcome = route(idx, r.method, r.path, r.auth, r.body, token);
+        idx = o.idx;
+        let _sent: int = http_respond_status(client, o.code, o.body);
+    }
+    return 0;
+}

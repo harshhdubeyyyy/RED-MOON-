@@ -1,0 +1,14 @@
+import "checks.fg";
+fn main() -> int {
+    let mut bad: int = 0;
+    if !luhn_valid("79927398713") { println("FAIL luhn valid"); bad = 1; }
+    if luhn_valid("79927398714") { println("FAIL luhn invalid"); bad = 1; }
+    if luhn_check_digit("7992739871") != 3 { println("FAIL luhn digit"); bad = 1; }
+    if !isbn13_valid("9780306406157") { println("FAIL isbn13 valid"); bad = 1; }
+    if isbn13_valid("9780306406158") { println("FAIL isbn13 invalid"); bad = 1; }
+    if !isbn10_valid("0306406152") { println("FAIL isbn10 valid"); bad = 1; }
+    if isbn10_valid("0306406153") { println("FAIL isbn10 invalid"); bad = 1; }
+    println("checks demo: luhn 79927398713 valid =", luhn_valid("79927398713"));
+    if bad == 0 { println("checks demo ok"); }
+    return bad;
+}

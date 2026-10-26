@@ -1,0 +1,17 @@
+fn worker() {
+    println("worker done");
+}
+
+fn main() -> int {
+    let mut i: int = 0;
+    while i < 3 {
+        scope {
+            spawn worker();
+            break;
+        }
+        println("in loop after scope");
+        i = i + 1;
+    }
+    println("after loop");
+    return 0;
+}

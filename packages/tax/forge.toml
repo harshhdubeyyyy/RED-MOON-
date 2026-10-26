@@ -1,0 +1,6 @@
+[package]
+name = "tax"
+version = "0.1.0"
+description = "Tax amounts, tax-inclusive and tax-exclusive prices, tax splits."
+
+[dependencies]

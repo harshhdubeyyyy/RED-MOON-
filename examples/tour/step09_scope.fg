@@ -1,0 +1,11 @@
+fn worker(n: int) {
+    println("worker done", n);
+}
+fn main() -> int {
+    scope {
+        spawn worker(1);
+        spawn worker(2);
+    }
+    println("after scope");
+    return 0;
+}

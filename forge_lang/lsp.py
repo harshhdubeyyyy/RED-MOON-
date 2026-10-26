@@ -16,18 +16,15 @@ import json
 import sys
 
 from .errors import ForgeError
-from .lexer import tokenize
+from .lexer import tokenize, KEYWORDS as LEXER_KEYWORDS
 from .parser import Parser
-from .checker import Checker
+from .checker import Checker, BUILTINS
 
-KEYWORDS = ["fn", "let", "mut", "if", "else", "while", "for", "in",
-            "return", "true", "false", "import", "as", "struct",
-            "enum", "match", "spawn", "extern"]
-BUILTINS = ["print", "println", "push", "fail", "len", "range",
-            "clock_micros", "sqrt", "exp", "log", "pow", "abs",
-            "read_file", "write_file", "file_exists", "args", "parse_int", "parse_float",
-            "split", "join", "substr", "trim", "starts_with", "ends_with",
-            "http_get", "assert"]
+# Completions come from the same sources the compiler uses, so
+# they cannot drift stale: lexer keywords plus `scope` (a
+# contextual construct, not a lexer keyword), and the checker's
+# builtin set.
+KEYWORDS = LEXER_KEYWORDS | {"scope"}
 
 
 def diagnostics_for(text):
@@ -68,7 +65,7 @@ def diagnostics_for(text):
 def completions_for(text):
     items = []
     seen = set()
-    for word in KEYWORDS + BUILTINS:
+    for word in sorted(KEYWORDS) + sorted(BUILTINS):
         items.append({"label": word, "kind": 14 if word in KEYWORDS else 3})
         seen.add(word)
     try:

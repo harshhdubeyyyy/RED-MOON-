@@ -1,0 +1,10 @@
+fn h2(n: int) -> int {
+    let mut m: int = n;
+    if m > 5 { m = m; } else { return 99; }
+    return m - 1;
+}
+fn main() -> int {
+    println(h2(10));
+    println(h2(3));
+    return 0;
+}

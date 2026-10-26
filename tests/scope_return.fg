@@ -1,0 +1,17 @@
+fn worker() {
+    println("worker done");
+}
+
+fn work() -> int {
+    scope {
+        spawn worker();
+    }
+    return 42;
+}
+
+fn main() -> int {
+    let v: int = work();
+    println("v =", v);
+    println("main after");
+    return 0;
+}

@@ -1,0 +1,6 @@
+[package]
+name = "polynomials"
+version = "0.1.0"
+description = "Polynomials in ascending coefficients: evaluate, add, multiply, differentiate."
+
+[dependencies]

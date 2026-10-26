@@ -1,0 +1,20 @@
+import "percentages.fg";
+fn approx(a: float, b: float, tol: float) -> bool {
+    let mut d: float = a - b;
+    if d < 0.0 { d = 0.0 - d; }
+    return d < tol;
+}
+fn main() -> int {
+    let mut bad: int = 0;
+    if !approx(percent_of(20.0, 150.0), 30.0, 0.000001) { println("FAIL percent_of"); bad = 1; }
+    if !approx(percent_change(100.0, 125.0), 25.0, 0.000001) { println("FAIL percent_change"); bad = 1; }
+    if !approx(add_percent(200.0, 10.0), 220.0, 0.000001) { println("FAIL add_percent"); bad = 1; }
+    if !approx(discount_price(200.0, 25.0), 150.0, 0.000001) { println("FAIL discount_price"); bad = 1; }
+    if !approx(discount_amount(200.0, 25.0), 50.0, 0.000001) { println("FAIL discount_amount"); bad = 1; }
+    if !approx(markup_price(100.0, 20.0), 120.0, 0.000001) { println("FAIL markup_price"); bad = 1; }
+    if !approx(margin_pct(120.0, 90.0), 25.0, 0.000001) { println("FAIL margin_pct"); bad = 1; }
+    if !approx(tip_amount(80.0, 15.0), 12.0, 0.000001) { println("FAIL tip_amount"); bad = 1; }
+    println("percentages demo: 20% of 150 =", percent_of(20.0, 150.0));
+    if bad == 0 { println("percentages demo ok"); }
+    return bad;
+}

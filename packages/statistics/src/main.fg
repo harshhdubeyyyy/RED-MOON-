@@ -1,0 +1,20 @@
+import "statistics.fg";
+fn approx(a: float, b: float, tol: float) -> bool {
+    let mut d: float = a - b;
+    if d < 0.0 { d = 0.0 - d; }
+    return d < tol;
+}
+fn main() -> int {
+    let mut bad: int = 0;
+    if !approx(mean_float([1.0, 2.0, 3.0, 4.0]), 2.5, 0.000001) { println("FAIL mean"); bad = 1; }
+    if !approx(min_float([3.0, 1.0, 2.0]), 1.0, 0.000001) { println("FAIL min"); bad = 1; }
+    if !approx(max_float([3.0, 1.0, 2.0]), 3.0, 0.000001) { println("FAIL max"); bad = 1; }
+    if !approx(range_float([3.0, 1.0, 2.0]), 2.0, 0.000001) { println("FAIL range"); bad = 1; }
+    if !approx(median_float([3.0, 1.0, 2.0]), 2.0, 0.000001) { println("FAIL median odd"); bad = 1; }
+    if !approx(median_float([1.0, 2.0, 3.0, 4.0]), 2.5, 0.000001) { println("FAIL median even"); bad = 1; }
+    if !approx(variance_float([2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0]), 4.0, 0.000001) { println("FAIL variance"); bad = 1; }
+    if !approx(stddev_float([2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0]), 2.0, 0.000001) { println("FAIL stddev"); bad = 1; }
+    println("statistics demo: mean of [1,2,3,4] =", mean_float([1.0, 2.0, 3.0, 4.0]));
+    if bad == 0 { println("statistics demo ok"); }
+    return bad;
+}

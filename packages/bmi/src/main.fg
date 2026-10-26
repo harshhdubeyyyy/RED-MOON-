@@ -1,0 +1,17 @@
+import "bmi.fg";
+fn approx(a: float, b: float, tol: float) -> bool {
+    let mut d: float = a - b;
+    if d < 0.0 { d = 0.0 - d; }
+    return d < tol;
+}
+fn main() -> int {
+    let mut bad: int = 0;
+    if !approx(bmi(70.0, 1.75), 22.857143, 0.000001) { println("FAIL bmi"); bad = 1; }
+    if bmi_category(17.0) != "underweight" { println("FAIL underweight"); bad = 1; }
+    if bmi_category(22.857143) != "normal" { println("FAIL normal"); bad = 1; }
+    if bmi_category(27.5) != "overweight" { println("FAIL overweight"); bad = 1; }
+    if bmi_category(32.0) != "obese" { println("FAIL obese"); bad = 1; }
+    println("bmi demo: 70 kg, 1.75 m =", bmi(70.0, 1.75), bmi_category(bmi(70.0, 1.75)));
+    if bad == 0 { println("bmi demo ok"); }
+    return bad;
+}

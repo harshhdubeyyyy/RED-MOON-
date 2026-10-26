@@ -1,0 +1,5 @@
+import "../src/textstats.fg";
+fn main() -> int {
+    println("smoke: words =", word_count("Hello world. This is fun!"));
+    return 0;
+}

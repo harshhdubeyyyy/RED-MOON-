@@ -11,7 +11,7 @@ inference engine with a cache, and GPU kernels for the hot parts.
 ## 1. Tensors — `stdlib/tensor.fg`
 
 A `Tensor` is `{ data: [float], shape: [int] }`, flat row-major.
-Jal Pari has no nested arrays yet, so this is the honest shape
+Jal Pari had no nested arrays when this was built, so this is the honest shape
 for multi-dimensional values, and it matches how real frameworks
 store tensors underneath. Ops: add/sub/mul/scale, matmul,
 transpose, reshape, flatten, sum/mean, ReLU, GELU (sigmoid
@@ -22,8 +22,8 @@ Demo: `examples/tensor_demo.fg` → matmul 19 22 43 50.
 ## 2. Autograd — `stdlib/autograd.fg`
 
 A real reverse-mode tape. Nodes are parallel flat arrays
-(`vals`, `grads`, `left`, `right`, `op`) because Jal Pari has no
-arrays of structs. Every op returns an `Ag` (tape + last node
+(`vals`, `grads`, `left`, `right`, `op`); the tape predates struct
+arrays, and flat arrays keep the hot loop simple. Every op returns an `Ag` (tape + last node
 id); `ag_backward` walks the tape in reverse applying the chain
 rule. Ops: input, add, sub, mul, div, neg, sigmoid, ReLU, exp,
 log, sqrt. The sqrt node exists so LayerNorm backward is exact.
@@ -127,7 +127,7 @@ not run in this VM, because torch is not installed here.
   program (or `nn.fg`) to bring `rand.fg` in. `inference.fg`
   imports `nn.fg`, so import `inference.fg` alone, not `nn.fg`
   alongside it.
-- There is no `break` statement; use loop conditions.
+- `break` exits the innermost `while`/`for` loop (native, WASM, big32).
 - `float_to_fixed` truncates, it does not round.
 - Checkpoint format is 6-decimal text; weights with more
   precision lose it on save (load is exact for what was saved).

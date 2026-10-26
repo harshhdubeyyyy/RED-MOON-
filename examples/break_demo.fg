@@ -1,0 +1,35 @@
+fn main() -> int {
+    // while + break: stop as soon as i reaches 3.
+    let mut i = 0;
+    let mut total = 0;
+    while true {
+        if i == 3 {
+            break;
+        }
+        total = total + i;
+        i = i + 1;
+    }
+    println("while total =", total);
+    // for + break: stop before 4.
+    let xs: [int] = [1, 2, 3, 4, 5, 6];
+    let mut sum = 0;
+    for v in xs {
+        if v == 4 {
+            break;
+        }
+        sum = sum + v;
+    }
+    println("for sum =", sum);
+    // nested loops: break exits only the inner loop.
+    let mut count = 0;
+    for a in range(3) {
+        for b in range(10) {
+            if b == 2 {
+                break;
+            }
+            count = count + 1;
+        }
+    }
+    println("nested count =", count);
+    return 0;
+}

@@ -1,0 +1,5 @@
+import "../src/statistics.fg";
+fn main() -> int {
+    println("smoke: mean of [1,2,3,4] =", mean_float([1.0, 2.0, 3.0, 4.0]));
+    return 0;
+}

@@ -13,6 +13,12 @@ from .codegen import generate
 from . import ast_nodes as A
 
 
+def _cc():
+    """C compiler binary for native builds. Override with JALPARI_CC
+    (e.g. a cross compiler); the default is "cc" and is unchanged."""
+    return os.environ.get("JALPARI_CC", "cc")
+
+
 def load_program(path, seen=None):
     """Parse a file and recursively resolve its imports into one Program.
 
@@ -89,7 +95,7 @@ def build_shared(source_path, output_path, mode="safe"):
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(c_source)
-        flags = ["cc", "-shared", "-fPIC", "-O2", "-std=gnu11", "-Wall",
+        flags = [_cc(), "-shared", "-fPIC", "-O2", "-std=gnu11", "-Wall",
                  "-Wno-unused-function", "-pthread"]
         result = subprocess.run(flags + ["-o", output_path, c_path, "-lm", "-lssl", "-lcrypto"],
                                 capture_output=True, text=True)
@@ -115,12 +121,22 @@ def compile_file_rv(path):
     return generate_rv(program, types), program
 
 
-def compile_file_wasm(path):
-    """Forge source -> WebAssembly binary (subset, see codegen_wasm)."""
+def compile_file_wasm(path, wit_path=None):
+    """Forge source -> WebAssembly binary (subset, see codegen_wasm).
+
+    With wit_path, the program is checked against the WIT world in
+    that file before code generation: the world is the interface
+    contract, and any mismatch fails the build.
+    """
     from .codegen_wasm import generate_wasm
     program = load_program(path)
     check(program)
     types = infer_types(program)
+    if wit_path is not None:
+        from .wit import parse_wit, check_world
+        with open(wit_path, encoding="utf-8") as f:
+            world = parse_wit(f.read())
+        check_world(world, program.funcs)
     return generate_wasm(program, types), program
 
 
@@ -129,8 +145,8 @@ def _cc_flags(mode):
     # are expected, so silence that one warning (other -Wall warnings
     # still show).
     if mode == "fast":
-        return ["cc", "-O3", "-march=native", "-std=gnu11", "-Wall", "-Wno-unused-function", "-pthread"]
-    return ["cc", "-O2", "-std=gnu11", "-Wall", "-Wextra", "-Wno-unused-function", "-pthread"]
+        return [_cc(), "-O3", "-march=native", "-std=gnu11", "-Wall", "-Wno-unused-function", "-pthread"]
+    return [_cc(), "-O2", "-std=gnu11", "-Wall", "-Wextra", "-Wno-unused-function", "-pthread"]
 
 
 def build(source_path, output_path, mode="safe", keep_c=None, debug=False):

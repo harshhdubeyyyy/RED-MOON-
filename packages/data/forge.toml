@@ -1,0 +1,6 @@
+[package]
+name = "data"
+version = "0.1.0"
+description = "Data size conversions: bytes, KB, MB, GB."
+
+[dependencies]

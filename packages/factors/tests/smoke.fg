@@ -1,0 +1,5 @@
+import "../src/factors.fg";
+fn main() -> int {
+    println("smoke: gcd(48, 36) =", gcd(48, 36));
+    return 0;
+}

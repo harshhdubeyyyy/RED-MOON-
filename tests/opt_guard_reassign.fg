@@ -1,0 +1,11 @@
+fn f(n: int, m: int) -> int {
+    let mut k: int = n;
+    if k < 2 { return 0; }
+    k = m;
+    return k - 1;
+}
+fn main() -> int {
+    let big: int = 0 - 9223372036854775807 - 1;
+    println(f(5, big));
+    return 0;
+}

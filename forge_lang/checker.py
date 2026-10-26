@@ -10,6 +10,7 @@ non-void function must end with a return.
 """
 
 import copy
+import difflib
 
 from .errors import ForgeError
 from . import ast_nodes as A
@@ -17,6 +18,16 @@ from .generics import (parse_generic, mangle_type, substitute_type,
                        unify, contains_type_param)
 
 SCALARS = {"int", "float", "bool", "str"}
+# C keywords that are not Jal Pari keywords: user names colliding
+# with these compile to invalid C on the native backend (e.g. a
+# function named `double` becomes `long long double(...)`), so
+# the checker rejects them with a clear message instead of
+# letting the C compiler fail cryptically.
+C_KEYWORDS = {"auto", "case", "char", "const", "continue", "default",
+              "do", "double", "float", "goto", "inline", "int", "long",
+              "register", "restrict", "short", "signed", "sizeof",
+              "static", "switch", "typedef", "union", "unsigned",
+              "void", "volatile", "_Bool", "_Complex", "_Imaginary"}
 STMT_BUILTINS = {"print", "println", "push", "fail", "assert"}
 EXPR_BUILTINS = {"len", "range", "clock_micros", "sqrt", "exp", "log", "pow", "abs",
                  "read_file", "write_file", "read_bytes", "write_bytes",
@@ -28,6 +39,21 @@ EXPR_BUILTINS = {"len", "range", "clock_micros", "sqrt", "exp", "log", "pow", "a
                  "parallel_dot", "parallel_matmul",
                  "arr_alloc_count", "arr_free_count"}
 BUILTINS = STMT_BUILTINS | EXPR_BUILTINS
+
+
+def suggest(name, candidates):
+    """A "Did you mean ...?" suffix, or "" when nothing is close."""
+    m = difflib.get_close_matches(name, sorted(candidates), n=1, cutoff=0.6)
+    return f". Did you mean '{m[0]}'?" if m else ""
+
+
+def cast_hint(got, want):
+    """A conversion hint for int/float mismatches, or ""."""
+    if got == "int" and want == "float":
+        return "; convert the value with 'value as float'"
+    if got == "float" and want == "int":
+        return "; convert the value with 'value as int' (truncates)"
+    return ""
 
 
 def elem_type(arr_type):
@@ -49,6 +75,7 @@ class Checker:
         self.current_ret = "void"
         self.current_fn = None
         self.current_type_params = []
+        self.loop_depth = 0
         self.func_instantiations = {}  # (name, bindings tuple) -> FuncDef
         self.struct_instantiations = {}  # concrete type -> {field: type}
         self._instantiating = set()
@@ -73,9 +100,9 @@ class Checker:
                 return all(self.valid_type(a) for a in args)
             return False
         if t.startswith("[") and t.endswith("]"):
-            inner = t[1:-1]
-            # Arrays of structs and nested arrays are not yet supported.
-            return inner in SCALARS or inner in self.current_type_params
+            # Element types recurse: structs, generics, and nested
+            # arrays are all valid element types.
+            return self.valid_type(t[1:-1])
         return False
 
     def enum_info_for(self, t):
@@ -132,6 +159,9 @@ class Checker:
         for sd in structs:
             if sd.name in self.structs:
                 raise ForgeError(f"duplicate struct '{sd.name}'", sd.line, sd.col)
+            if sd.name in C_KEYWORDS:
+                raise ForgeError(f"'{sd.name}' is a C keyword and cannot be used as a "
+                                 f"name; rename it", sd.line, sd.col)
             if sd.name in SCALARS or sd.name in BUILTINS:
                 raise ForgeError(f"'{sd.name}' cannot be a struct name", sd.line, sd.col)
             seen = set()
@@ -140,6 +170,9 @@ class Checker:
                 if fname in seen:
                     raise ForgeError(f"duplicate field '{fname}' in struct '{sd.name}'",
                                      sd.line, sd.col)
+                if fname in C_KEYWORDS:
+                    raise ForgeError(f"'{fname}' is a C keyword and cannot be used as a "
+                                     f"field name; rename it", sd.line, sd.col)
                 seen.add(fname)
                 fields[fname] = ftype
             self.structs[sd.name] = fields
@@ -252,6 +285,8 @@ class Checker:
                 stmt.ann = substitute_type(stmt.ann, bindings)
             elif isinstance(stmt, A.Block):
                 self._substitute_let_ann(stmt, bindings)
+            elif isinstance(stmt, A.Scope):
+                self._substitute_let_ann(stmt.body, bindings)
             elif isinstance(stmt, A.If):
                 self._substitute_let_ann(stmt.then, bindings)
                 if stmt.els is not None:
@@ -268,14 +303,24 @@ class Checker:
         # Save outer state: checking a generic instantiation can happen
         # in the middle of checking another function (a call site), and
         # must not wipe that function's scopes/return type.
-        saved = (self.scopes, self.current_ret, self.current_fn, self.current_type_params)
+        saved = (self.scopes, self.current_ret, self.current_fn, self.current_type_params,
+                 self.loop_depth)
         try:
+            if fn.name in C_KEYWORDS:
+                raise ForgeError(f"'{fn.name}' is a C keyword and cannot be used as a "
+                                 f"function name; rename it", fn.line, fn.col)
             self.current_type_params = list(getattr(fn, "type_params", None) or [])
-            for _, pt in fn.params:
+            self.loop_depth = 0
+            for pn, pt in fn.params:
+                if pn in C_KEYWORDS:
+                    raise ForgeError(f"'{pn}' is a C keyword and cannot be used as a "
+                                     f"parameter name; rename it", fn.line, fn.col)
                 if not self.valid_type(pt) or pt == "void":
                     raise ForgeError(f"parameter type '{pt}' is not a value type", fn.line, fn.col)
             if not self.valid_type(fn.ret):
-                raise ForgeError(f"unknown return type '{fn.ret}'", fn.line, fn.col)
+                raise ForgeError(f"unknown return type '{fn.ret}'"
+                                 f"{suggest(fn.ret, list(SCALARS) + list(self.structs) + list(self.enums))}",
+                                 fn.line, fn.col)
             if getattr(fn, "is_extern", False):
                 # No body to check; the C function must exist at link time.
                 return
@@ -290,9 +335,12 @@ class Checker:
             if fn.ret != "void":
                 if not fn.body.stmts or not isinstance(fn.body.stmts[-1], A.Return):
                     raise ForgeError(f"function '{fn.name}' returns {fn.ret} but its body "
-                                     f"does not end with a return", fn.line, fn.col)
+                                     f"does not end with a return; add a return statement "
+                                     f"of type {fn.ret} at the end of the function",
+                                     fn.line, fn.col)
         finally:
-            self.scopes, self.current_ret, self.current_fn, self.current_type_params = saved
+            self.scopes, self.current_ret, self.current_fn, self.current_type_params, \
+                self.loop_depth = saved
 
     def lookup(self, name, line, col):
         for scope in reversed(self.scopes):
@@ -300,7 +348,10 @@ class Checker:
                 return scope[name]
         if name in self.enum_variants:
             return (self.enum_variants[name], False)
-        raise ForgeError(f"undefined variable '{name}'", line, col)
+        candidates = [n for scope in self.scopes for n in scope]
+        candidates += list(self.enum_variants)
+        raise ForgeError(f"undefined variable '{name}'{suggest(name, candidates)}",
+                         line, col)
 
     def check_block(self, block):
         self.scopes.append({})
@@ -313,13 +364,18 @@ class Checker:
             self.check_block(stmt)
             return
         if isinstance(stmt, A.Let):
+            if stmt.name in C_KEYWORDS:
+                raise ForgeError(f"'{stmt.name}' is a C keyword and cannot be used as a "
+                                 f"variable name; rename it", stmt.line, stmt.col)
             if stmt.name in self.scopes[-1]:
                 raise ForgeError(f"variable '{stmt.name}' is already defined in this scope",
                                  stmt.line, stmt.col)
             t = self.check_expr(stmt.expr)
             if stmt.ann is not None:
                 if not self.valid_type(stmt.ann) or stmt.ann == "void":
-                    raise ForgeError(f"unknown type '{stmt.ann}'", stmt.line, stmt.col)
+                    raise ForgeError(f"unknown type '{stmt.ann}'"
+                                     f"{suggest(stmt.ann, list(SCALARS) + list(self.structs) + list(self.enums))}",
+                                     stmt.line, stmt.col)
                 # Fill a generic-enum placeholder from the annotation.
                 filled = self.fill_placeholder(t, stmt.ann)
                 if filled != t:
@@ -335,7 +391,8 @@ class Checker:
                     if not (isinstance(stmt.expr, A.ArrayLit) and not stmt.expr.elems
                             and stmt.ann.startswith("[")):
                         raise ForgeError(f"variable '{stmt.name}' is declared {stmt.ann} "
-                                         f"but initialised with {t}", stmt.line, stmt.col)
+                                         f"but initialised with {t}{cast_hint(t, stmt.ann)}",
+                                         stmt.line, stmt.col)
                     t = stmt.ann
             self.scopes[-1][stmt.name] = (t, stmt.mutable)
             return
@@ -348,7 +405,8 @@ class Checker:
             if et != vt:
                 if not (isinstance(stmt.expr, A.ArrayLit) and not stmt.expr.elems
                         and vt.startswith("[")):
-                    raise ForgeError(f"cannot assign {et} to {vt} variable '{stmt.name}'",
+                    raise ForgeError(f"cannot assign {et} to {vt} variable '{stmt.name}'"
+                                     f"{cast_hint(et, vt)}",
                                      stmt.line, stmt.col)
             return
         if isinstance(stmt, A.FieldAssign):
@@ -368,7 +426,8 @@ class Checker:
             ft = self.check_expr(stmt.target)
             vt2 = self.check_expr(stmt.expr)
             if vt2 != ft:
-                raise ForgeError(f"cannot assign {vt2} to field of type {ft}",
+                raise ForgeError(f"cannot assign {vt2} to field of type {ft}"
+                                 f"{cast_hint(vt2, ft)}",
                                  stmt.line, stmt.col)
             return
         if isinstance(stmt, A.IndexAssign):
@@ -381,8 +440,16 @@ class Checker:
                 # so mutability of the struct variable is not required.
                 vt = self.check_expr(base)
                 et = elem_type(vt)
+            elif isinstance(base, A.Index):
+                # Chained index assignment (m[i][j] = v): the inner
+                # index yields the array being assigned into.
+                vt = self.check_expr(base)
+                et = elem_type(vt)
             else:
                 raise ForgeError("index assignment target must be a variable or a field",
+                                 stmt.line, stmt.col)
+            if vt == "str":
+                raise ForgeError("cannot assign to a string index; strings are immutable",
                                  stmt.line, stmt.col)
             if et is None:
                 raise ForgeError(f"cannot index a non-array value of type {vt}",
@@ -392,7 +459,8 @@ class Checker:
                 raise ForgeError("array index must be int", stmt.line, stmt.col)
             vt2 = self.check_expr(stmt.expr)
             if vt2 != et:
-                raise ForgeError(f"cannot assign {vt2} to element of type {et}",
+                raise ForgeError(f"cannot assign {vt2} to element of type {et}"
+                                 f"{cast_hint(vt2, et)}",
                                  stmt.line, stmt.col)
             return
         if isinstance(stmt, A.Match):
@@ -416,7 +484,8 @@ class Checker:
                     self.check_block(body)
                     continue
                 if pat not in variants:
-                    raise ForgeError(f"'{pat}' is not a variant of enum '{et}'",
+                    raise ForgeError(f"'{pat}' is not a variant of enum '{et}'"
+                                     f"{suggest(pat, variants)}",
                                      stmt.line, stmt.col)
                 if pat in seen:
                     raise ForgeError(f"duplicate match arm '{pat}'", stmt.line, stmt.col)
@@ -446,7 +515,8 @@ class Checker:
             call = stmt.call
             fn = self.funcs.get(call.name)
             if fn is None:
-                raise ForgeError(f"spawn: undefined function '{call.name}'",
+                raise ForgeError(f"spawn: undefined function '{call.name}'"
+                                 f"{suggest(call.name, self.funcs)}",
                                  stmt.line, stmt.col)
             if fn.ret != "void":
                 raise ForgeError("spawn: function must return void", stmt.line, stmt.col)
@@ -459,6 +529,10 @@ class Checker:
                 raise ForgeError("spawn: argument count does not match function",
                                  stmt.line, stmt.col)
             return
+        if isinstance(stmt, A.Scope):
+            # The block's lets are scoped to it, like any block.
+            self.check_block(stmt.body)
+            return
         if isinstance(stmt, A.If):
             if self.check_expr(stmt.cond) != "bool":
                 raise ForgeError("if condition must be bool", stmt.line, stmt.col)
@@ -469,7 +543,11 @@ class Checker:
         if isinstance(stmt, A.While):
             if self.check_expr(stmt.cond) != "bool":
                 raise ForgeError("while condition must be bool", stmt.line, stmt.col)
-            self.check_block(stmt.body)
+            self.loop_depth += 1
+            try:
+                self.check_block(stmt.body)
+            finally:
+                self.loop_depth -= 1
             return
         if isinstance(stmt, A.For):
             at = self.check_expr(stmt.expr)
@@ -477,18 +555,31 @@ class Checker:
             if et is None:
                 raise ForgeError(f"for loop needs an array, got {at}", stmt.line, stmt.col)
             self.scopes.append({stmt.name: (et, False)})
-            for s in stmt.body.stmts:
-                self.check_stmt(s)
+            self.loop_depth += 1
+            try:
+                for s in stmt.body.stmts:
+                    self.check_stmt(s)
+            finally:
+                self.loop_depth -= 1
             self.scopes.pop()
+            return
+        if isinstance(stmt, A.Break):
+            if self.loop_depth == 0:
+                raise ForgeError("break outside a loop; move it inside a "
+                                 "'while' or 'for' loop", stmt.line, stmt.col)
             return
         if isinstance(stmt, A.Return):
             if self.current_ret == "void":
                 if stmt.expr is not None:
-                    raise ForgeError("void function cannot return a value", stmt.line, stmt.col)
+                    raise ForgeError("void function cannot return a value; "
+                                     "remove the value after 'return'",
+                                     stmt.line, stmt.col)
             else:
                 if stmt.expr is None:
-                    raise ForgeError(f"function must return {self.current_ret}",
-                                     stmt.line, stmt.col)
+                    raise ForgeError(f"function must return {self.current_ret}; "
+                                     f"add a return statement of type "
+                                     f"{self.current_ret} at the end of the "
+                                     f"function", stmt.line, stmt.col)
                 t = self.check_expr(stmt.expr)
                 filled = self.fill_placeholder(t, self.current_ret)
                 if filled != t:
@@ -503,7 +594,8 @@ class Checker:
                     if not (isinstance(stmt.expr, A.ArrayLit) and not stmt.expr.elems
                             and self.current_ret.startswith("[")):
                         raise ForgeError(f"return type is {t}, function returns "
-                                         f"{self.current_ret}", stmt.line, stmt.col)
+                                         f"{self.current_ret}{cast_hint(t, self.current_ret)}",
+                                         stmt.line, stmt.col)
             return
         if isinstance(stmt, A.ExprStmt):
             if not isinstance(stmt.expr, A.Call):
@@ -641,6 +733,10 @@ class Checker:
             return fields[expr.field]
         if isinstance(expr, A.Index):
             bt = self.check_expr(expr.base)
+            if bt == "str":
+                if self.check_expr(expr.index) != "int":
+                    raise ForgeError("string index must be int", expr.line, expr.col)
+                return "str"
             et = elem_type(bt)
             if et is None:
                 raise ForgeError(f"cannot index a non-array value of type {bt}",
@@ -894,7 +990,9 @@ class Checker:
             return "int"
         fn = self.funcs.get(call.name)
         if fn is None:
-            raise ForgeError(f"undefined function '{call.name}'", call.line, call.col)
+            raise ForgeError(f"undefined function '{call.name}'"
+                             f"{suggest(call.name, list(self.funcs) + list(BUILTINS))}",
+                             call.line, call.col)
         if len(call.args) != len(fn.params):
             raise ForgeError(f"'{call.name}' takes {len(fn.params)} argument(s), "
                              f"got {len(call.args)}", call.line, call.col)
@@ -947,7 +1045,8 @@ class Checker:
                 t = filled
             if t != pt:
                 if not (isinstance(arg, A.ArrayLit) and not arg.elems and pt.startswith("[")):
-                    raise ForgeError(f"argument '{pn}' of '{call.name}' must be {pt}, got {t}",
+                    raise ForgeError(f"argument '{pn}' of '{call.name}' must be {pt}, got {t}"
+                                     f"{cast_hint(t, pt)}",
                                      call.line, call.col)
         return fn.ret
 

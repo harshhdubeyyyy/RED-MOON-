@@ -1,0 +1,6 @@
+[package]
+name = "sorting"
+version = "0.1.0"
+description = "Small array sorts, sorted checks, and reversal."
+
+[dependencies]

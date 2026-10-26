@@ -389,8 +389,8 @@ GPU training on a real T4 is verified (26 Oct 2026,
 XOR MLP learns, loss 0.001529). Still not done:
 fluent generation, a full self-hosting compiler,
 big32 float division/ordered comparisons/printing/casts,
-PNG/JPEG loading, nested arrays, arrays of structs,
-`break`, string indexing, and float printing past 6
+PNG/JPEG loading,
+and float printing past 6
 significant digits. Still blocked on the user's
 accounts and token scope, as before: a public registry
 host, CI upload, repo rename, PyPI publish, and VS Code

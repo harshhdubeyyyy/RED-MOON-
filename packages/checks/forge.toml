@@ -1,0 +1,6 @@
+[package]
+name = "checks"
+version = "0.1.0"
+description = "Check digits: Luhn, ISBN-10, ISBN-13."
+
+[dependencies]

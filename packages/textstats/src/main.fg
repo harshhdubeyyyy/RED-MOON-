@@ -1,0 +1,19 @@
+import "textstats.fg";
+fn approx(a: float, b: float, tol: float) -> bool {
+    let mut d: float = a - b;
+    if d < 0.0 { d = 0.0 - d; }
+    return d < tol;
+}
+fn main() -> int {
+    let mut bad: int = 0;
+    let t: str = "Hello world. This is fun!";
+    if word_count(t) != 5 { println("FAIL words"); bad = 1; }
+    if char_count(t) != 25 { println("FAIL chars"); bad = 1; }
+    if char_count_no_spaces(t) != 21 { println("FAIL chars no spaces"); bad = 1; }
+    if sentence_count(t) != 2 { println("FAIL sentences"); bad = 1; }
+    if !approx(avg_word_len(t), 4.2, 0.000001) { println("FAIL avg len"); bad = 1; }
+    if !approx(reading_minutes(t), 0.025, 0.000001) { println("FAIL reading"); bad = 1; }
+    println("textstats demo: words =", word_count(t));
+    if bad == 0 { println("textstats demo ok"); }
+    return bad;
+}

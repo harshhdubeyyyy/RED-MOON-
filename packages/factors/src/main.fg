@@ -1,0 +1,16 @@
+import "factors.fg";
+fn main() -> int {
+    let mut bad: int = 0;
+    if gcd(48, 36) != 12 { println("FAIL gcd 48 36"); bad = 1; }
+    if gcd(17, 5) != 1 { println("FAIL gcd 17 5"); bad = 1; }
+    if lcm(4, 6) != 12 { println("FAIL lcm 4 6"); bad = 1; }
+    if lcm(21, 6) != 42 { println("FAIL lcm 21 6"); bad = 1; }
+    let ds: [int] = divisors(12);
+    if len(ds) != 6 { println("FAIL divisors count"); bad = 1; }
+    if ds[0] != 1 { println("FAIL divisors first"); bad = 1; }
+    if ds[5] != 12 { println("FAIL divisors last"); bad = 1; }
+    if divisor_count(12) != 6 { println("FAIL divisor_count"); bad = 1; }
+    println("factors demo: gcd(48, 36) =", gcd(48, 36));
+    if bad == 0 { println("factors demo ok"); }
+    return bad;
+}

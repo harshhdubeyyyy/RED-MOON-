@@ -6,6 +6,155 @@ release — the documented language surface will not break
 without a major version bump (see docs/STABILITY.md).
 0.x releases were pre-stable; breaking changes were possible then.
 
+## 1.1.0 — 27 Oct 2026
+
+- Book, Tour, LSP parity, fix-ending diagnostics:
+  docs/BOOK.md rewritten as the complete current guide
+  (replacing the stale starter: WASM strings/arrays, autograd,
+  and GPU training are no longer "not yet"), docs/TOUR.md is a
+  10-step guided tour with runnable programs in
+  examples/tour/ and verified outputs, the language server now
+  completes from the checker's own keyword and builtin sets
+  (so `scope`, `break`, `http_listen`, `alloc_count`, and
+  friends can no longer drift stale) with an end-to-end stdio
+  smoke test in tests/lsp_smoke.py, and checker errors now end
+  with fixes where a fix is mechanical — did-you-mean
+  suggestions for variables, functions (including builtins),
+  types, and enum variants, int/float conversion hints
+  ("convert the value with 'value as float'"), missing-return
+  and break-outside-loop fix lines, and rejection of C
+  keywords as names ("'double' is a C keyword ... rename it")
+  instead of cryptic C compiler failures.
+- WIT-first WASM components (docs/WIT.md): `forge.py build
+  prog.fg --target wasm --wit prog.wit` (and `emit-wasm --wit`)
+  checks the program against the WIT world before generating
+  the module — every non-`main` function must be declared in
+  the world's exports with matching arity, parameter types in
+  order, and return type, or the build fails naming the
+  difference. Type mapping: int -> s64, float -> f64,
+  bool -> bool, str -> string, [T] -> list<T>. World imports
+  are rejected (the backend emits a self-contained module with
+  no imports), and `--wit` with another target is rejected
+  instead of silently ignored. This is interface-contract
+  checking, not component-model binary encoding: the emitted
+  module is still a core module (see docs/WIT.md for the
+  boundary).
+- Structured concurrency (`scope`, native backend): a `scope {
+  ... }` block joins every task spawned inside it — directly or
+  transitively by functions called from inside it — at the
+  closing brace, and on any `return` or `break` that leaves the
+  scope, so no task outlives its block. Scopes nest (an inner
+  join is never repeated by an outer join or by `main`'s
+  exit join); tasks spawned outside any scope keep the old
+  behaviour (joined at `main`'s return). `scope` is not a
+  reserved word — it is recognised only as `scope` followed by
+  `{` at statement position, so `scope` still works as an
+  ordinary variable name. On WASM and big32 a scope block runs
+  as a plain block and `spawn` inside it fails as before.
+  No results, cancellation, or channels yet: spawned functions
+  are void, and a hung task still hangs the scope that waits
+  on it.
+- Safe-mode check elimination (native backend only, SPEC §6b):
+  duplicate checks within one statement are emitted once (the
+  repeat uses the unchecked access; the cache is per-statement
+  and cleared by any call); guard intervals skip overflow/div
+  checks proven safe by if-guards (e.g. `n - 1` after `if n < 2
+  { return n; }`), with hull joins across arms and clearing
+  around loops and matches; string-index comparisons (`s[i] ==
+  "a"`, `s[i] == s[j]`) compare bytes directly with no
+  allocation, keeping the bounds check in safe mode. Nothing
+  observable changes: aborts and results are identical, and
+  tests pin both the eliminations (emitted-C probes) and the
+  checks that must remain (overflow after reassignment, guards
+  around loops, out-of-bounds string compares and duplicate
+  reads). WASM and big32 keep every check.
+
+- Cost of safety published (docs/BENCHMARKS_SAFETY.md,
+  tools/bench_vs/run_safety_bench.py): safe vs fast mode on six
+  tasks, compared two ways — shipped flags (safe -O2 vs fast -O3
+  -march=native) and matched flags (both -O2, so the only
+  difference is the checks). Pure check cost: overflow-check-heavy
+  fib 2.7-3.7x, string bounds checks ~1.7x, nested bounds checks
+  ~1.4x, array bounds on float work ~1.0x, loop-counter checks
+  ~1.0x. The big shipped fast-mode wins (matmul 3.9-5.3x) come
+  from -O3/-march=native auto-vectorization, not from dropping
+  checks — the matched comparison proves it. Safe and fast compute
+  identical results on all six tasks. Caveat, stated in the doc:
+  this VM's timing noise moves absolute times up to ~2x between
+  runs, so ranges from two runs are reported, not single numbers.
+
+- Registry seeded from 7 to 30 packages (all 0.1.0, each with a
+  demo with self-checks and a smoke test): percentages, loans,
+  bmi, colors, sorting, search, primes, factors, statistics,
+  grades, tax, cooking, budget, checks (Luhn, ISBN-10/13), morse,
+  textstats, speed, data, angle, fractions, vectors, matrices
+  (built on the new nested arrays), polynomials. All 30 demos
+  and 30 smokes pass (60/60); publish of all 30, list, local
+  add, and HTTP add-remote verified against a local registry
+  server with a fresh consumer. Public hosting still needs the
+  maintainer's account.
+
+- Platforms investigated (docs/PLATFORMS.md): Linux x86_64
+  remains the verified platform. Windows cross-compilation was
+  attempted with MinGW-w64 13.2.0 and fails at the generated
+  C's POSIX socket headers — a Windows port needs a winsock
+  branch in the runtime, MinGW OpenSSL or conditional HTTPS,
+  and the -posix MinGW variant. macOS was not buildable here
+  (no SDK/clang/zig); its path is a native build with Xcode
+  tools + Homebrew OpenSSL. No macOS or Windows binary is
+  claimed. Enabler shipped: `JALPARI_CC` selects the C compiler
+  for `run`/`build`/shared-library builds (default `cc`,
+  unchanged).
+
+- Killer app: examples/apps/registry_server.fg — a package
+  registry server written in Jal Pari itself, speaking the same
+  HTTP API as the Python reference server, so the real `forge
+  pkg publish-remote` / `add-remote` clients work against it.
+  Verified live: publish (incl. 401 unauthorized, 409 version
+  already exists), list, versions, files, byte-exact file
+  round-trip, and a fresh consumer installing and running two
+  packages. One real bug found and fixed along the way: the
+  first version read each request with a single recv, which
+  fails when a client sends headers and body as separate
+  writes — the server now reads until headers plus
+  Content-Length body bytes arrive. Flat on-disk layout plus
+  an index file (no directory-listing builtin); listings in
+  publish order, not sorted; ASCII-only publish bodies.
+  HTTP status reasons gained 401 Unauthorized and 409
+  Conflict.
+
+- `break` exits the innermost `while`/`for` loop, on all three
+  backends (native, WASM, big32). Breaking frees the loop body's
+  locals, so the break path does not leak (verified: 4 allocs, 4
+  frees in examples/break_gc_demo.fg). `break` outside a loop is a
+  compile error, including inside a function called from a loop.
+  This is an addition under the stability promise, not a break:
+  no existing program used `break` as an identifier.
+
+- String indexing: `s[i]` returns a 1-character string (byte
+  indexing), on native and WASM; safe mode aborts out of bounds,
+  fast mode skips the check. Strings stay immutable: `s[i] = ...`
+  is a compile error. Not yet on big32 (clear error for now:
+  big32 has no runtime string allocation).
+
+- Arrays of structs (native): `[Point]` works — literals, `len`,
+  `xs[i]` (owned copy), `xs[i].field` (direct read, no leaked
+  sibling fields), `for` loops (borrowed element view), `push`,
+  index assignment (frees the old element first), and array free
+  (frees elements' owned fields: verified 1/1 array and 2/2 str
+  allocs/frees). Generic struct arrays work too. Not yet on WASM
+  or big32, which report clear errors.
+
+- Nested arrays (native): `[[int]]` matrices — literals, `len`,
+  `m[i][j]` reads, chained `m[i][j] = v` writes, `for` loops over
+  rows, row `push` and row replacement, shared-row mutation
+  (`let row = m[i]; row[j] = v;` mutates the matrix), and
+  balanced nested frees (verified 3/3 array allocs/frees for a
+  2-row matrix, 3/3 for `[[str]]`). Triple nesting works too.
+  big32 reads nested arrays on the Python model (push remains
+  unsupported there, as for all arrays); WASM reports a clear
+  error.
+
 ## 1.0.0 — 26 Oct 2026 — "Market-ready": stability promise, live playground, HTTP server, regex, real packages, packaged extension, honest benchmarks
 
 - Stability promise: docs/STABILITY.md — semver for real. 1.x adds,

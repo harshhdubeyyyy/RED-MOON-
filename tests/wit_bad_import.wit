@@ -1,0 +1,6 @@
+world demo {
+    export add: func(a: s64, b: s64) -> s64;
+    export greet: func(name: string) -> string;
+    export shout: func(msg: string);
+    import host_log: func(msg: string);
+}

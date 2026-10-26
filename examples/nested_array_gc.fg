@@ -1,0 +1,11 @@
+fn use_m() -> int {
+    let m: [[int]] = [[1, 2], [3, 4, 5]];
+    println("inside =", len(m), len(m[0]), len(m[1]), m[1][2]);
+    return 0;
+}
+
+fn main() -> int {
+    use_m();
+    println("arr allocs =", arr_alloc_count(), "arr frees =", arr_free_count());
+    return 0;
+}

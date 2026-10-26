@@ -1,0 +1,10 @@
+struct Point {
+    x: int;
+    y: int;
+}
+
+fn main() -> int {
+    let pts: [Point] = [Point { x: 1, y: 2 }];
+    println(pts[5].x);
+    return 0;
+}

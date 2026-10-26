@@ -1,0 +1,6 @@
+[package]
+name = "primes"
+version = "0.1.0"
+description = "Primality, primes up to a limit, prime factors."
+
+[dependencies]

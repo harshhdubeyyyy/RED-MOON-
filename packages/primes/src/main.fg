@@ -1,0 +1,22 @@
+import "primes.fg";
+fn main() -> int {
+    let mut bad: int = 0;
+    if !is_prime(2) { println("FAIL prime 2"); bad = 1; }
+    if is_prime(1) { println("FAIL prime 1"); bad = 1; }
+    if !is_prime(17) { println("FAIL prime 17"); bad = 1; }
+    if is_prime(18) { println("FAIL prime 18"); bad = 1; }
+    if !is_prime(97) { println("FAIL prime 97"); bad = 1; }
+    let ps: [int] = primes_up_to(30);
+    if len(ps) != 10 { println("FAIL primes count"); bad = 1; }
+    if ps[0] != 2 { println("FAIL primes first"); bad = 1; }
+    if ps[9] != 29 { println("FAIL primes last"); bad = 1; }
+    let fs: [int] = prime_factors(60);
+    if len(fs) != 4 { println("FAIL factors count"); bad = 1; }
+    if fs[0] != 2 { println("FAIL factors 0"); bad = 1; }
+    if fs[1] != 2 { println("FAIL factors 1"); bad = 1; }
+    if fs[2] != 3 { println("FAIL factors 2"); bad = 1; }
+    if fs[3] != 5 { println("FAIL factors 3"); bad = 1; }
+    println("primes demo: primes up to 30 =", len(ps), "count");
+    if bad == 0 { println("primes demo ok"); }
+    return bad;
+}

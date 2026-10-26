@@ -28,8 +28,7 @@ From 1.0.0 onward, the language follows semantic versioning for real:
 ## What it does NOT cover (honest limits)
 
 - **Missing features are gaps, not breaks.** The language still lacks
-  things (nested arrays, arrays of structs, `break`, string indexing,
-  float printing on big32, PNG/JPEG loading). Adding them in 1.x is
+  things (float printing on big32, PNG/JPEG loading). Adding them in 1.x is
   not a breaking change; their absence in 1.0 is stated in the README
   and CHANGELOG, not hidden.
 - **Experimental backends.** The CUDA emitter, the big32 soft-float

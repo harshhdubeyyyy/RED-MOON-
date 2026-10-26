@@ -1,0 +1,6 @@
+fn main() -> int {
+    let mut xs: [int] = [1, 2, 3];
+    push(xs, 4);
+    println("len =", len(xs), "last =", xs[3]);
+    return 0;
+}

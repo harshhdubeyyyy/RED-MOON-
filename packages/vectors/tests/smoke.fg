@@ -1,0 +1,5 @@
+import "../src/vectors.fg";
+fn main() -> int {
+    println("smoke: (1,2) + (3,4) =", vec_add(vec2(1.0, 2.0), vec2(3.0, 4.0)).x, vec_add(vec2(1.0, 2.0), vec2(3.0, 4.0)).y);
+    return 0;
+}

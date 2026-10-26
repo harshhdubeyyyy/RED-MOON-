@@ -1,0 +1,6 @@
+[package]
+name = "fractions"
+version = "0.1.0"
+description = "Rational numbers: reduce, add, subtract, multiply, divide."
+
+[dependencies]

@@ -1,0 +1,4 @@
+fn main() -> int {
+    prnitln("hi");
+    return 0;
+}

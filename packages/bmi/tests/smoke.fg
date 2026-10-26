@@ -1,0 +1,5 @@
+import "../src/bmi.fg";
+fn main() -> int {
+    println("smoke: 70 kg, 1.75 m =", bmi(70.0, 1.75));
+    return 0;
+}

@@ -1,0 +1,6 @@
+[package]
+name = "budget"
+version = "0.1.0"
+description = "Income, expenses, remaining money, savings rate."
+
+[dependencies]

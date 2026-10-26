@@ -1,0 +1,5 @@
+import "../src/percentages.fg";
+fn main() -> int {
+    println("smoke: 20% of 150 =", percent_of(20.0, 150.0));
+    return 0;
+}

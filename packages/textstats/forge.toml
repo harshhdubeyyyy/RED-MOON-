@@ -1,0 +1,6 @@
+[package]
+name = "textstats"
+version = "0.1.0"
+description = "Word, character, and sentence counts, reading time."
+
+[dependencies]

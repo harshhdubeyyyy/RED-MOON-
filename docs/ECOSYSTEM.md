@@ -98,7 +98,10 @@ and pull request.
   `match` with a trailing `_` wildcard arm.
 - **Concurrency:** `spawn worker(1);` — threads (pthreads) for
   void functions taking 0 or 1 int argument; main joins them at
-  the end (and before any return from main).
+  the end (and before any return from main). `scope { ... }`
+  joins every task spawned inside it (directly or transitively)
+  at the closing brace, and on any `return` or `break` that
+  leaves the scope — no task outlives its block.
 - **C FFI:** `extern fn puts(s: str) -> int;` — call real C
   functions; str is `const char *`, int is C `int` in the
   declaration, so standard-library functions work.
@@ -512,20 +515,39 @@ backend jumps:
   verified live with curl (200/200/404, correct bodies, clean
   shutdown). Limits: one request per connection, single 8191-byte
   read, no TLS, no chunked bodies, IPv4 only.
+- Killer app: examples/apps/registry_server.fg — a package
+  registry server written in Jal Pari itself, speaking the same
+  HTTP API as the Python reference server, so the real `forge
+  pkg publish-remote` / `add-remote` clients work against it.
+  Verified live: publish (incl. 401/409), list, versions, files,
+  byte-exact file round-trip, and a fresh consumer installing
+  and running two packages. Flat on-disk layout + index file
+  (no directory-listing builtin); publish order, not sorted;
+  ASCII-only publish bodies. HTTP status reasons gained 401
+  Unauthorized and 409 Conflict.
 - Regex: stdlib/regex.fg (36-check demo passes). No groups or
   alternation — those characters are literal in v1.
-- Packages: packages/ — units, money, geometry, interest, roman,
-  bases, dice (0.1.0 each). Remote publish/list/add verified
-  against a local registry; public hosting still needs the
-  maintainer's account.
+- Packages: packages/ — now 30 boring packages at 0.1.0 each: the
+  original seven (units, money, geometry, interest, roman, bases,
+  dice) plus percentages, loans, bmi, colors, sorting, search,
+  primes, factors, statistics, grades, tax, cooking, budget,
+  checks, morse, textstats, speed, data, angle, fractions,
+  vectors, matrices, polynomials. Every package has a demo with
+  self-checks and a smoke test (60/60 pass); publish of all 30,
+  list, local add, and HTTP add-remote verified against a local
+  registry server with a fresh consumer. Public hosting still
+  needs the maintainer's account.
 - VS Code extension: editors/vscode/forge/forge-1.0.0.vsix,
   packaged and contents-verified. Marketplace publish still needs
   the maintainer's publisher account.
 - Benchmarks: docs/BENCHMARKS_VS.md — Jal Pari vs Python/Go/Rust/C
   on identical tasks, results verified equal. ~31x/49x/259x vs
   Python; in the compiled cluster with Go/Rust/C.
+  docs/BENCHMARKS_SAFETY.md — the cost of safety: safe vs fast
+  mode, pure check cost ~1.0x (bounds/counter) to ~1.7x (string
+  bounds) to 2.7-3.7x (overflow-check-heavy recursion); shipped
+  fast-mode wins are mostly -O3/-march=native, not check removal.
 - Still blocked on accounts/token scope, as before: public registry
   host, CI upload, repo rename, PyPI publish, Marketplace publish.
   Still not done: fluent generation, full self-hosting compiler,
-  big32 float division/comparisons/printing/casts, PNG/JPEG,
-  nested arrays, arrays of structs, break, string indexing.
+  big32 float division/comparisons/printing/casts, PNG/JPEG.

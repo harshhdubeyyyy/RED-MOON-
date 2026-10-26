@@ -1,0 +1,15 @@
+enum Color { Red, Green, Blue }
+fn name(c: Color) -> str {
+    let mut s: str = "";
+    match c {
+        Red => { s = "red"; },
+        Green => { s = "green"; },
+        Blue => { s = "blue"; },
+        _ => { s = "other"; },
+    }
+    return s;
+}
+fn main() -> int {
+    println(name(Green));
+    return 0;
+}

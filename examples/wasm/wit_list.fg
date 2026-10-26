@@ -1,0 +1,14 @@
+fn total(xs: [int]) -> int {
+    let mut s: int = 0;
+    let mut i: int = 0;
+    while i < len(xs) {
+        s = s + xs[i];
+        i = i + 1;
+    }
+    return s;
+}
+
+fn main() -> int {
+    let xs: [int] = [10, 20, 12];
+    return total(xs);
+}

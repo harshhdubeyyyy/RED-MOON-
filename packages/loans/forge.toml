@@ -1,0 +1,6 @@
+[package]
+name = "loans"
+version = "0.1.0"
+description = "Fixed-rate loan math: EMI, total payment, total interest."
+
+[dependencies]

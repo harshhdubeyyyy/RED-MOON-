@@ -1,0 +1,24 @@
+import "vectors.fg";
+fn approx(a: float, b: float, tol: float) -> bool {
+    let mut d: float = a - b;
+    if d < 0.0 { d = 0.0 - d; }
+    return d < tol;
+}
+fn main() -> int {
+    let mut bad: int = 0;
+    let s: Vec2 = vec_add(vec2(1.0, 2.0), vec2(3.0, 4.0));
+    if !approx(s.x, 4.0, 0.000001) { println("FAIL add x"); bad = 1; }
+    if !approx(s.y, 6.0, 0.000001) { println("FAIL add y"); bad = 1; }
+    let d: Vec2 = vec_sub(vec2(1.0, 2.0), vec2(3.0, 4.0));
+    if !approx(d.x, -2.0, 0.000001) { println("FAIL sub x"); bad = 1; }
+    if !approx(d.y, -2.0, 0.000001) { println("FAIL sub y"); bad = 1; }
+    let c: Vec2 = vec_scale(vec2(1.0, 2.0), 3.0);
+    if !approx(c.x, 3.0, 0.000001) { println("FAIL scale x"); bad = 1; }
+    if !approx(c.y, 6.0, 0.000001) { println("FAIL scale y"); bad = 1; }
+    if !approx(vec_dot(vec2(1.0, 2.0), vec2(3.0, 4.0)), 11.0, 0.000001) { println("FAIL dot"); bad = 1; }
+    if !approx(vec_mag(vec2(3.0, 4.0)), 5.0, 0.000001) { println("FAIL mag"); bad = 1; }
+    if !approx(vec_dist(vec2(0.0, 0.0), vec2(3.0, 4.0)), 5.0, 0.000001) { println("FAIL dist"); bad = 1; }
+    println("vectors demo: (1,2) + (3,4) =", s.x, s.y);
+    if bad == 0 { println("vectors demo ok"); }
+    return bad;
+}

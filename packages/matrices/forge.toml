@@ -1,0 +1,6 @@
+[package]
+name = "matrices"
+version = "0.1.0"
+description = "Small dense matrix math on nested arrays: add, multiply, transpose, scale."
+
+[dependencies]

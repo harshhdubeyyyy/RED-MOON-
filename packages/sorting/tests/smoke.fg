@@ -1,0 +1,5 @@
+import "../src/sorting.fg";
+fn main() -> int {
+    println("smoke: sorted [5,2,8,1] =", bubble_sort_int([5, 2, 8, 1])[0], bubble_sort_int([5, 2, 8, 1])[3]);
+    return 0;
+}

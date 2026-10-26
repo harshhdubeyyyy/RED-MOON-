@@ -31,7 +31,7 @@ from forge_lang.errors import ForgeError  # noqa: E402
 from forge_lang.compiler import compile_file, build  # noqa: E402
 
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 
 def main(argv=None):
@@ -67,6 +67,8 @@ def main(argv=None):
     p.add_argument("--target", choices=["native", "big32", "wasm"], default="native")
     p.add_argument("-o", "--output", default=None)
     p.add_argument("--keep-c", default=None)
+    p.add_argument("--wit", default=None,
+                   help="WIT world file to check against (requires --target wasm)")
     p.add_argument("--debug", action="store_true",
                    help="emit #line directives + compile with -g so gdb steps through .fg source")
     p.add_argument("--shared", action="store_true",
@@ -79,6 +81,8 @@ def main(argv=None):
     p = sub.add_parser("emit-wasm")
     p.add_argument("file")
     p.add_argument("-o", "--output", default=None)
+    p.add_argument("--wit", default=None,
+                   help="WIT world file to check against")
 
     args = parser.parse_args(argv)
     try:
@@ -136,12 +140,15 @@ def main(argv=None):
             return 0
         if args.cmd == "emit-wasm":
             from forge_lang.compiler import compile_file_wasm
-            wasm, _ = compile_file_wasm(args.file)
+            wasm, _ = compile_file_wasm(args.file, wit_path=args.wit)
             out = args.output or (os.path.splitext(args.file)[0] + ".wasm")
             with open(out, "wb") as f:
                 f.write(wasm)
             print(f"built wasm: {out} ({len(wasm)} bytes)")
             return 0
+        if args.cmd == "build" and getattr(args, "wit", None) \
+                and args.target != "wasm":
+            raise ForgeError("--wit requires --target wasm")
         if args.cmd == "build" and args.target == "big32":
             from forge_lang.compiler import compile_file_rv
             asm, _ = compile_file_rv(args.file)
@@ -174,7 +181,7 @@ def main(argv=None):
             return 0
         if args.cmd == "build" and args.target == "wasm":
             from forge_lang.compiler import compile_file_wasm
-            wasm, _ = compile_file_wasm(args.file)
+            wasm, _ = compile_file_wasm(args.file, wit_path=args.wit)
             out = args.output or (os.path.splitext(args.file)[0] + ".wasm")
             with open(out, "wb") as f:
                 f.write(wasm)
@@ -204,8 +211,9 @@ def main(argv=None):
                 exe = os.path.join(td, "prog")
                 with open(c_path, "w", encoding="utf-8") as f:
                     f.write(c_source)
-                flags = (["cc", "-O3", "-march=native", "-std=gnu11", "-pthread"] if args.mode == "fast"
-                         else ["cc", "-O2", "-std=gnu11", "-pthread"])
+                cc_bin = os.environ.get("JALPARI_CC", "cc")
+                flags = ([cc_bin, "-O3", "-march=native", "-std=gnu11", "-pthread"] if args.mode == "fast"
+                         else [cc_bin, "-O2", "-std=gnu11", "-pthread"])
                 cc = subprocess.run(flags + ["-o", exe, c_path, "-lm", "-lssl", "-lcrypto"],
                                     capture_output=True, text=True)
                 if cc.returncode != 0 and "cannot find -lssl" in cc.stderr:

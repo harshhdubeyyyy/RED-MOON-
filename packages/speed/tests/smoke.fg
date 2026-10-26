@@ -1,0 +1,5 @@
+import "../src/speed.fg";
+fn main() -> int {
+    println("smoke: 36 km/h =", kmh_to_ms(36.0), "m/s");
+    return 0;
+}

@@ -1,0 +1,18 @@
+import "angle.fg";
+fn approx(a: float, b: float, tol: float) -> bool {
+    let mut d: float = a - b;
+    if d < 0.0 { d = 0.0 - d; }
+    return d < tol;
+}
+fn main() -> int {
+    let mut bad: int = 0;
+    if !approx(deg_to_rad(180.0), 3.14159265358979, 0.000001) { println("FAIL deg rad"); bad = 1; }
+    if !approx(rad_to_deg(3.14159265358979), 180.0, 0.000001) { println("FAIL rad deg"); bad = 1; }
+    if !approx(deg_to_turns(90.0), 0.25, 0.000001) { println("FAIL deg turns"); bad = 1; }
+    if !approx(turns_to_deg(0.5), 180.0, 0.000001) { println("FAIL turns deg"); bad = 1; }
+    if !approx(normalize_deg(370.0), 10.0, 0.000001) { println("FAIL norm 370"); bad = 1; }
+    if !approx(normalize_deg(-30.0), 330.0, 0.000001) { println("FAIL norm -30"); bad = 1; }
+    println("angle demo: 180 deg =", deg_to_rad(180.0), "rad");
+    if bad == 0 { println("angle demo ok"); }
+    return bad;
+}

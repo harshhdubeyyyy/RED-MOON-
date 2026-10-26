@@ -1,0 +1,7 @@
+fn main() -> int {
+    let xs: [int] = [10, 20];
+    let i: int = 5;
+    let a: int = xs[i] * 3 + xs[i] % 7;
+    println(a);
+    return 0;
+}

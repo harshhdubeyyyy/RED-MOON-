@@ -1,0 +1,25 @@
+import "colors.fg";
+fn approx(a: float, b: float, tol: float) -> bool {
+    let mut d: float = a - b;
+    if d < 0.0 { d = 0.0 - d; }
+    return d < tol;
+}
+fn main() -> int {
+    let mut bad: int = 0;
+    let c: [int] = hex_to_rgb("#ff8000");
+    if c[0] != 255 { println("FAIL hex r"); bad = 1; }
+    if c[1] != 128 { println("FAIL hex g"); bad = 1; }
+    if c[2] != 0 { println("FAIL hex b"); bad = 1; }
+    let d: [int] = hex_to_rgb("00ff00");
+    if d[0] != 0 { println("FAIL hex no-hash r"); bad = 1; }
+    if d[1] != 255 { println("FAIL hex no-hash g"); bad = 1; }
+    if d[2] != 0 { println("FAIL hex no-hash b"); bad = 1; }
+    if rgb_to_hex(255, 128, 0) != "#ff8000" { println("FAIL rgb_to_hex"); bad = 1; }
+    if !approx(luminance(255, 255, 255), 255.0, 0.001) { println("FAIL luminance white"); bad = 1; }
+    if !approx(luminance(255, 128, 0), 145.7586, 0.001) { println("FAIL luminance orange"); bad = 1; }
+    if !is_light(255, 255, 255) { println("FAIL is_light white"); bad = 1; }
+    if is_light(0, 0, 0) { println("FAIL is_light black"); bad = 1; }
+    println("colors demo: #ff8000 =", c[0], c[1], c[2]);
+    if bad == 0 { println("colors demo ok"); }
+    return bad;
+}

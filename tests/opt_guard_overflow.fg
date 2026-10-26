@@ -1,0 +1,8 @@
+fn f(n: int) -> int {
+    if n < 2 { return 0; }
+    return n + 9223372036854775807;
+}
+fn main() -> int {
+    println(f(2));
+    return 0;
+}

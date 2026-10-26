@@ -1,0 +1,11 @@
+fn main() -> int {
+    let mut total: int = 0;
+    for v in [1, 2, 3, 4, 5] {
+        if v == 4 {
+            break;
+        }
+        total = total + v;
+    }
+    println("total =", total);
+    return 0;
+}

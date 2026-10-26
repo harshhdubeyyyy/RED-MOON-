@@ -1,0 +1,11 @@
+fn main() -> int {
+    let s: str = "banana";
+    let t: str = "bandana";
+    println("a =", s[1] == "a");
+    println("b =", s[1] == "b");
+    println("c =", s[0] == t[0]);
+    println("d =", s[0] == t[1]);
+    println("e =", s[1] == "an");
+    println("f =", s[1] != "a");
+    return 0;
+}

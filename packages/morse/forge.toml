@@ -1,0 +1,6 @@
+[package]
+name = "morse"
+version = "0.1.0"
+description = "Morse code encode and decode."
+
+[dependencies]

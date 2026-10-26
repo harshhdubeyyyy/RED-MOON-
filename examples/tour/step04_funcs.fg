@@ -1,0 +1,7 @@
+fn twice(n: int) -> int {
+    return n * 2;
+}
+fn main() -> int {
+    println("twice 21 =", twice(21));
+    return 0;
+}

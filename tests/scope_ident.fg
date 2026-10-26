@@ -1,0 +1,7 @@
+fn main() -> int {
+    let mut scope: int = 5;
+    println("scope =", scope);
+    scope = 6;
+    println("scope =", scope);
+    return 0;
+}

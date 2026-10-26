@@ -1,0 +1,11 @@
+fn main() -> int {
+    let s = "hello";
+    let mut i = 0;
+    while i < 5 {
+        if s[i] == "l" {
+            return i;
+        }
+        i = i + 1;
+    }
+    return -1;
+}

@@ -1,0 +1,6 @@
+[package]
+name = "statistics"
+version = "0.1.0"
+description = "Mean, min, max, range, median, variance, standard deviation."
+
+[dependencies]

@@ -289,6 +289,10 @@ class Parser:
                 expr = self.parse_expr()
             self.expect_op(";")
             return A.Return(expr, tok.line, tok.col)
+        if self.at_kw("break"):
+            tok = self.next()
+            self.expect_op(";")
+            return A.Break(tok.line, tok.col)
         if self.at_kw("match"):
             kw = self.next()
             expr = self.parse_expr()
@@ -317,6 +321,17 @@ class Parser:
             if not isinstance(expr, A.Call):
                 raise ForgeError("spawn needs a function call", kw.line, kw.col)
             return A.Spawn(expr, kw.line, kw.col)
+        # Structured concurrency: `scope { ... }` joins every task
+        # spawned inside (directly or transitively) at the closing
+        # brace. `scope` stays an ordinary identifier everywhere
+        # else: only `scope` immediately followed by `{` at statement
+        # position takes this branch, so `scope = 5;`, `scope();`,
+        # and `let scope = ...;` all still parse as before.
+        if (self.peek().kind == "IDENT" and self.peek().value == "scope"
+                and self.peek(1).kind == "OP" and self.peek(1).value == "{"):
+            kw = self.next()
+            body = self.parse_block()
+            return A.Scope(body, kw.line, kw.col)
         if self.at_op("{"):
             return self.parse_block()
         # General case: parse an expression, then either '=' (assignment)

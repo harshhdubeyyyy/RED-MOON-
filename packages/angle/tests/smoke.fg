@@ -1,0 +1,5 @@
+import "../src/angle.fg";
+fn main() -> int {
+    println("smoke: 180 deg =", deg_to_rad(180.0), "rad");
+    return 0;
+}
