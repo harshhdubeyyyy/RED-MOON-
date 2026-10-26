@@ -1,4 +1,4 @@
-"""Forge v2 compiler driver: source -> imports -> checked AST -> C -> binary."""
+"""The Jal Pari Language compiler driver: source -> imports -> checked AST -> C -> binary."""
 
 import os
 import subprocess

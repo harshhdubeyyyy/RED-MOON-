@@ -1,4 +1,4 @@
-# Forge v2 Specification
+# The Jal Pari Language Specification (formerly Forge v2)
 
 ## 1. Types
 

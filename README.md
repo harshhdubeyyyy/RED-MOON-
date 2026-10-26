@@ -1,23 +1,28 @@
-# 🔴 Forge v2 — a production-oriented language, rebuilt from research
+# 🧜‍♀️ The Jal Pari Language — a production-oriented language, rebuilt from research
+
+> **Dedicated to Tejaswini — Jal Pari.**
+> See [DEDICATION.md](DEDICATION.md). Formerly called Forge v2;
+> technical names (`forge.py`, `forge_lang`, `.fg` files) are unchanged
+> for compatibility, so existing programs keep working.
 
 > **Safe. Simple. Natively fast.**
 > Static types, no null, immutable by default, checked arithmetic —
 > with C++-style latency and Mojo/Python-style ML ease, in one binary.
 
-![Forge](https://img.shields.io/badge/Forge-v2.0-red)
+![Jal Pari](https://img.shields.io/badge/Jal_Pari-v2.0-pink)
 ![Native](https://img.shields.io/badge/compiled-native-blue)
 ![Safe mode](https://img.shields.io/badge/safe--mode-checked-green)
 ![Fast mode](https://img.shields.io/badge/fast--mode--O3-orange)
 ![Tests](https://img.shields.io/badge/tests-passing-brightgreen)
 
-Forge v2 is a statically typed language that compiles to native code.
+The Jal Pari Language is a statically typed language that compiles to native code.
 It was restarted from scratch after a research pass over what people
 are actually building in 2025–2026 — Zig, Mojo, Carbon, Gleam, Odin,
 Hare, Roc, Vale/Valen, and others — and what developers praise and
 complain about in Rust, Go, Zig, and Mojo. The conclusion that drives
-Forge: **no single language has replaced Rust/Go/C, and the ones
+it: **no single language has replaced Rust/Go/C, and the ones
 gaining real production use have a narrow beachhead, not a promise
-to be good at everything.** Forge's beachhead is safe, simple, fast
+to be good at everything.** Its beachhead is safe, simple, fast
 tools, CLIs, and small ML programs.
 
 ---

@@ -1,4 +1,4 @@
-"""Forge v2 -> C code generator.
+"""The Jal Pari Language -> C code generator.
 
 Safe mode (default): checked int arithmetic, bounds-checked indexing.
 Fast mode (--mode fast): unchecked arithmetic/indexing, -O3 -march=native
@@ -69,7 +69,7 @@ static void forge_str_array_free(ForgeStrArray a) {
 }
 
 static void forge_fail(const char *msg) {
-    fprintf(stderr, "forge: runtime error: %s\n", msg);
+    fprintf(stderr, "jalpari: runtime error: %s\n", msg);
     exit(1);
 }
 
@@ -1107,7 +1107,7 @@ class Codegen:
             if isinstance(call, A.Call) and call.name == "assert":
                 cond = self.gen_expr(call.args[0])
                 msg = self.gen_expr(call.args[1])
-                self.emit(f"if (!({cond})) {{ fprintf(stderr, \"forge: assertion failed: %s\\n\", {msg}); exit(1); }}")
+                self.emit(f"if (!({cond})) {{ fprintf(stderr, \"jalpari: assertion failed: %s\\n\", {msg}); exit(1); }}")
                 return
             if isinstance(call, A.Call) and call.name in ("print", "println"):
                 self.gen_print(call)
@@ -1121,7 +1121,7 @@ class Codegen:
                 self.emit(f"{PUSH_FN[et]}(&{var_code}, {val});")
                 return
             if isinstance(call, A.Call) and call.name == "fail":
-                self.emit(f'fprintf(stderr, "forge: %s\\n", {self.gen_expr(call.args[0])});')
+                self.emit(f'fprintf(stderr, "jalpari: %s\\n", {self.gen_expr(call.args[0])});')
                 self.emit("exit(1);")
                 return
             self.emit(f"{self.gen_expr(stmt.expr)};")

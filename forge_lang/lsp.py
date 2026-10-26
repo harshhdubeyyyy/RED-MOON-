@@ -61,7 +61,7 @@ def diagnostics_for(text):
                       "end": {"line": 0, "character": 1}},
             "severity": 1,
             "source": "forge",
-            "message": f"forge: {e}",
+            "message": f"jalpari: {e}",
         }]
 
 

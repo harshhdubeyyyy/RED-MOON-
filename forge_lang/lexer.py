@@ -1,4 +1,4 @@
-"""Lexer for Forge v2. Tokens carry line/column for readable errors."""
+"""Lexer for The Jal Pari Language. Tokens carry line/column for readable errors."""
 
 from dataclasses import dataclass
 from .errors import ForgeError

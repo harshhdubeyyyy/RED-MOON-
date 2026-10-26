@@ -1,4 +1,4 @@
-"""Forge v2 -> big32 (RV32IMAC) assembly code generator.
+"""The Jal Pari Language -> big32 (RV32IMAC) assembly code generator.
 
 Reuses Forge's parser, checker and type inference; only the backend is
 new. Target: big32 v7, single-cycle, 16KB IMEM, 64KB DMEM, UART TX

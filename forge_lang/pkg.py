@@ -267,7 +267,7 @@ def _build(cwd, mode):
     try:
         forge_build(main, out, mode=mode)
     except ForgeError as e:
-        print(f"forge: error: {e}", file=sys.stderr)
+        print(f"jalpari: error: {e}", file=sys.stderr)
         return 1, None
     print(f"built: {out} (mode={mode})")
     return 0, out
@@ -458,5 +458,5 @@ def dispatch(argv, forge_path, cwd):
         print(f"forge pkg: unknown subcommand '{cmd}'", file=sys.stderr)
         return 1
     except ForgeError as e:
-        print(f"forge: error: {e}", file=sys.stderr)
+        print(f"jalpari: error: {e}", file=sys.stderr)
         return 1

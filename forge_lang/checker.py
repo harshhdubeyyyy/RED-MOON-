@@ -1,4 +1,4 @@
-"""Static checker for Forge v2.
+"""Static checker for The Jal Pari Language.
 
 Types: int, float, bool, str, void, and [T] dynamic arrays.
 Builtins:

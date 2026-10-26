@@ -45,7 +45,7 @@ def run_program(source):
         try:
             compile_file(src)
         except ForgeError as e:
-            return 1, "", f"forge: error: {e}\n"
+            return 1, "", f"jalpari: error: {e}\n"
         # Reuse forge.py run via a direct compile+cc, to avoid
         # importing the CLI's argparse machinery here.
         from .compiler import compile_file as _cf

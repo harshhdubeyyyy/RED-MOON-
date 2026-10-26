@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Forge v2 compiler CLI.
+"""The Jal Pari Language compiler CLI (formerly Forge v2).
 
 Usage:
     python3 forge.py check <file.fg> [--mode safe|fast]
@@ -28,7 +28,7 @@ from forge_lang.compiler import compile_file, build  # noqa: E402
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(prog="forge", description="Forge compiler v2")
+    parser = argparse.ArgumentParser(prog="forge", description="The Jal Pari Language compiler")
     sub = parser.add_subparsers(dest="cmd", required=True)
     for name in ("check", "emit"):
         p = sub.add_parser(name)
@@ -203,13 +203,13 @@ def main(argv=None):
                 proc = subprocess.run([exe] + prog_args)
                 return proc.returncode
     except ForgeError as e:
-        print(f"forge: error: {e}", file=sys.stderr)
+        print(f"jalpari: error: {e}", file=sys.stderr)
         return 1
     except FileNotFoundError:
-        print(f"forge: error: file not found: {args.file}", file=sys.stderr)
+        print(f"jalpari: error: file not found: {args.file}", file=sys.stderr)
         return 1
     except OSError as e:
-        print(f"forge: error: {e}", file=sys.stderr)
+        print(f"jalpari: error: {e}", file=sys.stderr)
         return 1
 
 

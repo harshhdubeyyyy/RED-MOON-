@@ -1,4 +1,4 @@
-# Forge ecosystem
+# The Jal Pari Language ecosystem (formerly Forge)
 
 This is the complete tooling around the Forge language, in one
 place. Everything below is implemented in this repo, not planned.

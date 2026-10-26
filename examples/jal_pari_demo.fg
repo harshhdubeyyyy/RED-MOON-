@@ -1,0 +1,7 @@
+// The Jal Pari Language — dedicated to Teju (Jal Pari).
+fn main() -> int {
+    println("The Jal Pari Language");
+    println("For Teju, my Jal Pari");
+    println("Safe. Simple. Natively fast.");
+    return 0;
+}

@@ -1,4 +1,4 @@
-# Forge v2 — full restart (26 Oct 2026)
+# The Jal Pari Language — full restart (26 Oct 2026, formerly Forge v2)
 
 ## Why restart, not patch
 

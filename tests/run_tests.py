@@ -68,6 +68,8 @@ def main():
     expect("examples/kernel_demo.fg", "parallel dot = 70\nmatmul = 19 22 43 50\n")
     expect("examples/gc_struct_demo.fg",
            "person = b 2 3\nstr allocs = 101 str frees = 100\narr allocs = 101 arr frees = 100\nshared q = b 2 3\n")
+    expect("examples/jal_pari_demo.fg",
+           "The Jal Pari Language\nFor Teju, my Jal Pari\nSafe. Simple. Natively fast.\n")
     expect("examples/ecosystem/word_stats.fg",
            "words = 8\nlines = 4\nmean line length = 10.25\n"
            "median line length = 12\n")

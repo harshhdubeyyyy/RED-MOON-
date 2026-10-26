@@ -1,4 +1,4 @@
-"""Recursive-descent parser for Forge v2.
+"""Recursive-descent parser for The Jal Pari Language.
 
 Precedence: || -> && -> == != -> < <= > >= -> + - -> * / % -> unary -> postfix -> primary
 Postfix: indexing a[i], cast expr as float
