@@ -197,9 +197,11 @@ Each needs its own pass; none is half-claimed here.
   75,000 words, vocab 1000): held-out ppl 1118.87 ->
   189.13, 26.1 ms/step, forward 136 nodes. Generation
   still salad order — fluency is NOT claimed.
-- GPU training loop exists as code only
+- GPU training loop VERIFIED on a real T4
   (examples/cuda/mlp_train.cu, XOR MLP, square-matmul
-  wrapper); the GPU run needs a Kaggle token.
+  wrapper; Kaggle notebook arshhdubeyy/forge-mlp-train
+  v3, 26 Oct 2026, LR 5.0: loss 0.001529 at epoch
+  1500, predictions ~0, 1, 1, 0).
 
 ## 0.6.0 addendum — ecosystem layer
 - Import dedup (compiler.py): libraries combine

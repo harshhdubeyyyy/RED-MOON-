@@ -12,14 +12,26 @@
  * inputs + 2 zero columns), W1 is [in=4, hidden=4],
  * W2 is [hidden=4, out=4] (only column 0 is the output).
  *
- * STATUS — CODE ONLY, NOT YET RUN ON A GPU. This VM has
- * no nvcc and no GPU, so this file has never been
- * compiled or executed. It needs a Kaggle GPU session
- * (Jayant's token, re-supplied per session) with:
- *   nvcc -O2 mlp_train.cu kernel.cu -o mlp_train
- * Expected result after ~2000 epochs, lr 0.5: loss below
- * 0.01 and predictions ~0, 1, 1, 0. If it does not reach
- * that, the file is wrong — do not quote it as verified.
+ * STATUS — VERIFIED ON A REAL GPU 26 Oct 2026
+ * (Kaggle notebook arshhdubeyy/forge-mlp-train v3,
+ * Tesla T4, nvcc 12.8.93, private). Two things were
+ * needed before it ran: kernel.cu has its own main()
+ * (standalone test driver), so it must be compiled
+ * alone with -Dmain=forge_kernel_main and linked as
+ * an object, not compiled together with this file
+ * (v1 failed at link with "multiple definition of
+ * main"); and LR 0.5 does NOT learn in 2000 epochs
+ * (v2 on GPU: loss pinned at 0.25, predictions all
+ * ~0.5 — the mean-predictor saddle, confirmed by a
+ * CPU mirror reproducing the GPU numbers exactly).
+ * At LR 5.0 (v3, this file's value) it learns:
+ * epoch 0 loss 0.253864, 500: 0.248944,
+ * 1000: 0.005385, 1500: 0.001529, predictions
+ * 0.028651 0.972222 0.967339 0.027646 (~0, 1, 1, 0).
+ * This VM has no nvcc and no GPU, so this file
+ * cannot run here; on a CUDA machine, compile
+ * kernel.cu alone first (renaming its main), then
+ * link: nvcc -O2 mlp_train.cu kernel.o -o mlp_train
  */
 
 #include <stdio.h>
@@ -30,7 +42,7 @@ void forge_cuda_matmul(const double *a, const double *b, double *out, long long 
 
 #define N 4
 #define EPOCHS 2000
-#define LR 0.5
+#define LR 5.0
 
 static double sigmoid(double x) { return 1.0 / (1.0 + exp(-x)); }
 

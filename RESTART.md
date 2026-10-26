@@ -354,7 +354,14 @@ Forge docs.
 - Suite now has real big32 build checks + a
   node-based WASM comparison (earlier wasm/big32
   "suite passes" were native runs — corrected).
-- Still NOT done: fluent generation, GPU training
-  run, full self-hosting compiler, registry host /
-  CI upload / repo rename / PyPI publish (all
-  blocked on user accounts/token scope, as before).
+- Update 26 Oct 2026 (after 0.7.0): GPU training
+  run VERIFIED on a real T4 (notebook
+  arshhdubeyy/forge-mlp-train v3, LR 5.0 — v1
+  failed at link on kernel.cu's duplicate main,
+  v2 at LR 0.5 stalled at loss 0.25; v3 loss
+  0.001529, predictions ~0, 1, 1, 0).
+  mlp_train.cu now carries LR 5.0 + the verified
+  header. Still NOT done: fluent generation, full
+  self-hosting compiler, registry host / CI upload
+  / repo rename / PyPI publish (all blocked on
+  user accounts/token scope, as before).

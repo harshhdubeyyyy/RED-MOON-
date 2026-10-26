@@ -482,10 +482,15 @@ backend jumps:
 ### Honest limits of this layer (0.7.0)
 
 - GPU training: kernels verified on a real T4
-  (0.3.0), but the training loop itself
-  (`examples/cuda/mlp_train.cu`) is code only,
-  and no new GPU run was launched (needs a
-  Kaggle token re-supplied by the user).
+  (0.3.0); the training loop itself
+  (`examples/cuda/mlp_train.cu`) is VERIFIED on a
+  real T4 since 26 Oct 2026 (Kaggle notebook
+  arshhdubeyy/forge-mlp-train v3, LR 5.0:
+  epoch 1500 loss 0.001529, predictions
+  0.028651 0.972222 0.967339 0.027646).
+  LR 0.5 does not learn (v2: loss pinned at
+  0.25); kernel.cu's own main() must be renamed
+  at compile time or the link fails.
 - Fluent generation: NOT achieved at 153k params
   / 150k words. Needs far more scale.
 - Full self-hosting compiler: the front-end
