@@ -70,6 +70,8 @@ def main():
            "person = b 2 3\nstr allocs = 101 str frees = 100\narr allocs = 101 arr frees = 100\nshared q = b 2 3\n")
     expect("examples/jal_pari_demo.fg",
            "The Jal Pari Language\nFor Teju, my Jal Pari\nSafe. Simple. Natively fast.\n")
+    expect("examples/teju_special.fg",
+           "For Teju, my Jal Pari\n\n   \\ | /\n    \\|/\n  -- * --\n    /|\\\n   / | \\\n     |\n     |\n    \\|/\n\nThat smile.\nGolden hour suits her.\n\n*\n**\n***\n****\n*****\n\nTeju, you are special.\nSmiles, sunsets, good songs.\nNo pressure, just this: you are thought of kindly,\nand the door is open, whenever you want.\n- Jayant\n")
     expect("examples/dates_rand_demo.fg",
            "epoch = 0\n2026-10-26 minus 2026-01-01 = 298\nleap 2024 = true\nleap 2025 = false\nfeb 2024 = 29\nrand seed = 1250496048\nrand float = 0.610197\n")
     expect("examples/ml_train_xor.fg",

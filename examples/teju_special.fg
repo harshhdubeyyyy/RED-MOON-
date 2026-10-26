@@ -1,0 +1,43 @@
+// The Jal Pari Language — a Teju special program.
+// For Tejaswini, called Jal Pari. Simple and friendly, with an
+// open door and zero pressure — the same tone as the For Teju
+// site. Run it:
+//   python3 forge.py run examples/teju_special.fg
+// It prints a lily, grows a little flower of stars, and ends
+// with a short note. No photos, no data — just code, written
+// for her.
+import "strings.fg";
+
+fn lily() -> int {
+    println("   \\ | /");
+    println("    \\|/");
+    println("  -- * --");
+    println("    /|\\");
+    println("   / | \\");
+    println("     |");
+    println("     |");
+    println("    \\|/");
+    return 0;
+}
+
+fn main() -> int {
+    println("For Teju, my Jal Pari");
+    println("");
+    let _x: int = lily();
+    println("");
+    println("That smile.");
+    println("Golden hour suits her.");
+    println("");
+    let mut i: int = 1;
+    while i <= 5 {
+        println(repeat_str("*", i));
+        i = i + 1;
+    }
+    println("");
+    println("Teju, you are special.");
+    println("Smiles, sunsets, good songs.");
+    println("No pressure, just this: you are thought of kindly,");
+    println("and the door is open, whenever you want.");
+    println("- Jayant");
+    return 0;
+}
