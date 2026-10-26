@@ -15,9 +15,14 @@ class Infer:
         self._parse_generic = parse_generic
         enums = getattr(program, "enums", None) or []
         self.enum_variants = {}
+        self.enum_params = {}
+        self.enum_payloads = {}
         for ed in enums:
             for v in ed.variants:
                 self.enum_variants[v] = ed.name
+            self.enum_params[ed.name] = list(getattr(ed, "type_params", None) or [])
+            payloads = getattr(ed, "variant_payloads", None) or {}
+            self.enum_payloads[ed.name] = {v: payloads.get(v) for v in ed.variants}
         self.types = {}
         self.scopes = []
         self.current_ret = "void"
@@ -69,9 +74,26 @@ class Infer:
         elif isinstance(stmt, A.Assign):
             self.walk_expr(stmt.expr)
         elif isinstance(stmt, A.Match):
-            self.walk_expr(stmt.expr)
-            for _pat, body in stmt.arms:
-                self.walk_block(body)
+            et = self.walk_expr(stmt.expr)
+            from .generics import parse_generic, substitute_type
+            g = parse_generic(et)
+            base = g[0] if g else et
+            bindings = {}
+            if g:
+                params = self.enum_params.get(base, [])
+                if len(params) == len(g[1]):
+                    bindings = dict(zip(params, g[1]))
+            for pat, binding, body in stmt.arms:
+                if binding is not None:
+                    pt = self.enum_payloads.get(base, {}).get(pat)
+                    concrete_pt = substitute_type(pt, bindings) if pt is not None else "int"
+                    self.scopes.append({binding: concrete_pt})
+                    try:
+                        self.walk_block(body)
+                    finally:
+                        self.scopes.pop()
+                else:
+                    self.walk_block(body)
         elif isinstance(stmt, A.Spawn):
             self.walk_expr(stmt.call)
         elif isinstance(stmt, A.FieldAssign):
@@ -147,6 +169,12 @@ class Infer:
         if isinstance(expr, A.Cast):
             self.walk_expr(expr.expr)
             return self.set(expr, expr.target)
+        if isinstance(expr, A.Try):
+            t = self.walk_expr(expr.expr)
+            g = self._parse_generic(t)
+            if g is not None and len(g[1]) >= 1:
+                return self.set(expr, g[1][0])
+            return self.set(expr, "int")
         if isinstance(expr, A.UnaryOp):
             t = self.walk_expr(expr.expr)
             return self.set(expr, "bool" if expr.op == "!" else t)
@@ -159,6 +187,14 @@ class Infer:
                 return self.set(expr, "str")
             return self.set(expr, lt)
         if isinstance(expr, A.Call):
+            if getattr(expr, "concrete_type", None):
+                for a in expr.args:
+                    self.walk_expr(a)
+                return self.set(expr, expr.concrete_type)
+            if expr.name in self.enum_variants:
+                for a in expr.args:
+                    self.walk_expr(a)
+                return self.set(expr, self.enum_variants[expr.name])
             # Array literals in arguments take the parameter type.
             if expr.name not in ("print", "println", "push", "fail"):
                 fn = self.funcs.get(expr.name)

@@ -303,11 +303,12 @@ Forge v2 is production-*oriented*, not a finished Rust/Go/Mojo
 rival. Structs, file I/O, CLI args, `forge test`, the ecosystem,
 enums+match, spawn threads, C FFI, HTTP, Map/JSON stdlib, assert,
 `forge doc`, a package lockfile, and now generics, `Option`/
-`Result`, TLS, a local registry, a tiny KV DB, and a big32
-backend are done (26 Oct 2026). It still has no `?` sugar,
-generic enums, GPU kernels, SQL database, hosted registry, GC,
-or WASM backend yet. Array and string values are not yet freed.
-Those are the next phases in `SPEC_V2.md`, not hidden features.
+`Result`, TLS, a local registry, a tiny KV DB, a big32
+backend, `?`, generic enums with payloads, and a table DB are
+done (26 Oct 2026). It still has no GPU kernels, SQL parser,
+hosted registry, GC, or WASM backend yet. Array and string
+values are not yet freed. Those are the next phases in
+`SPEC_V2.md`, not hidden features.
 
 ## 🔁 Regenerate the figures
 

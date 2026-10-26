@@ -70,6 +70,8 @@ def fmt_expr(expr, parent_prec=0):
         return f"({text})" if p < parent_prec else text
     if isinstance(expr, A.Call):
         return f"{expr.name}({', '.join(fmt_expr(a) for a in expr.args)})"
+    if isinstance(expr, A.Try):
+        return f"{fmt_expr(expr.expr, 99)}?"
     raise ForgeError(f"formatter: unsupported expression {type(expr).__name__}")
 
 
@@ -93,7 +95,13 @@ class Formatter:
             self.emit(0, "}")
             self.emit(0)
         for ed in (prog.enums or []):
-            self.emit(0, f"enum {ed.name} {{ {', '.join(ed.variants)} }}")
+            tp = f"<{', '.join(ed.type_params)}>" if getattr(ed, "type_params", None) else ""
+            payloads = getattr(ed, "variant_payloads", None) or {}
+            parts = []
+            for v in ed.variants:
+                pt = payloads.get(v)
+                parts.append(f"{v}({pt})" if pt is not None else v)
+            self.emit(0, f"enum {ed.name}{tp} {{ {', '.join(parts)} }}")
             self.emit(0)
         for i, fn in enumerate(prog.funcs):
             params = ", ".join(f"{n}: {t}" for n, t in fn.params)
@@ -138,8 +146,9 @@ class Formatter:
             return
         if isinstance(stmt, A.Match):
             self.emit(indent, f"match {fmt_expr(stmt.expr)} {{")
-            for pat, body in stmt.arms:
-                self.emit(indent + 1, f"{pat} => {{")
+            for pat, binding, body in stmt.arms:
+                pat_text = f"{pat}({binding})" if binding else pat
+                self.emit(indent + 1, f"{pat_text} => {{")
                 self.fmt_block(body, indent + 2)
                 self.emit(indent + 1, "}")
             self.emit(indent, "}")

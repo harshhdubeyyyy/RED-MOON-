@@ -365,10 +365,18 @@ class Codegen:
         self.program = program
         self.mode = mode
         self.func_ret = {fn.name: fn.ret for fn in program.funcs}
+        self.try_counter = 0
         self.structs = {sd.name: dict(sd.fields)
                         for sd in (getattr(program, "structs", None) or [])}
         self.enums = {ed.name: list(ed.variants)
                       for ed in (getattr(program, "enums", None) or [])}
+        self.enum_templates = {}
+        for ed in (getattr(program, "enums", None) or []):
+            payloads = getattr(ed, "variant_payloads", None) or {}
+            self.enum_templates[ed.name] = (
+                list(getattr(ed, "type_params", None) or []),
+                {v: payloads.get(v) for v in ed.variants},
+                list(ed.variants))
         self.lines = []
         self.indent = 0
         self.arr_counter = 0
@@ -392,8 +400,57 @@ class Codegen:
             elif isinstance(stmt, A.For):
                 self.collect_spawns(stmt.body, out)
             elif isinstance(stmt, A.Match):
-                for _pat, body in stmt.arms:
+                for _pat, _bind, body in stmt.arms:
                     self.collect_spawns(body, out)
+
+    def _enum_variant_map(self):
+        """variant -> (enum name, tag, template payload type)."""
+        if not hasattr(self, "_variant_map_cache"):
+            m = {}
+            for enum_name, (_params, payloads, variants) in self.enum_templates.items():
+                for i, v in enumerate(variants):
+                    m[v] = (enum_name, i, payloads[v])
+            self._variant_map_cache = m
+        return self._variant_map_cache
+
+    def enum_concrete_info(self, t):
+        """(base, {variant: (tag, payload type)}) for a concrete enum type."""
+        from .generics import parse_generic, substitute_type
+        if t in self.enum_templates and not self.enum_templates[t][0]:
+            _params, payloads, variants = self.enum_templates[t]
+            return t, {v: (i, payloads[v]) for i, v in enumerate(variants)}
+        g = parse_generic(t)
+        if g is not None and g[0] in self.enum_templates:
+            base, args = g
+            params, payloads, variants = self.enum_templates[base]
+            if len(args) != len(params) or "?" in args:
+                return None
+            bindings = dict(zip(params, args))
+            return base, {v: (i, substitute_type(payloads[v], bindings) if payloads[v] is not None else None)
+                          for i, v in enumerate(variants)}
+        return None
+
+    def collect_enum_types(self):
+        """All concrete enum types used, from signatures, fields, and infer types."""
+        out = set()
+        for fn in self.program.funcs:
+            if getattr(fn, "type_params", None):
+                continue
+            for _n, pt in fn.params:
+                if self.enum_concrete_info(pt):
+                    out.add(pt)
+            if self.enum_concrete_info(fn.ret):
+                out.add(fn.ret)
+        for sd in (getattr(self.program, "structs", None) or []):
+            if getattr(sd, "type_params", None):
+                continue
+            for _f, ft in sd.fields:
+                if self.enum_concrete_info(ft):
+                    out.add(ft)
+        for t in self._types.values():
+            if self.enum_concrete_info(t):
+                out.add(t)
+        return out
 
     def generate(self):
         self.lines.append(HEADER)
@@ -406,6 +463,42 @@ class Codegen:
                 continue
             concrete_structs[sd.name] = dict(sd.fields)
         self.structs = concrete_structs
+        # Enums: non-payload enums as C enums; payload enums as
+        # tag+union structs, one per concrete type.
+        for name, variants in self.enums.items():
+            _params, payloads, _vs = self.enum_templates.get(name, ([], {}, variants))
+            if any(p is not None for p in payloads.values()):
+                continue
+            self.emit(f"typedef enum {{ {', '.join(variants)} }} {name};")
+        concrete_enums = self.collect_enum_types()
+        for t in sorted(concrete_enums):
+            info = self.enum_concrete_info(t)
+            if info is None:
+                continue
+            base, variant_info = info
+            _params, payloads, _vs = self.enum_templates[base]
+            if not any(p is not None for p in payloads.values()):
+                # Non-payload generic enum: alias the base C enum.
+                from .generics import mangle_type
+                if "<" in t:
+                    self.emit(f"typedef {base} {mangle_type(t)};")
+                continue
+            from .generics import mangle_type
+            cname = mangle_type(t)
+            self.emit(f"typedef struct {cname} {cname};")
+            self.emit(f"struct {cname} {{ int tag;")
+            union_fields = []
+            for v, (tag, pt) in variant_info.items():
+                if pt is not None:
+                    union_fields.append(f"{c_type(pt)} payload_{v};")
+            if union_fields:
+                self.emit("    union {")
+                for uf in union_fields:
+                    self.emit(f"        {uf}")
+                self.emit("    } payload;")
+            self.emit("};")
+        if self.enums:
+            self.lines.append("")
         for name in self.structs:
             self.emit(f"typedef struct {name} {name};")
         for name, fields in self.structs.items():
@@ -414,10 +507,6 @@ class Codegen:
                 self.emit(f"    {c_type(ftype)} {fname};")
             self.emit("};")
         if self.structs:
-            self.lines.append("")
-        for name, variants in self.enums.items():
-            self.emit(f"typedef enum {{ {', '.join(variants)} }} {name};")
-        if self.enums:
             self.lines.append("")
         for fn in self.program.funcs:
             if getattr(fn, "type_params", None):
@@ -563,8 +652,42 @@ class Codegen:
                 self.emit(f"({base_code}).data[{idx}] = {val};")
             return
         if isinstance(stmt, A.Match):
-            target = self.gen_expr(stmt.expr)
-            for idx, (pat, body) in enumerate(stmt.arms):
+            et = self.expr_type(stmt.expr)
+            info = self.enum_concrete_info(et)
+            is_payload = False
+            if info is not None:
+                _base, variant_info = info
+                is_payload = any(pt is not None for _tag, pt in variant_info.values())
+            if not is_payload:
+                target = self.gen_expr(stmt.expr)
+                for idx, (pat, _binding, body) in enumerate(stmt.arms):
+                    if pat == "_":
+                        if idx == 0:
+                            self.emit("{")
+                        else:
+                            self.emit("} else {")
+                        self.indent += 1
+                        self.gen_block(body, ret_type)
+                        self.indent -= 1
+                        self.emit("}")
+                    else:
+                        kw = "if" if idx == 0 else "} else if"
+                        self.emit(f"{kw} ({target} == {pat}) {{")
+                        self.indent += 1
+                        self.gen_block(body, ret_type)
+                        self.indent -= 1
+                        if idx == len(stmt.arms) - 1:
+                            self.emit("}")
+                return
+            # Payload enum: evaluate once into a temp, match on .tag,
+            # bind the payload into a local for arms that bind it.
+            n = self.loop_counter
+            self.loop_counter += 1
+            temp = f"__forge_match{n}"
+            self.emit("{")
+            self.indent += 1
+            self.emit(f"{c_type(et)} {temp} = {self.gen_expr(stmt.expr)};")
+            for idx, (pat, binding, body) in enumerate(stmt.arms):
                 if pat == "_":
                     if idx == 0:
                         self.emit("{")
@@ -575,13 +698,21 @@ class Codegen:
                     self.indent -= 1
                     self.emit("}")
                 else:
+                    tag, pt = variant_info[pat]
                     kw = "if" if idx == 0 else "} else if"
-                    self.emit(f"{kw} ({target} == {pat}) {{")
+                    self.emit(f"{kw} ({temp}.tag == {tag}) {{")
                     self.indent += 1
+                    if binding is not None:
+                        payload_code = f"{temp}.payload.payload_{pat}"
+                        if pt == "str":
+                            payload_code = f"forge_copy_str({payload_code})"
+                        self.emit(f"{c_type(pt)} {binding} = {payload_code};")
                     self.gen_block(body, ret_type)
                     self.indent -= 1
                     if idx == len(stmt.arms) - 1:
                         self.emit("}")
+            self.indent -= 1
+            self.emit("}")
             return
         if isinstance(stmt, A.Spawn):
             call = stmt.call
@@ -705,6 +836,14 @@ class Codegen:
         if isinstance(expr, A.BoolLit):
             return "true" if expr.value else "false"
         if isinstance(expr, A.Var):
+            if expr.name in self._enum_variant_map():
+                enum_name, tag, payload_type = self._enum_variant_map()[expr.name]
+                _params, payloads, _vs = self.enum_templates[enum_name]
+                if any(p is not None for p in payloads.values()):
+                    if payload_type is not None:
+                        raise ForgeError(f"variant '{expr.name}' has a payload; write {expr.name}(value)")
+                    et = self.expr_type(expr)
+                    return f"({c_type(et)}){{ .tag = {tag} }}"
             return expr.name
         if isinstance(expr, A.StructLit):
             concrete = getattr(expr, "concrete_type", None) or expr.name
@@ -752,6 +891,41 @@ class Codegen:
         if isinstance(expr, A.Cast):
             code = self.gen_expr(expr.expr)
             return f"(double)({code})" if expr.target == "float" else f"(long long)({code})"
+        if isinstance(expr, A.Try):
+            n = self.try_counter
+            self.try_counter += 1
+            inner = self.gen_expr(expr.expr)
+            inner_type = self.expr_type(expr.expr)
+            ret_type = getattr(expr, "ret_type", None) or self.func_ret.get(self.current_fn, "void")
+            c_inner = c_type(inner_type)
+            c_ret = c_type(ret_type)
+            temp = f"__forge_try{n}"
+            if expr.kind == "Option":
+                if ret_type == inner_type:
+                    early = f"return {temp};"
+                else:
+                    y = ret_type[ret_type.find("<") + 1:ret_type.rfind(">")] if "<" in ret_type else "int"
+                    dummy = {"int": "0", "float": "0.0", "bool": "false", "str": 'forge_copy_str("")'}.get(y)
+                    if dummy is None:
+                        raise ForgeError("? for Option with a non-scalar return value type is not supported yet")
+                    early = f"return ({c_ret}){{ .present = false, .value = {dummy} }};"
+                return (f"({{ {c_inner} {temp} = {inner}; "
+                        f"if (!{temp}.present) {{ {early} }} {temp}.value; }})")
+            if expr.kind == "Result":
+                if ret_type == inner_type:
+                    early = f"return {temp};"
+                else:
+                    ret_args = ret_type[ret_type.find("<") + 1:ret_type.rfind(">")].split(",")
+                    y = ret_args[0].strip() if ret_args else "int"
+                    e = ret_args[1].strip() if len(ret_args) > 1 else "str"
+                    dummy = {"int": "0", "float": "0.0", "bool": "false", "str": 'forge_copy_str("")'}.get(y)
+                    if dummy is None:
+                        raise ForgeError("? for Result with a non-scalar return value type is not supported yet")
+                    err_code = f"forge_copy_str({temp}.error)" if e == "str" else f"{temp}.error"
+                    early = f"return ({c_ret}){{ .ok = false, .value = {dummy}, .error = {err_code} }};"
+                return (f"({{ {c_inner} {temp} = {inner}; "
+                        f"if (!{temp}.ok) {{ {early} }} {temp}.value; }})")
+            raise ForgeError("? expression was not checked as Option/Result")
         if isinstance(expr, A.UnaryOp):
             if expr.op == "-" and self.expr_type(expr.expr) == "int" and self.mode == "safe":
                 return f"forge_neg({self.gen_expr(expr.expr)})"
@@ -817,6 +991,24 @@ class Codegen:
                         f"{self.gen_expr(expr.args[1])})")
             if expr.name == "http_get":
                 return f"forge_http_get({self.gen_expr(expr.args[0])})"
+            # Enum variant construction: Some(42), None(), Circle(3.0).
+            if expr.name in self._enum_variant_map():
+                enum_name, tag, payload_type = self._enum_variant_map()[expr.name]
+                concrete = getattr(expr, "concrete_type", None) or self.expr_type(expr)
+                info = self.enum_concrete_info(concrete)
+                if info is None:
+                    raise ForgeError(f"enum construction '{expr.name}' has unknown concrete type {concrete}")
+                _base, variant_info = info
+                if payload_type is None and not any(p is not None for p in self.enum_templates[enum_name][1].values()):
+                    # Non-payload enum: bare constant, call syntax is sugar.
+                    return expr.name
+                cname = c_type(concrete)
+                if not expr.args:
+                    return f"({cname}){{ .tag = {tag} }}"
+                arg_code = self.gen_expr(expr.args[0])
+                if payload_type == "str":
+                    arg_code = f"forge_copy_str({arg_code})"
+                return f"({cname}){{ .tag = {tag}, .payload.payload_{expr.name} = {arg_code} }}"
             args = ", ".join(self.gen_expr(a) for a in expr.args)
             return f"{expr.name}({args})"
         raise ForgeError(f"unsupported expression {type(expr).__name__}")

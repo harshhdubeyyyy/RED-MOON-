@@ -1,0 +1,41 @@
+import "option.fg";
+import "result.fg";
+
+fn get_opt(ok: bool) -> Option<int> {
+    if ok {
+        return opt_some(42);
+    }
+    return Option { present: false, value: 0 };
+}
+
+fn use_opt(ok: bool) -> Option<int> {
+    let v: int = get_opt(ok)?;
+    return opt_some(v + 1);
+}
+
+fn divide(a: int, b: int) -> Result<int, str> {
+    if b == 0 {
+        return Result { ok: false, value: 0, error: "div by zero" };
+    }
+    return Result { ok: true, value: a / b, error: "" };
+}
+
+fn calc() -> Result<int, str> {
+    let x: int = divide(20, 2)?;
+    let y: int = divide(x, 0)?;
+    return Result { ok: true, value: y, error: "" };
+}
+
+fn main() -> int {
+    let o1: Option<int> = use_opt(true);
+    println("opt ok =", opt_value_or(o1, 0));
+    let o2: Option<int> = use_opt(false);
+    println("opt none present =", o2.present);
+    let r: Result<int, str> = calc();
+    if r.ok {
+        println("calc =", r.value);
+    } else {
+        println("calc error =", r.error);
+    }
+    return 0;
+}

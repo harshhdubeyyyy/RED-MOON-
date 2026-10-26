@@ -53,6 +53,12 @@ def main():
     expect("examples/option_result_demo.fg",
            "opt = 42\nnone = 99\ndiv = 5\nerror = division by zero\n")
     expect("examples/db_demo.fg", "user = jayant\nlang = Forge\n")
+    # ? operator, generic enums, table DB.
+    expect("examples/try_demo.fg",
+           "opt ok = 43\nopt none present = false\ncalc error = div by zero\n")
+    expect("examples/generic_enums_demo.fg", "some 42\nnone\nerr div by zero\n")
+    expect("examples/table_demo.fg",
+           "rows = 3\ngorakhpur rows = 2\nfirst = jayant second = teju\n")
     expect("examples/ecosystem/word_stats.fg",
            "words = 8\nlines = 4\nmean line length = 10.25\n"
            "median line length = 12\n")

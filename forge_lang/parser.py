@@ -92,13 +92,25 @@ class Parser:
     def parse_enum(self):
         kw = self.expect_kw("enum")
         name = self.expect_ident()
+        type_params = self.parse_type_params()
         self.expect_op("{")
         variants = []
+        payloads = {}
         while not self.at_op("}"):
             if self.peek().kind == "EOF":
                 raise ForgeError("unterminated enum", self.peek().line, self.peek().col)
             v = self.expect_ident()
             variants.append(v.value)
+            if self.at_op("("):
+                self.next()
+                payload = self.parse_type()
+                if self.at_op(","):
+                    raise ForgeError("enum variants take at most one payload type in v1",
+                                     self.peek().line, self.peek().col)
+                self.expect_op(")")
+                payloads[v.value] = payload
+            else:
+                payloads[v.value] = None
             if self.at_op(",") or self.at_op(";"):
                 self.next()
                 continue
@@ -107,7 +119,10 @@ class Parser:
             raise ForgeError("expected ',' or ';' between enum variants",
                              self.peek().line, self.peek().col)
         self.expect_op("}")
-        return A.EnumDef(name.value, variants, kw.line, kw.col)
+        ed = A.EnumDef(name.value, variants, kw.line, kw.col)
+        ed.type_params = type_params
+        ed.variant_payloads = payloads
+        return ed
 
     def parse_extern(self):
         kw = self.expect_kw("extern")
@@ -283,9 +298,14 @@ class Parser:
                 if self.peek().kind == "EOF":
                     raise ForgeError("unterminated match", self.peek().line, self.peek().col)
                 pat = self.expect_ident()
+                binding = None
+                if self.at_op("("):
+                    self.next()
+                    binding = self.expect_ident().value
+                    self.expect_op(")")
                 self.expect_op("=>")
                 body = self.parse_block()
-                arms.append((pat.value, body))
+                arms.append((pat.value, binding, body))
                 if self.at_op(","):
                     self.next()
             self.expect_op("}")
@@ -357,6 +377,10 @@ class Parser:
     def parse_postfix(self):
         expr = self.parse_primary()
         while True:
+            if self.at_op("?"):
+                tok = self.next()
+                expr = A.Try(expr, tok.line, tok.col)
+                continue
             if self.at_op("["):
                 tok = self.next()
                 idx = self.parse_expr()

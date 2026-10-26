@@ -7,7 +7,7 @@ KEYWORDS = {"fn", "let", "mut", "if", "else", "while", "for", "in",
             "return", "true", "false", "import", "as", "struct",
             "enum", "match", "spawn", "extern"}
 TWO_CHAR = {"==", "!=", "<=", ">=", "&&", "||", "->", "=>"}
-ONE_CHAR = set("+-*/%<>=!;,:(){}[].")
+ONE_CHAR = set("+-*/%<>=!;,:(){}[].?")
 
 
 @dataclass

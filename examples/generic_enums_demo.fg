@@ -1,0 +1,32 @@
+enum OptionE<T> { Some(T), None }
+
+enum ResultE<T, E> { Ok(T), Err(E) }
+
+fn describe(o: OptionE<int>) -> int {
+    match o {
+        Some(v) => {
+            println("some", v);
+        }
+        None => {
+            println("none");
+        }
+    }
+    return 0;
+}
+
+fn main() -> int {
+    let o: OptionE<int> = Some(42);
+    describe(o);
+    let n: OptionE<int> = None();
+    describe(n);
+    let r: ResultE<int, str> = Err("div by zero");
+    match r {
+        Ok(v) => {
+            println("ok", v);
+        }
+        Err(e) => {
+            println("err", e);
+        }
+    }
+    return 0;
+}

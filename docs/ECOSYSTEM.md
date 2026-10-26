@@ -156,14 +156,41 @@ and pull request.
   simulation test needs `iverilog`, which is not installed in
   this VM, so it could not be run here.
 
+## New in the "keep going" pass (26 Oct 2026)
+
+- **`?` operator:** `let v: int = get_opt(ok)?;` unwraps an
+  Option/Result, or returns early from the current function
+  with the None/error value. Works when the function's return
+  type is the same Option/Result type, or a Result/Option with
+  the same error type and a scalar value type. Tested:
+  `opt ok = 43`, `opt none present = false`,
+  `calc error = div by zero` (the second divide fails, and the
+  error propagates without an explicit if).
+- **Generic enums with payloads:** `enum OptionE<T> { Some(T), None }`,
+  `enum ResultE<T, E> { Ok(T), Err(E) }`, matched with bindings
+  (`Some(v) => { ... }`). Payload enums compile to a C struct
+  with a tag and a union, one struct per concrete type.
+  No-payload variants of a generic enum are written `None()`
+  and get their type from the annotation/return/argument type;
+  a variant with no type context is a clear error, not a
+  guess. Old non-payload enums (`enum Color { Red, ... }`)
+  still work unchanged, and a no-payload variant of a
+  non-generic payload enum can be written bare.
+  Limitation: a variant takes at most one payload in v1.
+- **Table DB stdlib:** `stdlib/table.fg` — a tiny relational
+  table (flattened rows, insert/select by column value).
+  NOT SQL (no SQL parser yet), and not SQLite.
+  Tested: 3 rows, select city=Gorakhpur -> 2 rows,
+  first=jayant, second=teju.
+
 ## What is still not in the ecosystem
 
-No hosted registry (only the local one above), no SQL database,
-no `?` sugar, no generic enums, no GPU kernels (fast mode
-already auto-vectorises with `-O3 -march=native`, which is not
-the same as GPU kernels), no GC (arrays/strings are still never
-freed — freeing a reassigned string is unsafe for function
-parameters, which alias the caller's string, so a real GC needs
-ownership tracking first), and no WASM backend (Forge -> C is
+No hosted registry (only the local one above), no SQL parser,
+no GPU kernels (fast mode already auto-vectorises with
+`-O3 -march=native`, which is not the same as GPU kernels),
+no GC (arrays/strings are still never freed — freeing a
+reassigned string is unsafe for function parameters, which
+alias the caller's string, so a real GC needs ownership
+tracking first), and no WASM backend (Forge -> C is
 WASM-ready in principle via Emscripten, which is not installed
 here). Those are the next phases, in that order.

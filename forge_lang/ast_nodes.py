@@ -24,6 +24,8 @@ class EnumDef:
     variants: list  # [variant name]
     line: int
     col: int
+    type_params: list = None
+    variant_payloads: dict = None  # variant -> payload type or None
 
 
 @dataclass
@@ -51,6 +53,17 @@ class Spawn:
     call: object  # Call node
     line: int
     col: int
+
+
+@dataclass
+class Try:
+    expr: object
+    line: int
+    col: int
+    kind: str = None  # "Option" or "Result", set by checker
+    value_type: str = None
+    ret_type: str = None
+    error_type: str = None
 
 
 @dataclass
@@ -197,6 +210,7 @@ class Call:
     args: list
     line: int
     col: int
+    concrete_type: str = None  # set by checker for enum constructions
 
 
 @dataclass

@@ -135,6 +135,13 @@ from scratch, and do not silently drop a phase.
   could not run here). Full suite passes. Push this pass next;
   still NOT done: ? sugar, generic enums, GPU, SQL, hosted
   registry, GC, WASM.
+- "Keep going" pass (26 Oct 2026): ? DONE (Option/Result, early
+  return, scalar value types only for mismatched value types);
+  generic enums DONE (payload variants, match bindings,
+  tag+union C structs, None() needs type context);
+  table.fg DONE (relational, no SQL parser). Full suite
+  passes. Push this pass next; still NOT done: GPU, SQL
+  parser, hosted registry, GC, WASM.
 
 ## Research findings that now lock v2's design (26 Oct 2026)
 

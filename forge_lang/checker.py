@@ -37,6 +37,9 @@ class Checker:
         self.struct_params = {}  # name -> [type params]
         self.enums = {}  # name -> [variants]
         self.enum_variants = {}  # variant -> enum name
+        self.enum_params = {}  # enum name -> [type params]
+        self.enum_payloads = {}  # enum name -> {variant: payload type or None}
+        self.enum_instantiations = {}  # concrete type -> {variant: (tag, payload type)}
         self.scopes = []
         self.current_ret = "void"
         self.current_fn = None
@@ -55,16 +58,52 @@ class Checker:
         g = parse_generic(t)
         if g is not None:
             base, args = g
-            if base not in self.structs:
-                return False
-            if len(args) != len(self.struct_params.get(base, [])):
-                return False
-            return all(self.valid_type(a) for a in args)
+            if base in self.structs:
+                if len(args) != len(self.struct_params.get(base, [])):
+                    return False
+                return all(self.valid_type(a) for a in args)
+            if base in self.enums:
+                if len(args) != len(self.enum_params.get(base, [])):
+                    return False
+                return all(self.valid_type(a) for a in args)
+            return False
         if t.startswith("[") and t.endswith("]"):
             inner = t[1:-1]
             # Arrays of structs and nested arrays are not yet supported.
             return inner in SCALARS or inner in self.current_type_params
         return False
+
+    def enum_info_for(self, t):
+        """Return (base, {variant: (tag, concrete payload type)}) for an enum type."""
+        if t in self.enums and not self.enum_params.get(t):
+            return t, {v: (i, self.enum_payloads[t][v])
+                       for i, v in enumerate(self.enums[t])}
+        g = parse_generic(t)
+        if g is not None and g[0] in self.enums:
+            base, args = g
+            params = self.enum_params.get(base, [])
+            if len(args) != len(params):
+                return None
+            if "?" in args:
+                return None
+            bindings = dict(zip(params, args))
+            info = {}
+            for i, v in enumerate(self.enums[base]):
+                pt = self.enum_payloads[base][v]
+                info[v] = (i, substitute_type(pt, bindings) if pt is not None else None)
+            self.enum_instantiations[t] = info
+            return base, info
+        return None
+
+    def fill_placeholder(self, provided, expected):
+        """If provided is a generic type with '?' params and expected is
+        the same base with concrete params, return expected; else provided."""
+        gp = parse_generic(provided)
+        ge = parse_generic(expected)
+        if gp is not None and ge is not None and gp[0] == ge[0] and len(gp[1]) == len(ge[1]):
+            if "?" in gp[1]:
+                return expected
+        return provided
 
     def struct_fields_for(self, t):
         """Concrete field dict for a struct type string, or None."""
@@ -136,6 +175,16 @@ class Checker:
                 seen.add(v)
                 self.enum_variants[v] = ed.name
             self.enums[ed.name] = list(ed.variants)
+            self.enum_params[ed.name] = list(getattr(ed, "type_params", None) or [])
+            payloads = getattr(ed, "variant_payloads", None) or {}
+            self.enum_payloads[ed.name] = {v: payloads.get(v) for v in ed.variants}
+            # Validate payload types (type params of this enum are allowed).
+            self.current_type_params = list(getattr(ed, "type_params", None) or [])
+            for v, pt in self.enum_payloads[ed.name].items():
+                if pt is not None and not self.valid_type(pt):
+                    raise ForgeError(f"unknown payload type '{pt}' for variant '{v}'",
+                                     ed.line, ed.col)
+            self.current_type_params = []
 
     def check(self):
         self.check_structs()
@@ -206,7 +255,7 @@ class Checker:
             elif isinstance(stmt, A.For):
                 self._substitute_let_ann(stmt.body, bindings)
             elif isinstance(stmt, A.Match):
-                for _pat, body in stmt.arms:
+                for _pat, _bind, body in stmt.arms:
                     self._substitute_let_ann(body, bindings)
 
     def check_func(self, fn):
@@ -265,6 +314,16 @@ class Checker:
             if stmt.ann is not None:
                 if not self.valid_type(stmt.ann) or stmt.ann == "void":
                     raise ForgeError(f"unknown type '{stmt.ann}'", stmt.line, stmt.col)
+                # Fill a generic-enum placeholder from the annotation.
+                filled = self.fill_placeholder(t, stmt.ann)
+                if filled != t:
+                    if isinstance(stmt.expr, A.Call):
+                        stmt.expr.concrete_type = filled
+                    t = filled
+                elif isinstance(stmt.expr, A.Var) and stmt.expr.name in self.enum_variants:
+                    enum_name = self.enum_variants[stmt.expr.name]
+                    if parse_generic(stmt.ann) and parse_generic(stmt.ann)[0] == enum_name:
+                        t = stmt.ann
                 if t != stmt.ann:
                     # Empty array literal has no element type of its own.
                     if not (isinstance(stmt.expr, A.ArrayLit) and not stmt.expr.elems
@@ -332,26 +391,46 @@ class Checker:
             return
         if isinstance(stmt, A.Match):
             et = self.check_expr(stmt.expr)
-            if et not in self.enums:
+            info = self.enum_info_for(et)
+            if info is None:
                 raise ForgeError(f"match needs an enum value, got {et}",
                                  stmt.line, stmt.col)
-            variants = set(self.enums[et])
+            _base, variant_info = info
+            variants = set(variant_info.keys())
             seen = set()
             has_wildcard = False
-            for idx, (pat, body) in enumerate(stmt.arms):
+            for idx, (pat, binding, body) in enumerate(stmt.arms):
                 if pat == "_":
                     has_wildcard = True
                     if idx != len(stmt.arms) - 1:
                         raise ForgeError("match wildcard '_' must be the last arm",
                                          stmt.line, stmt.col)
-                elif pat not in variants:
+                    if binding is not None:
+                        raise ForgeError("wildcard arm cannot bind a value", stmt.line, stmt.col)
+                    self.check_block(body)
+                    continue
+                if pat not in variants:
                     raise ForgeError(f"'{pat}' is not a variant of enum '{et}'",
                                      stmt.line, stmt.col)
-                elif pat in seen:
+                if pat in seen:
                     raise ForgeError(f"duplicate match arm '{pat}'", stmt.line, stmt.col)
+                seen.add(pat)
+                _tag, payload_type = variant_info[pat]
+                if payload_type is None and binding is not None:
+                    raise ForgeError(f"variant '{pat}' has no payload to bind",
+                                     stmt.line, stmt.col)
+                if payload_type is not None and binding is None:
+                    raise ForgeError(f"variant '{pat}' has a payload; write {pat}(name) => ...",
+                                     stmt.line, stmt.col)
+                if binding is not None:
+                    # Check the arm body with the binding in scope.
+                    self.scopes.append({binding: (payload_type, False)})
+                    try:
+                        self.check_block(body)
+                    finally:
+                        self.scopes.pop()
                 else:
-                    seen.add(pat)
-                self.check_block(body)
+                    self.check_block(body)
             if not has_wildcard and seen != variants:
                 missing = sorted(variants - seen)
                 raise ForgeError(f"match is not exhaustive; missing: {', '.join(missing)}",
@@ -405,6 +484,15 @@ class Checker:
                     raise ForgeError(f"function must return {self.current_ret}",
                                      stmt.line, stmt.col)
                 t = self.check_expr(stmt.expr)
+                filled = self.fill_placeholder(t, self.current_ret)
+                if filled != t:
+                    if isinstance(stmt.expr, A.Call):
+                        stmt.expr.concrete_type = filled
+                    t = filled
+                elif isinstance(stmt.expr, A.Var) and stmt.expr.name in self.enum_variants:
+                    enum_name = self.enum_variants[stmt.expr.name]
+                    if parse_generic(self.current_ret) and parse_generic(self.current_ret)[0] == enum_name:
+                        t = self.current_ret
                 if t != self.current_ret:
                     if not (isinstance(stmt.expr, A.ArrayLit) and not stmt.expr.elems
                             and self.current_ret.startswith("[")):
@@ -561,6 +649,37 @@ class Checker:
             if (t, expr.target) not in (("int", "float"), ("float", "int")):
                 raise ForgeError(f"cannot cast {t} to {expr.target}", expr.line, expr.col)
             return expr.target
+        if isinstance(expr, A.Try):
+            t = self.check_expr(expr.expr)
+            ret = self.current_ret
+            g = parse_generic(t)
+            rg = parse_generic(ret)
+            if g is not None and g[0] == "Option" and rg is not None and rg[0] == "Option":
+                fields = self.struct_fields_for(t)
+                if not fields or fields.get("present") != "bool" or "value" not in fields:
+                    raise ForgeError("? for Option needs a struct with present: bool and value fields",
+                                     expr.line, expr.col)
+                expr.kind = "Option"
+                expr.value_type = g[1][0]
+                expr.ret_type = ret
+                return g[1][0]
+            if g is not None and g[0] == "Result" and rg is not None and rg[0] == "Result":
+                if g[1][1] != rg[1][1]:
+                    raise ForgeError(f"? error type mismatch: expression is Result<_, {g[1][1]}> "
+                                     f"but function returns Result<_, {rg[1][1]}>",
+                                     expr.line, expr.col)
+                fields = self.struct_fields_for(t)
+                if not fields or fields.get("ok") != "bool" or "value" not in fields or "error" not in fields:
+                    raise ForgeError("? for Result needs a struct with ok: bool, value, error fields",
+                                     expr.line, expr.col)
+                expr.kind = "Result"
+                expr.value_type = g[1][0]
+                expr.ret_type = ret
+                expr.error_type = g[1][1]
+                return g[1][0]
+            raise ForgeError(f"? needs an Option or Result value whose type matches "
+                             f"the function's return type {ret}, got {t}",
+                             expr.line, expr.col)
         if isinstance(expr, A.UnaryOp):
             t = self.check_expr(expr.expr)
             if expr.op == "-" and t in ("int", "float"):
@@ -578,6 +697,35 @@ class Checker:
         if call.name in STMT_BUILTINS:
             raise ForgeError(f"'{call.name}' can only be used as a statement, not as a value",
                              call.line, call.col)
+        if call.name in self.enum_variants:
+            enum_name = self.enum_variants[call.name]
+            payload = self.enum_payloads[enum_name][call.name]
+            params = self.enum_params.get(enum_name, [])
+            if payload is None:
+                if call.args:
+                    raise ForgeError(f"variant '{call.name}' takes no payload", call.line, call.col)
+                if params:
+                    call.concrete_type = enum_name + "<" + ", ".join("?" for _ in params) + ">"
+                else:
+                    call.concrete_type = enum_name
+                return call.concrete_type
+            if len(call.args) != 1:
+                raise ForgeError(f"variant '{call.name}' takes exactly one payload argument",
+                                 call.line, call.col)
+            at = self.check_expr(call.args[0])
+            if not params:
+                if at != payload:
+                    raise ForgeError(f"variant '{call.name}' payload must be {payload}, got {at}",
+                                     call.line, call.col)
+                call.concrete_type = enum_name
+                return enum_name
+            bindings = {}
+            if not unify(payload, at, bindings, params):
+                raise ForgeError(f"variant '{call.name}' payload must match {payload}, got {at}",
+                                 call.line, call.col)
+            concrete_args = [bindings.get(p, "?") for p in params]
+            call.concrete_type = enum_name + "<" + ", ".join(concrete_args) + ">"
+            return call.concrete_type
         if call.name == "len":
             if len(call.args) != 1:
                 raise ForgeError("len() takes exactly one argument", call.line, call.col)
@@ -725,6 +873,11 @@ class Checker:
             return substitute_type(fn.ret, bindings)
         for arg, (pn, pt) in zip(call.args, fn.params):
             t = self.check_expr(arg)
+            filled = self.fill_placeholder(t, pt)
+            if filled != t:
+                if isinstance(arg, A.Call):
+                    arg.concrete_type = filled
+                t = filled
             if t != pt:
                 if not (isinstance(arg, A.ArrayLit) and not arg.elems and pt.startswith("[")):
                     raise ForgeError(f"argument '{pn}' of '{call.name}' must be {pt}, got {t}",

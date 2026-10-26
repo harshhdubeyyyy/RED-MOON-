@@ -1,0 +1,13 @@
+import "table.fg";
+
+fn main() -> int {
+    let mut t: Table = table_new(["name", "city"]);
+    t = table_insert(t, ["jayant", "Gorakhpur"]);
+    t = table_insert(t, ["aaru", "Delhi"]);
+    t = table_insert(t, ["teju", "Gorakhpur"]);
+    println("rows =", table_row_count(t));
+    let g: Table = table_select(t, "city", "Gorakhpur");
+    println("gorakhpur rows =", table_row_count(g));
+    println("first =", table_get(g, 0, 0), "second =", table_get(g, 1, 0));
+    return 0;
+}
