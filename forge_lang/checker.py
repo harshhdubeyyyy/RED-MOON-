@@ -19,7 +19,8 @@ from .generics import (parse_generic, mangle_type, substitute_type,
 SCALARS = {"int", "float", "bool", "str"}
 STMT_BUILTINS = {"print", "println", "push", "fail", "assert"}
 EXPR_BUILTINS = {"len", "range", "clock_micros", "sqrt", "exp", "log", "pow", "abs",
-                 "read_file", "write_file", "file_exists", "args", "parse_int", "parse_float",
+                 "read_file", "write_file", "read_bytes", "write_bytes",
+                 "file_exists", "args", "parse_int", "parse_float",
                  "split", "join", "substr", "trim", "starts_with", "ends_with",
                  "http_get", "alloc_count", "free_count",
                  "parallel_dot", "parallel_matmul",
@@ -789,6 +790,20 @@ class Checker:
             for a in call.args:
                 if self.check_expr(a) != "str":
                     raise ForgeError("write_file() takes str arguments", call.line, call.col)
+            return "bool"
+        if call.name == "read_bytes":
+            if len(call.args) != 1 or self.check_expr(call.args[0]) != "str":
+                raise ForgeError("read_bytes() takes exactly one str argument",
+                                 call.line, call.col)
+            return "[int]"
+        if call.name == "write_bytes":
+            if len(call.args) != 2:
+                raise ForgeError("write_bytes() takes exactly two arguments",
+                                 call.line, call.col)
+            if self.check_expr(call.args[0]) != "str":
+                raise ForgeError("write_bytes() takes a str path", call.line, call.col)
+            if self.check_expr(call.args[1]) != "[int]":
+                raise ForgeError("write_bytes() takes [int] data", call.line, call.col)
             return "bool"
         if call.name == "args":
             if call.args:

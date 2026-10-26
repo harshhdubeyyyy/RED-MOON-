@@ -1,0 +1,29 @@
+// Import-dedup regression test (0.6.0): nn.fg and
+// tensor_autograd.fg both import tensor.fg. Before
+// the compiler deduped imports, this program failed
+// to compile with "duplicate struct 'Tensor'".
+// Now it trains one tensor step with nn's Adam.
+import "nn.fg";
+import "tensor_autograd.fg";
+fn main() -> int {
+    let mut s: TAg = t_leaf(ttape_new(), [2, 2], [1.0, 2.0, 3.0, 4.0]);
+    let a: int = s.last;
+    s = t_leaf(s.tape, [2], [0.5, -0.5]);
+    let b: int = s.last;
+    s = t_add_bias(s, a, b);
+    let ab: int = s.last;
+    s = t_cross_entropy(s, ab, [1, 0]);
+    let loss: int = s.last;
+    let grads: [float] = t_backward(s.tape, loss);
+    let gw: [float] = t_grad_of(s.tape, grads, a);
+    let gb: [float] = t_grad_of(s.tape, grads, b);
+    let mut all: [float] = [];
+    let mut i: int = 0;
+    while i < len(gw) { push(all, gw[i]); i = i + 1; }
+    i = 0;
+    while i < len(gb) { push(all, gb[i]); i = i + 1; }
+    let st: OptimState = optim_new([1.0, 2.0, 3.0, 4.0, 0.5, -0.5]);
+    let st2: OptimState = adam_step(st, all, 0.01, 0.9, 0.999, 0.00000001);
+    println("dedup ok loss =", s.tape.vals[s.tape.voff[loss]], "adam first =", st2.params[0]);
+    return 0;
+}

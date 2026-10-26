@@ -357,6 +357,8 @@ The full tooling is documented in `docs/ECOSYSTEM.md`:
 - **Language server:** `forge lsp` — real-checker diagnostics + completion, with a VS Code grammar in `editors/vscode/forge/`
 - **REPL:** `forge repl` — keep `let` definitions, evaluate expressions
 - **Stdlib:** `ml.fg`, `strings.fg`, `stats.fg` — plus string builtins `split/join/substr/trim/starts_with/ends_with`
+- **AI/ML libraries (0.6.0):** `tensor_autograd.fg` (21 ops), `rnn.fg` (LSTM/GRU), `cnn.fg` (conv+pool), `ml_classical.fg` (logreg/k-NN/k-means), `preprocess.fg`, `metrics.fg`, `csv.fg` — plus `test.fg`, `log.fg`, `cli.fg`, `collections.fg` for general development. Import dedup means libraries now combine freely (nn + tensor training in one program).
+- **0.7.0 additions:** source-level debugger (`build --debug` emits `#line`), binary I/O + image loading (`image.fg`: PPM P3 + BMP), tape-native im2col + stacked convs, curriculum RNN (len-8 wall cracked), big32 structs + soft-float v1 (+ - *, 60/60 fuzz vs Python float32 on model + Verilog), WASM strings + arrays, and a fuzzer (`tools/fuzz.py`). Big TinyStories run: 153,744 params, held-out ppl 2128.55 → 651.44 — better, still not fluent.
 - **CI:** `.github/workflows/ci.yml` runs the test suite, formatter check, and ecosystem example
 
 ## ⚠️ Honest gaps
@@ -378,6 +380,16 @@ with auth and a Dockerfile, and now CUDA execution verified
 on a real Kaggle Tesla T4 GPU (26 Oct 2026). It still has
 no registry actually running on a public host yet. That is
 the next phase in `SPEC_V2.md`, not a hidden feature.
+As of 0.7.0 (26 Oct 2026), also done: a source-level
+debugger, binary I/O + image loading, stacked convs,
+curriculum RNN training, big32 structs + soft-float,
+WASM strings/arrays, and a fuzzer. Still not done:
+fluent generation, a GPU *training* run, a full
+self-hosting compiler, big32 float division/ordered
+comparisons/printing/casts, PNG/JPEG loading, and a
+public registry host / CI upload / repo rename / PyPI
+publish (blocked on the user's accounts and token
+scope, as before).
 
 ## 🔁 Regenerate the figures
 

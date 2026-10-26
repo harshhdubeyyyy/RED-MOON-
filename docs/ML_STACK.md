@@ -200,3 +200,17 @@ Each needs its own pass; none is half-claimed here.
 - GPU training loop exists as code only
   (examples/cuda/mlp_train.cu, XOR MLP, square-matmul
   wrapper); the GPU run needs a Kaggle token.
+
+## 0.6.0 addendum — ecosystem layer
+- Import dedup (compiler.py): libraries combine
+  freely now; nn's Adam trains tensor models.
+- New tape ops 17-20 (maxpool2d, sigmoid, tanh,
+  mse) with finite-difference checks.
+- rnn.fg (LSTM/GRU/RNN): first-bit memory len 5,
+  0.44 -> 1.0; len 8 stalls at chance (known LSTM
+  optimisation difficulty, documented in the demo).
+- cnn.fg: cross-vs-border 0.5 -> 1.0 (first-layer
+  conv only; stacking needs tape-native im2col).
+- ml_classical + preprocess + metrics + csv:
+  synthetic purity/knn/logreg all 1.0; real Iris
+  pipeline test acc 0.933333, macro F1 0.937322.

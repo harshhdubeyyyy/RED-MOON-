@@ -1,0 +1,28 @@
+// big32 soft-float demo (0.7.0): float literals,
+// variables, + - * via forge_fadd/forge_fmul, ==
+// checks (bitwise), a float-returning function and
+// a [float] array. No float printing exists on
+// big32 yet, so every check prints true/false.
+fn fmul3(x: float, y: float) -> float {
+    return x * y;
+}
+
+fn main() -> int {
+    let a: float = 1.5;
+    let b: float = 2.25;
+    println("add =", (a + b) == 3.75);
+    println("sub =", (5.0 - 8.0) == -3.0);
+    println("mul =", (2.0 * 3.0) == 6.0);
+    println("fn =", fmul3(0.5, 0.5) == 0.25);
+    println("neg =", (-a) == -1.5);
+    let arr: [float] = [1.5, 2.5];
+    println("arr =", arr[0] + arr[1] == 4.0);
+    println("zero =", (0.0 + -0.0) == 0.0);
+    println("mulneg =", (2.0 * -3.0) == -6.0);
+    println("addneg =", (-1.5 + 1.5) == 0.0);
+    println("big =", (100.0 * 100.0) == 10000.0);
+    println("frac =", (0.5 + 0.25) == 0.75);
+    println("mixed =", (1.5 * 2.0 + 0.5) == 3.5);
+    println("float ok");
+    return 0;
+}

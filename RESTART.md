@@ -313,3 +313,48 @@ Forge docs.
   debugger (AST lacks file tracking), self-hosting,
   registry host / CI upload / repo rename / PyPI publish
   (maintainer's clicks/accounts).
+
+## 0.6.0 ecosystem batch — 26 Oct 2026
+- Import dedup FIXED in forge_lang/compiler.py
+  (visited set no longer cleared on return).
+  nn.fg + tensor_autograd.fg now combine;
+  import_dedup_demo.fg is the regression test.
+- Tensor ops 17-20 (maxpool2d/sigmoid/tanh/mse),
+  finite-difference verified (tensor_ops2_demo.fg).
+- New stdlib: rnn.fg, cnn.fg, ml_classical.fg,
+  preprocess.fg, metrics.fg, csv.fg, test.fg,
+  log.fg, cli.fg, collections.fg. Demos: rnn
+  (0.44->1.0), cnn (0.5->1.0), classical (all 1.0),
+  iris (0.933333), ckpt (diff 0), dev (ok).
+- Data: data/iris.csv (real UCI Iris, 150 rows).
+- Still NOT done: fluent generation, GPU training
+  run, WASM strings/arrays, big32 floats/structs,
+  source-level debugger, self-hosting, registry
+  host / CI upload / repo rename / PyPI publish,
+  image/binary loading, conv stacking, len-8 RNN.
+
+## 0.7.0 "build everything open" batch — 26 Oct 2026
+- Debugger: forge.py build --debug emits #line for
+  main + imported files (readelf-verified).
+- Binary I/O (read_bytes/write_bytes) + image.fg
+  (PPM P3 + BMP, BMP == PPM verified). No PNG/JPEG.
+- im2col op 21 + cnn_conv2d_tape; two-conv net
+  0.5 -> 1.0 at lr 0.01 (0.05 oscillates).
+- Curriculum RNN len 3 -> 5 -> 8, all 100%.
+- big32 structs (frame slots, model + Verilog) and
+  soft-float v1 (+ - *, 27-bit exact arithmetic,
+  12/12 demo + 60/60 fuzz vs Python float32,
+  model AND Verilog). No div/comparisons/printing.
+- WASM strings + arrays (byte-identical demo
+  output vs native; docs/WASM_STRINGS.md).
+- Fuzzer tools/fuzz.py, 50/50 OK default run.
+- Big TinyStories: 2000 stories, 150k words,
+  vocab 2000, 153,744 params, ppl 2128.55 -> 651.44
+  — better, still NOT fluent (greedy loops).
+- Suite now has real big32 build checks + a
+  node-based WASM comparison (earlier wasm/big32
+  "suite passes" were native runs — corrected).
+- Still NOT done: fluent generation, GPU training
+  run, full self-hosting compiler, registry host /
+  CI upload / repo rename / PyPI publish (all
+  blocked on user accounts/token scope, as before).

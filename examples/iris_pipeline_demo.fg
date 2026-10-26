@@ -1,0 +1,58 @@
+// Iris pipeline demo (0.6.0): the full developer
+// workflow in one program — CSV load -> train/test
+// split -> standardise (stats from TRAIN only) ->
+// logistic regression -> accuracy + confusion
+// matrix. Data is the real UCI Iris set, 150 rows,
+// 4 features, 3 species, stored at data/iris.csv.
+// Self-checks: test accuracy must beat 90%.
+import "csv.fg";
+import "preprocess.fg";
+import "ml_classical.fg";
+import "metrics.fg";
+
+fn main() -> int {
+    let csv: Csv = csv_load("data/iris.csv", false, true);
+    println("iris rows =", csv.nrows, "cols =", csv.ncols);
+    let y: [int] = label_ids(csv.labels);
+    let vocab: [str] = label_vocab(csv.labels);
+    println("iris classes =", len(vocab));
+    let idx: [int] = split_indices(csv.nrows, 30, 2024);
+    let mut xtr: [float] = [];
+    let mut ytr: [int] = [];
+    let mut xte: [float] = [];
+    let mut yte: [int] = [];
+    let mut i: int = 0;
+    while i < 30 {
+        let r: int = idx[i];
+        let mut j: int = 0;
+        while j < 4 { push(xte, csv.data[r * 4 + j]); j = j + 1; }
+        push(yte, y[r]);
+        i = i + 1;
+    }
+    i = 30;
+    while i < 150 {
+        let r: int = idx[i];
+        let mut j: int = 0;
+        while j < 4 { push(xtr, csv.data[r * 4 + j]); j = j + 1; }
+        push(ytr, y[r]);
+        i = i + 1;
+    }
+    let stats: [float] = col_stats(xtr, 120, 4);
+    let xtrs: [float] = standardize(xtr, 120, 4, stats);
+    let xtes: [float] = standardize(xte, 30, 4, stats);
+    let params: [float] = logreg_train(xtrs, 120, 4, ytr, 3, 200, 0.05, 7);
+    let pred: [int] = logreg_predict(params, xtes, 30, 4, 3);
+    let acc: float = accuracy(pred, yte);
+    println("iris test acc =", acc);
+    let cm: [int] = confusion(pred, yte, 3);
+    println("iris cm row0 =", cm[0], cm[1], cm[2]);
+    println("iris cm row1 =", cm[3], cm[4], cm[5]);
+    println("iris cm row2 =", cm[6], cm[7], cm[8]);
+    let prf3: [float] = prf(cm, 3);
+    println("iris macro f1 =", (prf3[6] + prf3[7] + prf3[8]) / 3.0);
+    if acc < 0.9 {
+        fail("iris pipeline below 0.9");
+    }
+    println("iris ok");
+    return 0;
+}

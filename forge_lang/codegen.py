@@ -204,6 +204,36 @@ static bool forge_write_file(const char *path, const char *content) {
     return true;
 }
 
+static ForgeIntArray forge_read_bytes(const char *path) {
+    FILE *f = fopen(path, "rb");
+    if (!f) forge_fail("cannot read file");
+    fseek(f, 0, SEEK_END);
+    long sz = ftell(f);
+    if (sz < 0) { fclose(f); forge_fail("cannot read file"); }
+    fseek(f, 0, SEEK_SET);
+    ForgeIntArray out; out.len = sz; out.cap = sz; out.ref = forge_arr_ref_new();
+    out.data = sz ? (long long *)malloc(sizeof(long long) * (size_t)sz) : NULL;
+    if (sz && !out.data) { fclose(f); forge_fail("out of memory"); }
+    unsigned char *raw = sz ? (unsigned char *)malloc((size_t)sz) : NULL;
+    size_t got = sz ? fread(raw, 1, (size_t)sz, f) : 0;
+    fclose(f);
+    for (long i = 0; i < (long)got; i++) out.data[i] = raw[i];
+    out.len = (long long)got;
+    free(raw);
+    return out;
+}
+
+static bool forge_write_bytes(const char *path, ForgeIntArray data) {
+    FILE *f = fopen(path, "wb");
+    if (!f) return false;
+    for (long long i = 0; i < data.len; i++) {
+        unsigned char byte = (unsigned char)(data.data[i] & 0xFF);
+        if (fwrite(&byte, 1, 1, f) != 1) { fclose(f); return false; }
+    }
+    fclose(f);
+    return true;
+}
+
 static double forge_parse_float(const char *s) {
     char *end = NULL;
     double v = strtod(s, &end);
@@ -478,9 +508,15 @@ def elem_of(arr_type):
 
 
 class Codegen:
-    def __init__(self, program, mode="safe"):
+    def __init__(self, program, mode="safe", debug=False):
         self.program = program
         self.mode = mode
+        # --debug: emit #line directives mapping
+        # generated C back to .fg files/lines, so
+        # gdb (and readelf's line table) step through
+        # Jal Pari source instead of generated C.
+        self.debug = debug
+        self.current_file = ""
         self.func_ret = {fn.name: fn.ret for fn in program.funcs}
         self.func_params = {fn.name: list(fn.params) for fn in program.funcs}
         self.func_is_extern = {fn.name: bool(getattr(fn, "is_extern", False))
@@ -853,6 +889,7 @@ class Codegen:
 
     def gen_func(self, fn):
         self.current_fn = fn.name
+        self.current_file = getattr(fn, "file", "") or ""
         self.owned_stack = [{}]
         # String parameters own their copy after copy-on-call (see gen_expr Call).
         # Array parameters own a reference after refcount-on-call (see gen_expr Call).
@@ -887,6 +924,14 @@ class Codegen:
 
     def gen_block(self, block, ret_type):
         for stmt in block.stmts:
+            if self.debug and self.current_file:
+                line = getattr(stmt, "line", None)
+                if line:
+                    # Column 0: emit() would indent it,
+                    # and a #line directive must not be
+                    # indented to be safe with cc.
+                    esc = self.current_file.replace("\\", "\\\\").replace('"', '\\"')
+                    self.lines.append(f'#line {line} "{esc}"')
             self.gen_stmt(stmt, ret_type)
 
     def gen_stmt(self, stmt, ret_type):
@@ -1352,6 +1397,11 @@ class Codegen:
             if expr.name == "write_file":
                 return (f"forge_write_file({self.gen_expr(expr.args[0])}, "
                         f"{self.gen_expr(expr.args[1])})")
+            if expr.name == "read_bytes":
+                return f"forge_read_bytes({self.gen_expr(expr.args[0])})"
+            if expr.name == "write_bytes":
+                return (f"forge_write_bytes({self.gen_expr(expr.args[0])}, "
+                        f"{self.gen_expr(expr.args[1])})")
             if expr.name == "args":
                 return "forge_args_global"
             if expr.name == "parse_float":
@@ -1436,7 +1486,7 @@ class Codegen:
         raise ForgeError(f"unsupported expression {type(expr).__name__}")
 
 
-def generate(program, types, mode="safe"):
-    gen = Codegen(program, mode=mode)
+def generate(program, types, mode="safe", debug=False):
+    gen = Codegen(program, mode=mode, debug=debug)
     gen.attach_types(types)
     return gen.generate()

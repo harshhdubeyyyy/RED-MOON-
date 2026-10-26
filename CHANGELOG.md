@@ -4,6 +4,149 @@ All notable changes are listed here. Version numbers follow
 semantic versioning in spirit: 0.x means the language is usable
 but breaking changes are still possible.
 
+## 0.7.0 — 26 Oct 2026 — "Build everything open": debugger, binary I/O + images, stacked convs, curriculum RNN, big32 structs + soft-float, WASM strings/arrays, fuzzer, big TinyStories run
+
+- Source-level debugger: `forge.py build --debug`
+  adds `-g` and the code generator emits per-statement
+  `#line` directives naming the Jal Pari file (main
+  file AND imported helpers — verified with readelf's
+  line table). Without `--debug` the C has no `#line`
+  at all. Caveat: -O2 inlining merges addresses, and
+  main's prologue maps to the C file (docs/DEBUGGING.md).
+- Binary I/O + images: new builtins `read_bytes` /
+  `write_bytes`; `stdlib/image.fg` loads PPM P3 and
+  24-bit uncompressed BMP, grayscales, saves PPM P3.
+  Verified: BMP == PPM on the same 2x2 image, gray0 =
+  0.299, gray3 = 1. PNG/JPEG NOT supported (they need
+  inflate/DCT) — stated, not hidden.
+- Tape-native im2col (op 21) + stacked convs:
+  `cnn_conv2d_tape` lets conv layers stack. Two-conv
+  net on 8x8 cross-vs-border: 0.5 -> 1.0. Found by
+  running: lr 0.05 oscillates on the deeper net (loss
+  frozen at ln 2 with exact gradients); lr 0.01 trains
+  it. The demo documents this.
+- Curriculum RNN: `examples/rnn_curriculum_demo.fg`
+  stages len 3 -> 5 -> 8 with weight transfer; all
+  three reach 100% held-out. The 0.6.0 len-8 wall is
+  cracked, not worked around.
+- big32 structs: local struct variables as consecutive
+  frame slots (int/bool/str fields), field reads/writes,
+  struct copies; params/returns still rejected.
+  Verified on the Python model AND Icarus Verilog.
+- big32 soft-float v1: float literals/vars, [float]
+  arrays, + - * via forge_fadd/forge_fmul helpers in
+  exact 27-bit integer arithmetic with
+  round-to-nearest-even. Verified: 12/12 demo checks
+  and a 60-case randomized differential test vs
+  Python float32, 60/60 on model AND Verilog. Two
+  real bugs found and fixed by that fuzzing (the
+  subtraction borrow, and the carry-shift sticky
+  fold); one test-generator bug found too (pool
+  values must be float32-rounded before computing
+  expected values). NOT yet: division, ordered
+  comparisons, float printing, int<->float casts,
+  subnormal fidelity, NaN/Inf.
+- WASM strings + arrays: `str` and flat `[int]` /
+  `[float]` / `[bool]` / `[str]` with literals,
+  concat, `==`, len, indexing, index-assign, push
+  (realloc-by-copy), params/returns, fail/assert.
+  One exported memory, bump allocator, no free/GC.
+  Verified: demo output byte-identical to native.
+  Divergence stated in docs/WASM_STRINGS.md: push
+  through a WASM parameter DOES reach the caller
+  (native push to a parameter does not).
+- Fuzzer: `tools/fuzz.py` — seeded valid-by-
+  construction programs, safe-vs-fast differential,
+  50/50 OK on the default run, 200/200 OK on a
+  longer run (seeds 1000-1199). No compiler bugs
+  found; corpus dir stays empty until a failure
+  appears.
+- Big TinyStories run: 2000 stories, 150,000 words,
+  vocab 2000 (UNK 3.7%), 153,744 params, 9000 steps,
+  87.7 ms/step. Held-out ppl 2128.55 -> 651.44.
+  Honest result: much better, still NOT fluent —
+  greedy output loops on "collecting", sampled
+  output is word salad with structure. Fluent
+  generation needs far more scale, not another
+  small-model run.
+- Correction, carried from the 0.6.0 notes: earlier
+  "wasm + big32 suites passed" claims were wrong —
+  `tests/run_tests.py` ignores CLI arguments, so
+  those runs executed the NATIVE suite twice. The
+  suite now has real checks: big32 build checks for
+  both demos and a node-based WASM output comparison
+  (skipped only when node is absent). WASM/big32
+  execution stays verified manually against node and
+  the big32 model + Verilog.
+
+## 0.6.0 — 26 Oct 2026 — Ecosystem batch: import dedup, RNN/CNN/classical ML, preprocessing, metrics, CSV, dev libraries
+
+Fixed (compiler, the ecosystem blocker):
+- `forge_lang/compiler.py` `load_program` now keeps a
+  true visited set instead of clearing it on return.
+  Diamond imports used to include a shared file twice
+  and fail with "duplicate struct 'Tensor'", which
+  forced every library to avoid shared imports and
+  made libraries uncombinable. Now nn.fg +
+  tensor_autograd.fg (and any other combination)
+  compile together; verified by
+  examples/import_dedup_demo.fg (tensor loss 0.693147
+  trained one Adam step, 1.0 -> 0.99).
+
+Added (tensor autograd, ops 17-20):
+- t_maxpool2d, t_sigmoid, t_tanh, t_mse_loss in
+  stdlib/tensor_autograd.fg, each backward rule
+  checked against finite differences
+  (examples/tensor_ops2_demo.fg: sigmoid 6.3e-13,
+  tanh 1.2e-11, maxpool routes exactly to argmax
+  cells, other cells 0).
+
+Added (ML libraries, all verified by demos):
+- stdlib/rnn.fg: LSTM/GRU/plain-RNN cells on the
+  tensor tape (out-parameter idiom: cells return
+  the tape and write new state ids into an `out`
+  array; the new hidden state is also the tape's
+  last node). Demo: first-bit memory over 5 steps,
+  0.44 -> 1.0. Honest limit found by running: the
+  same task at length 8 stalls at chance from
+  random init even with forget-bias init — a known
+  LSTM optimisation difficulty, not a library bug
+  (all cell ops finite-difference checked; lengths
+  3 and 5 reach 100%).
+- stdlib/cnn.fg: im2col conv + tape maxpool. Demo:
+  8x8 cross-vs-border with noise, 0.5 -> 1.0.
+  Limit: conv input must be raw image data (first
+  layer); stacking convs needs a tape-native
+  im2col op, documented in the file.
+- stdlib/ml_classical.fg: logistic regression
+  (tape + inline Adam), k-NN, k-means. Demo:
+  purity 1.0, knn 1.0, logreg 1.0 on synthetic 2D.
+- stdlib/preprocess.fg, metrics.fg, csv.fg:
+  standardisation, min-max, one-hot, deterministic
+  splits, vocab builder; accuracy, confusion,
+  precision/recall/F1, MSE/MAE/R2; plain CSV load
+  (no quoted commas). Demo: real UCI Iris
+  (data/iris.csv, 150 rows) end to end, test acc
+  0.933333, macro F1 0.937322.
+- Tensor checkpoint demo: nn checkpoints round-trip
+  a tensor model with loss diff 0.
+
+Added (developer libraries):
+- stdlib/test.fg, log.fg, cli.fg, collections.fg
+  (checks, leveled logging, CLI parsing, stacks
+  and sets), exercised in examples/dev_demo.fg.
+
+Docs: docs/ECOSYSTEM.md 0.6.0 section (library
+table, first-ML-project walkthrough, honest
+limits). README Ecosystem section updated.
+
+Still NOT done: fluent generation, GPU training
+run (code only), WASM strings/arrays, big32
+floats/structs, source-level debugger, self-hosting
+compiler, registry host, CI upload, repo rename,
+PyPI publish, image/binary data loading, conv
+stacking, long-horizon RNN training.
+
 ## 0.5.0 — 26 Oct 2026 — Engine batch: tape freeing, tensor autograd, KV-cache, scaled training
 
 Fixed (compiler, the 0.4.0 leak):

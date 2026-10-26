@@ -1,0 +1,6 @@
+// Helper file for the debugger demo: its lines must
+// map to THIS file, not to dbg_demo.fg.
+fn helper_add(a: int, b: int) -> int {
+    let s: int = a + b;
+    return s;
+}

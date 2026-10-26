@@ -350,3 +350,149 @@ arrays/structs beyond the types above, and no registry
 actually running on a public host (the server above is
 ready to deploy, but no host is provisioned here). Those
 are the next phases, in that order.
+
+## 0.6.0 — the AI/ML + developer library layer
+
+### The one unlock: imports dedupe
+
+Before 0.6.0, the compiler included a shared import
+once per import branch, so `nn.fg` + `tensor_autograd.fg`
+(a Tensor defined twice) failed to compile. Libraries
+had to avoid shared imports, which made them
+uncombinable. The compiler now keeps a true visited
+set (`forge_lang/compiler.py`, `load_program`), so a
+file is included once no matter how many libraries
+import it. `examples/import_dedup_demo.fg` is the
+regression test: tensor training with nn's Adam in
+one program.
+
+### ML libraries added in 0.6.0
+
+- `tensor_autograd.fg` gained 4 ops (17–20):
+  maxpool2d, sigmoid, tanh, MSE loss. Every backward
+  rule checked against finite differences
+  (`examples/tensor_ops2_demo.fg`: sigmoid 6e-13,
+  tanh 1e-11, maxpool routes exactly to argmax).
+- `rnn.fg`: LSTM / GRU / plain RNN cells on the
+  tensor tape. Cells return the tape and write new
+  state ids into an `out` array by index assignment
+  (the language's out-parameter idiom), and the new
+  hidden state is also the tape's last node.
+  `examples/rnn_demo.fg`: first-bit memory over 5
+  steps, 0.44 -> 1.0 with nn's Adam.
+- `cnn.fg`: im2col conv (first layer) + tape
+  maxpool. `examples/cnn_demo.fg`: 8x8 cross-vs-
+  border with noise, 0.5 -> 1.0.
+- `ml_classical.fg`: logistic regression (tape +
+  inline Adam), k-NN, k-means.
+  `examples/ml_classical_demo.fg`: purity 1.0,
+  knn 1.0, logreg 1.0.
+- `preprocess.fg`: standardisation, min-max
+  scaling, one-hot, deterministic splits, word
+  vocab builder (split-based: the language has no
+  string indexing).
+- `metrics.fg`: accuracy, confusion matrix,
+  precision/recall/F1, MSE/MAE/R2, perplexity.
+- `csv.fg`: plain CSV load (no quoted commas —
+  stated, not hidden) + label encoding.
+  `examples/iris_pipeline_demo.fg` runs the full
+  workflow on the real UCI Iris set (150 rows):
+  CSV -> split -> standardise (train stats only)
+  -> logreg -> test acc 0.933, macro F1 0.937.
+- `tensor_checkpoint_demo.fg`: nn checkpoints
+  round-trip a tensor model with loss diff 0.
+
+### Developer libraries added in 0.6.0
+
+- `test.fg`: check / check_eq_int / check_close /
+  check_eq_str — print-on-failure, summed by the
+  caller, quiet on success.
+- `log.fg`: log_debug/info/warn/error + a leveled
+  Logger struct.
+- `cli.fg`: --flag, --opt value, --opt=value,
+  positionals, float/int option parsing.
+- `collections.fg`: IntStack, IntSet, StrSet
+  (value-returning, so the push-doesn't-reach-
+  caller rule never bites).
+- All four exercised in `examples/dev_demo.fg`.
+
+### Honest limits of this layer (0.6.0)
+
+- Images/binary data: file I/O is text. No image
+  loader, no binary reader — vision work uses
+  generated or CSV data, not real photos.
+- Conv stacking: `cnn_conv2d` takes raw image
+  data; conv-on-conv needs a tape-native im2col
+  op that does not exist yet. Weight gradients
+  for the conv itself are exact.
+- RNN horizon: from random init, the first-bit
+  task at length 8 stalls at chance even with
+  forget-bias init (lengths 3 and 5 reach 100%).
+  Longer horizons need curriculum training.
+- GPU training: kernels verified on a real T4
+  (0.3.0), but the training loop itself
+  (`examples/cuda/mlp_train.cu`) is code only.
+- Checkpoints are 6-decimal text: float_to_fixed
+  truncates, so save/load is exact only to 1e-6.
+
+## 0.7.0 — "build everything open" (26 Oct 2026)
+
+Every 0.6.0 limit above except GPU training and
+text checkpoints is closed in 0.7.0, plus three
+backend jumps:
+
+- Images/binary data: CLOSED. `read_bytes` /
+  `write_bytes` builtins; `stdlib/image.fg` loads
+  PPM P3 and 24-bit BMP, grayscales, saves PPM P3.
+  BMP == PPM verified on the same 2x2 image.
+  PNG/JPEG still NOT supported (inflate/DCT).
+- Conv stacking: CLOSED. Tape-native im2col
+  (op 21) + `cnn_conv2d_tape`; two-conv net
+  0.5 -> 1.0 at lr 0.01 (lr 0.05 oscillates —
+  documented in the demo header).
+- RNN horizon: CLOSED. Curriculum staging len 3
+  -> 5 -> 8 with weight transfer: all 100%.
+- Debugger: `forge.py build --debug` emits
+  `#line` directives for main + imported files
+  (readelf-verified); see docs/DEBUGGING.md.
+- big32 structs: local structs as consecutive
+  frame slots; model + Verilog verified.
+- big32 soft-float v1: + - * in exact 27-bit
+  integer arithmetic, round-to-nearest-even;
+  12/12 demo + 60/60 randomized differential
+  vs Python float32, model AND Verilog. No
+  division, ordered comparisons, float printing,
+  casts, or subnormal fidelity yet.
+- WASM strings + arrays: see docs/WASM_STRINGS.md
+  (byte-identical demo output vs native).
+- Fuzzer: `tools/fuzz.py`, 50/50 OK default run,
+  200/200 OK longer run (seeds 1000-1199),
+  safe-vs-fast differential, no compiler bugs
+  found.
+- Big TinyStories run: 2000 stories, 150k words,
+  vocab 2000, 153,744 params, held-out ppl
+  2128.55 -> 651.44 — better, still NOT fluent
+  (greedy loops, sampled is word salad).
+- Correction: earlier "wasm + big32 suites passed"
+  claims were wrong — run_tests.py ignores its
+  --target flag, so those runs were native twice.
+  The suite now has real big32 build checks and a
+  node-based WASM output comparison.
+
+### Honest limits of this layer (0.7.0)
+
+- GPU training: kernels verified on a real T4
+  (0.3.0), but the training loop itself
+  (`examples/cuda/mlp_train.cu`) is code only,
+  and no new GPU run was launched (needs a
+  Kaggle token re-supplied by the user).
+- Fluent generation: NOT achieved at 153k params
+  / 150k words. Needs far more scale.
+- Full self-hosting compiler: the front-end
+  prototype (lexer + parser) exists; checker and
+  codegen in Jal Pari do not.
+- Public registry host, CI upload, repo rename,
+  PyPI publish: all still blocked on the user's
+  accounts/token scope, as before.
+- Checkpoints are 6-decimal text: float_to_fixed
+  truncates, so save/load is exact only to 1e-6.

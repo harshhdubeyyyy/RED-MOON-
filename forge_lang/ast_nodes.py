@@ -38,6 +38,10 @@ class FuncDef:
     col: int
     is_extern: bool = False
     type_params: list = None  # [param name] for generic functions
+    # Source file this function was defined in, stamped
+    # by compiler.load_program ("" for compile_source,
+    # which has no file). Powers --debug #line output.
+    file: str = ""
 
 
 @dataclass

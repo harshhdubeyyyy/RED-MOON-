@@ -31,7 +31,7 @@ from forge_lang.errors import ForgeError  # noqa: E402
 from forge_lang.compiler import compile_file, build  # noqa: E402
 
 
-VERSION = "0.5.0"
+VERSION = "0.7.0"
 
 
 def main(argv=None):
@@ -67,6 +67,8 @@ def main(argv=None):
     p.add_argument("--target", choices=["native", "big32", "wasm"], default="native")
     p.add_argument("-o", "--output", default=None)
     p.add_argument("--keep-c", default=None)
+    p.add_argument("--debug", action="store_true",
+                   help="emit #line directives + compile with -g so gdb steps through .fg source")
     p.add_argument("--shared", action="store_true",
                    help="build a shared library (.so) for Python ctypes, no main required")
     p = sub.add_parser("emit-big32")
@@ -186,7 +188,8 @@ def main(argv=None):
             return 0
         if args.cmd == "build":
             out = args.output or os.path.splitext(args.file)[0]
-            build(args.file, out, mode=args.mode, keep_c=args.keep_c)
+            build(args.file, out, mode=args.mode, keep_c=args.keep_c,
+                  debug=args.debug)
             print(f"built: {out} (mode={args.mode})")
             return 0
         if args.cmd == "test":

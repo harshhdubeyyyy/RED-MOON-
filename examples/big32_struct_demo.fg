@@ -1,0 +1,21 @@
+// big32 struct demo (0.7.0): structs on the RV
+// backend are consecutive frame slots, one per
+// field. Local structs, field reads, field writes
+// and struct copies work; struct function params
+// and returns are still rejected (one register
+// cannot carry a struct).
+struct Point {
+    x: int;
+    y: int;
+    tag: str;
+}
+
+fn main() -> int {
+    let mut p: Point = Point { x: 3, y: 4, tag: "p" };
+    println("px =", p.x, "py =", p.y, "tag =", p.tag);
+    p.x = 6;
+    let q: Point = p;
+    println("qx =", q.x, "qy =", q.y);
+    println("sum =", q.x + q.y);
+    return 0;
+}

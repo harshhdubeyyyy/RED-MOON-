@@ -1,0 +1,115 @@
+// Classical ML demo (0.6.0): k-means, k-NN and
+// logistic regression on small synthetic 2D data.
+// Self-checks: k-means purity, k-NN accuracy and
+// logreg accuracy must all beat 90%.
+import "ml_classical.fg";
+import "preprocess.fg";
+import "metrics.fg";
+
+fn blcg(seed: int) -> int {
+    return (1103515245 * seed + 12345) % 2147483647;
+}
+
+// Three blobs, interleaved so the first 3 rows are
+// one per blob (k-means inits from the first k rows).
+fn blobs() -> [float] {
+    let centers: [float] = [0.0, 0.0, 5.0, 0.0, 2.5, 4.0];
+    let mut out: [float] = [];
+    let mut s: int = 777;
+    let mut i: int = 0;
+    while i < 90 {
+        let c: int = i % 3;
+        s = blcg(s);
+        let nx: float = (s as float / 2147483647.0 - 0.5) * 1.2;
+        s = blcg(s);
+        let ny: float = (s as float / 2147483647.0 - 0.5) * 1.2;
+        push(out, centers[c * 2] + nx);
+        push(out, centers[c * 2 + 1] + ny);
+        i = i + 1;
+    }
+    return out;
+}
+
+fn blob_labels() -> [int] {
+    let mut out: [int] = [];
+    let mut i: int = 0;
+    while i < 90 { push(out, i % 3); i = i + 1; }
+    return out;
+}
+
+fn main() -> int {
+    let x: [float] = blobs();
+    let y: [int] = blob_labels();
+    // --- k-means purity ---
+    let cent: [float] = kmeans(x, 90, 2, 3, 20);
+    let asg: [int] = kmeans_assign(x, 90, 2, cent, 3);
+    let mut pure: int = 0;
+    let mut c: int = 0;
+    while c < 3 {
+        let mut cnt: [int] = [0, 0, 0];
+        let mut i: int = 0;
+        while i < 90 {
+            if asg[i] == c { cnt[y[i]] = cnt[y[i]] + 1; }
+            i = i + 1;
+        }
+        let mut best: int = 0;
+        i = 0;
+        while i < 3 { if cnt[i] > best { best = cnt[i]; } i = i + 1; }
+        pure = pure + best;
+        c = c + 1;
+    }
+    let purity: float = pure as float / 90.0;
+    println("kmeans purity =", purity);
+    // --- k-NN (split 60 train / 30 test) ---
+    let idx: [int] = split_indices(90, 30, 31337);
+    let mut xtr: [float] = [];
+    let mut ytr: [int] = [];
+    let mut xte: [float] = [];
+    let mut yte: [int] = [];
+    let mut i: int = 0;
+    while i < 30 {
+        let r: int = idx[i];
+        push(xte, x[r * 2]);
+        push(xte, x[r * 2 + 1]);
+        push(yte, y[r]);
+        i = i + 1;
+    }
+    i = 30;
+    while i < 90 {
+        let r: int = idx[i];
+        push(xtr, x[r * 2]);
+        push(xtr, x[r * 2 + 1]);
+        push(ytr, y[r]);
+        i = i + 1;
+    }
+    let pred: [int] = knn_predict(xtr, ytr, 60, xte, 30, 2, 3);
+    let kacc: float = accuracy(pred, yte);
+    println("knn acc =", kacc);
+    // --- logistic regression on separable data ---
+    let mut lx: [float] = [];
+    let mut ly: [int] = [];
+    let mut s: int = 555;
+    let mut n: int = 0;
+    while n < 60 {
+        s = blcg(s);
+        let px: float = (s as float / 2147483647.0 - 0.5) * 4.0;
+        s = blcg(s);
+        let py: float = (s as float / 2147483647.0 - 0.5) * 4.0;
+        let v: float = px + 2.0 * py;
+        if v > 0.5 || v < -0.5 {
+            push(lx, px);
+            push(lx, py);
+            if v > 0.0 { push(ly, 1); } else { push(ly, 0); }
+            n = n + 1;
+        }
+    }
+    let lp: [float] = logreg_train(lx, 60, 2, ly, 2, 200, 0.05, 42);
+    let lpred: [int] = logreg_predict(lp, lx, 60, 2, 2);
+    let lacc: float = accuracy(lpred, ly);
+    println("logreg acc =", lacc);
+    if purity < 0.9 || kacc < 0.9 || lacc < 0.9 {
+        fail("classical demo below 0.9");
+    }
+    println("classical ok");
+    return 0;
+}

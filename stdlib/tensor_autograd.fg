@@ -1,7 +1,9 @@
-// The Jal Pari Language — tensor-level autograd (0.5.0).
+// The Jal Pari Language — tensor-level autograd (0.5.0, ops 17–20 added 0.6.0).
 // Import with: import "tensor_autograd.fg";
-// (It imports tensor.fg; import it alone alongside nn.fg,
-// never alongside a second copy of tensor.fg.)
+// (It imports tensor.fg. Since 0.6.0 the compiler dedupes
+// imports, so it now combines freely with nn.fg and any
+// other library that shares tensor.fg — the old
+// "import it alone" restriction is gone.)
 //
 // Why this exists: the scalar tape (autograd.fg) makes one
 // node per scalar multiply, so a TinyStories forward is
@@ -21,7 +23,8 @@
 //   4 transpose, 5 softmax_rows, 6 gelu, 7 layernorm,
 //   8 mul, 9 scale, 10 gather, 11 cross_entropy,
 //   12 relu, 13 col_slice, 14 concat_cols, 15 reshape,
-//   16 causal_softmax_rows.
+//   16 causal_softmax_rows, 17 maxpool2d, 18 sigmoid,
+//   19 tanh, 20 mse_loss, 21 im2col (0.7.0).
 // Backward rules are in t_backward below; every rule was
 // checked against finite differences (see
 // examples/tensor_autograd_demo.fg).
@@ -331,6 +334,136 @@ fn t_reshape(s: TAg, a: int, shape: [int]) -> TAg {
     return tnode(s.tape, shape, data, 15, a, -1, -1, [], []);
 }
 
+// MaxPool 2x2, stride 2, single channel: input shape
+// [h, w] with h, w even -> output [h/2, w/2]. The argmax
+// flat input index of each output cell is stored in auxi,
+// so backward routes each output gradient to exactly the
+// winning input cell (all other cells get 0).
+fn t_maxpool2d(s: TAg, a: int) -> TAg {
+    let x: [float] = tvals_of(s.tape, a);
+    let shape: [int] = tshape_of(s.tape, a);
+    let h: int = shape[0];
+    let w: int = shape[1];
+    let oh: int = h / 2;
+    let ow: int = w / 2;
+    let mut out: [float] = [];
+    let mut argmax: [int] = [];
+    let mut r: int = 0;
+    while r < oh {
+        let mut c: int = 0;
+        while c < ow {
+            let mut best: float = x[(2 * r) * w + 2 * c];
+            let mut bi: int = (2 * r) * w + 2 * c;
+            let mut dr: int = 0;
+            while dr < 2 {
+                let mut dc: int = 0;
+                while dc < 2 {
+                    let v: float = x[(2 * r + dr) * w + 2 * c + dc];
+                    if v > best {
+                        best = v;
+                        bi = (2 * r + dr) * w + 2 * c + dc;
+                    }
+                    dc = dc + 1;
+                }
+                dr = dr + 1;
+            }
+            push(out, best);
+            push(argmax, bi);
+            c = c + 1;
+        }
+        r = r + 1;
+    }
+    let oshape: [int] = [oh, ow];
+    return tnode(s.tape, oshape, out, 17, a, -1, -1, [], argmax);
+}
+
+// im2col (0.7.0): input [h, w] -> patches
+// [oh*ow, kh*kw], stride 1, no padding, row-major
+// patches. Unlike cnn_conv2d's plain-data im2col,
+// this is a TAPE op: its input can be any earlier
+// tape node, so conv layers now stack — the backward
+// pass scatters each patch gradient back to its
+// input pixels, accumulating where patches overlap.
+fn t_im2col(s: TAg, a: int, kh: int, kw: int) -> TAg {
+    let x: [float] = tvals_of(s.tape, a);
+    let shape: [int] = tshape_of(s.tape, a);
+    let h: int = shape[0];
+    let w: int = shape[1];
+    let oh: int = h - kh + 1;
+    let ow: int = w - kw + 1;
+    let mut out: [float] = [];
+    let mut pr: int = 0;
+    while pr < oh {
+        let mut pc: int = 0;
+        while pc < ow {
+            let mut dr: int = 0;
+            while dr < kh {
+                let mut dc: int = 0;
+                while dc < kw {
+                    push(out, x[(pr + dr) * w + pc + dc]);
+                    dc = dc + 1;
+                }
+                dr = dr + 1;
+            }
+            pc = pc + 1;
+        }
+        pr = pr + 1;
+    }
+    let oshape: [int] = [oh * ow, kh * kw];
+    return tnode(s.tape, oshape, out, 21, a, -1, -1, [], [h, w, kh, kw]);
+}
+
+// Elementwise sigmoid: y = 1 / (1 + exp(-x)).
+fn t_sigmoid(s: TAg, a: int) -> TAg {
+    let x: [float] = tvals_of(s.tape, a);
+    let mut out: [float] = [];
+    let mut j: int = 0;
+    while j < len(x) {
+        push(out, 1.0 / (1.0 + exp(-x[j])));
+        j = j + 1;
+    }
+    return tnode(s.tape, tshape_of(s.tape, a), out, 18, a, -1, -1, [], []);
+}
+
+// Elementwise tanh, clamped past |x| > 20 where exp(2x)
+// would overflow a float. Backward uses (1 - y^2).
+fn t_tanh(s: TAg, a: int) -> TAg {
+    let x: [float] = tvals_of(s.tape, a);
+    let mut out: [float] = [];
+    let mut j: int = 0;
+    while j < len(x) {
+        if x[j] > 20.0 {
+            push(out, 1.0);
+        } else if x[j] < -20.0 {
+            push(out, -1.0);
+        } else {
+            let e: float = exp(2.0 * x[j]);
+            push(out, (e - 1.0) / (e + 1.0));
+        }
+        j = j + 1;
+    }
+    return tnode(s.tape, tshape_of(s.tape, a), out, 19, a, -1, -1, [], []);
+}
+
+// Mean squared error against targets (stored in aux).
+// Output is a [1] loss node, like cross_entropy.
+fn t_mse_loss(s: TAg, a: int, targets: [float]) -> TAg {
+    let x: [float] = tvals_of(s.tape, a);
+    if len(x) != len(targets) {
+        fail("t_mse_loss: size mismatch");
+    }
+    let mut loss: float = 0.0;
+    let mut j: int = 0;
+    while j < len(x) {
+        let d: float = x[j] - targets[j];
+        loss = loss + d * d;
+        j = j + 1;
+    }
+    loss = loss / len(x) as float;
+    let shape: [int] = [1];
+    return tnode(s.tape, shape, [loss], 20, a, -1, -1, targets, []);
+}
+
 // Backward: walk nodes in reverse, accumulating each node's
 // gradient into a flat array parallel to the tape's vals.
 // The loss node's gradient is seeded with 1.0. Every rule
@@ -592,6 +725,68 @@ fn t_backward(t: TTape, out: int) -> [float] {
             while j < len(g) {
                 grads[offa + j] = grads[offa + j] + g[j];
                 j = j + 1;
+            }
+        } else if opc == 17 {
+            let argmax: [int] = islice(t.auxi, t.auxioff[i], t.auxilen[i]);
+            let offa: int = t.voff[t.a[i]];
+            let mut j: int = 0;
+            while j < len(g) {
+                grads[offa + argmax[j]] = grads[offa + argmax[j]] + g[j];
+                j = j + 1;
+            }
+        } else if opc == 18 {
+            let y: [float] = tvals_of(t, i);
+            let offa: int = t.voff[t.a[i]];
+            let mut j: int = 0;
+            while j < len(g) {
+                grads[offa + j] = grads[offa + j] + g[j] * y[j] * (1.0 - y[j]);
+                j = j + 1;
+            }
+        } else if opc == 19 {
+            let y: [float] = tvals_of(t, i);
+            let offa: int = t.voff[t.a[i]];
+            let mut j: int = 0;
+            while j < len(g) {
+                grads[offa + j] = grads[offa + j] + g[j] * (1.0 - y[j] * y[j]);
+                j = j + 1;
+            }
+        } else if opc == 20 {
+            let x: [float] = tvals_of(t, t.a[i]);
+            let targets: [float] = fslice(t.aux, t.auxoff[i], t.auxlen[i]);
+            let offa: int = t.voff[t.a[i]];
+            let mut j: int = 0;
+            while j < len(x) {
+                grads[offa + j] = grads[offa + j] + g[0] * 2.0 * (x[j] - targets[j]) / len(x) as float;
+                j = j + 1;
+            }
+        } else if opc == 21 {
+            let dims: [int] = islice(t.auxi, t.auxioff[i], t.auxilen[i]);
+            let h: int = dims[0];
+            let w: int = dims[1];
+            let kh: int = dims[2];
+            let kw: int = dims[3];
+            let oh: int = h - kh + 1;
+            let ow: int = w - kw + 1;
+            let offa: int = t.voff[t.a[i]];
+            let mut pr: int = 0;
+            while pr < oh {
+                let mut pc: int = 0;
+                while pc < ow {
+                    let mut dr: int = 0;
+                    while dr < kh {
+                        let mut dc: int = 0;
+                        while dc < kw {
+                            let row: int = pr * ow + pc;
+                            let col: int = dr * kw + dc;
+                            let idx: int = (pr + dr) * w + pc + dc;
+                            grads[offa + idx] = grads[offa + idx] + g[row * kh * kw + col];
+                            dc = dc + 1;
+                        }
+                        dr = dr + 1;
+                    }
+                    pc = pc + 1;
+                }
+                pr = pr + 1;
             }
         }
         i = i - 1;

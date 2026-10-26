@@ -1,0 +1,148 @@
+// CNN demo (0.6.0): 8x8 binary images, two classes —
+// a CROSS (both diagonals) vs a BORDER (frame) — with
+// ~1/8 random bit flips as noise. Architecture: conv
+// 3x3 x 4 filters -> relu -> per-filter maxpool 2x2 ->
+// linear -> cross-entropy. Trains with nn's Adam.
+// Self-checks: test accuracy must beat 85%.
+import "nn.fg";
+import "cnn.fg";
+
+fn clcg(seed: int) -> int {
+    return (1103515245 * seed + 12345) % 2147483647;
+}
+
+fn slice_f(a: [float], off: int, n: int) -> [float] {
+    let mut out: [float] = [];
+    let mut i: int = 0;
+    while i < n { push(out, a[off + i]); i = i + 1; }
+    return out;
+}
+
+// One image: class 0 = cross, class 1 = border, then
+// noise flips driven by the seed stream.
+fn make_img(cls: int, seed: int) -> [float] {
+    let mut img: [float] = [];
+    let mut r: int = 0;
+    while r < 8 {
+        let mut c: int = 0;
+        while c < 8 {
+            let mut v: float = 0.0;
+            if cls == 0 {
+                if r == c || r + c == 7 { v = 1.0; }
+            } else {
+                if r == 0 || r == 7 || c == 0 || c == 7 { v = 1.0; }
+            }
+            push(img, v);
+            c = c + 1;
+        }
+        r = r + 1;
+    }
+    let mut s: int = seed;
+    let mut i: int = 0;
+    while i < 64 {
+        s = clcg(s);
+        if s % 8 == 0 {
+            if img[i] == 0.0 { img[i] = 1.0; } else { img[i] = 0.0; }
+        }
+        i = i + 1;
+    }
+    return img;
+}
+
+fn forward_img(params: [float], img: [float]) -> TAg {
+    let mut s: TAg = t_leaf(ttape_new(), [9, 4], slice_f(params, 0, 36));
+    let w: int = s.last;
+    s = t_leaf(s.tape, [4], slice_f(params, 36, 4));
+    let b: int = s.last;
+    s = t_leaf(s.tape, [36, 2], slice_f(params, 40, 72));
+    let wh: int = s.last;
+    s = t_leaf(s.tape, [2], slice_f(params, 112, 2));
+    let bh: int = s.last;
+    s = cnn_conv2d(s, img, 8, 8, 3, 3, w, b);
+    let cv: int = s.last;
+    s = t_relu(s, cv);
+    let rl: int = s.last;
+    // Per-filter maxpool: [36, 4] -> col f -> [6, 6]
+    // -> pool -> [3, 3] -> flat [1, 9]; concat to [1, 36].
+    let mut flat: int = -1;
+    let mut f: int = 0;
+    while f < 4 {
+        s = t_col_slice(s, rl, f, 1);
+        let col: int = s.last;
+        s = t_reshape(s, col, [6, 6]);
+        let sq: int = s.last;
+        s = t_maxpool2d(s, sq);
+        let pl: int = s.last;
+        s = t_reshape(s, pl, [1, 9]);
+        let fl: int = s.last;
+        if f == 0 {
+            flat = fl;
+        } else {
+            s = t_concat_cols(s, flat, fl);
+            flat = s.last;
+        }
+        f = f + 1;
+    }
+    s = t_matmul(s, flat, wh);
+    let lg: int = s.last;
+    s = t_add_bias(s, lg, bh);
+    return s;
+}
+
+fn eval_set(params: [float], n: int, seed0: int) -> float {
+    let mut correct: int = 0;
+    let mut i: int = 0;
+    while i < n {
+        let cls: int = i % 2;
+        let img: [float] = make_img(cls, seed0 + i * 131);
+        let tt: TAg = forward_img(params, img);
+        let vals: [float] = tvals_of(tt.tape, tt.last);
+        let mut pr: int = 0;
+        if vals[1] > vals[0] { pr = 1; }
+        if pr == cls { correct = correct + 1; }
+        i = i + 1;
+    }
+    return correct as float / n as float;
+}
+
+fn main() -> int {
+    let mut params: [float] = cnn_init(114, 4242);
+    println("cnn acc before =", eval_set(params, 20, 9000));
+    let mut st: OptimState = optim_new(params);
+    let mut epoch: int = 0;
+    while epoch < 30 {
+        let mut i: int = 0;
+        while i < 40 {
+            let cls: int = i % 2;
+            let img: [float] = make_img(cls, 1000 + i * 131);
+            let mut tt: TAg = forward_img(st.params, img);
+            let logits: int = tt.last;
+            tt = t_cross_entropy(tt, logits, [cls]);
+            let loss: int = tt.last;
+            let grads: [float] = t_backward(tt.tape, loss);
+            let gw: [float] = t_grad_of(tt.tape, grads, 0);
+            let gb: [float] = t_grad_of(tt.tape, grads, 1);
+            let gwh: [float] = t_grad_of(tt.tape, grads, 2);
+            let gbh: [float] = t_grad_of(tt.tape, grads, 3);
+            let mut all: [float] = [];
+            let mut j: int = 0;
+            while j < len(gw) { push(all, gw[j]); j = j + 1; }
+            j = 0;
+            while j < len(gb) { push(all, gb[j]); j = j + 1; }
+            j = 0;
+            while j < len(gwh) { push(all, gwh[j]); j = j + 1; }
+            j = 0;
+            while j < len(gbh) { push(all, gbh[j]); j = j + 1; }
+            st = adam_step(st, all, 0.05, 0.9, 0.999, 0.00000001);
+            i = i + 1;
+        }
+        epoch = epoch + 1;
+    }
+    let acc: float = eval_set(st.params, 20, 9000);
+    println("cnn acc after =", acc);
+    if acc < 0.85 {
+        fail("cnn demo: accuracy below 0.85");
+    }
+    println("cnn ok");
+    return 0;
+}

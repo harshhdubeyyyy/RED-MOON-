@@ -1,0 +1,234 @@
+// Self-hosting front-end prototype (0.7.0): a
+// lexer + recursive-descent expression parser for
+// Jal Pari itself, written IN Jal Pari. This is the
+// first hosted piece of a self-hosted compiler —
+// not the compiler (no checker, no codegen yet),
+// and it is labelled exactly that.
+// Why this is real, not a toy: the lexer scans
+// character by character with substr (the language
+// has no string indexing), classifies with
+// split-based membership tests, and the parser
+// handles precedence, parens, unary minus and let
+// bindings with an environment.
+// Demo source: "let x = 2 + 3 * 4; x * 2 + 1"
+// must lex to tokens and evaluate to 29.
+
+fn is_digit(ch: str) -> bool {
+    let parts: [str] = split("0123456789", ch);
+    return len(parts) > 1;
+}
+
+fn is_alpha(ch: str) -> bool {
+    let parts: [str] = split("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_", ch);
+    return len(parts) > 1;
+}
+
+fn is_space(ch: str) -> bool {
+    return ch == " " || ch == "\n" || ch == "\t" || ch == "\r";
+}
+
+struct LexOut {
+    kinds: [int];
+    texts: [str];
+}
+
+fn lex(src: str) -> LexOut {
+    let mut kinds: [int] = [];
+    let mut texts: [str] = [];
+    let mut i: int = 0;
+    while i < len(src) {
+        let ch: str = substr(src, i, 1);
+        if is_space(ch) {
+            i = i + 1;
+        } else if is_digit(ch) {
+            let mut tok: str = "";
+            while i < len(src) && is_digit(substr(src, i, 1)) {
+                tok = tok + substr(src, i, 1);
+                i = i + 1;
+            }
+            push(kinds, 0);
+            push(texts, tok);
+        } else if is_alpha(ch) {
+            let mut tok: str = "";
+            while i < len(src) && (is_alpha(substr(src, i, 1)) || is_digit(substr(src, i, 1))) {
+                tok = tok + substr(src, i, 1);
+                i = i + 1;
+            }
+            push(kinds, 1);
+            push(texts, tok);
+        } else {
+            let mut tok: str = ch;
+            if (ch == "=" || ch == "!") && i + 1 < len(src) && substr(src, i + 1, 1) == "=" {
+                tok = ch + "=";
+                i = i + 1;
+            }
+            push(kinds, 2);
+            push(texts, tok);
+            i = i + 1;
+        }
+    }
+    push(kinds, 3);
+    push(texts, "");
+    return LexOut { kinds: kinds, texts: texts };
+}
+
+struct Parser {
+    kinds: [int];
+    texts: [str];
+    pos: int;
+    names: [str];
+    vals: [int];
+}
+
+struct ParseOut {
+    p: Parser;
+    v: int;
+}
+
+fn peek(p: Parser) -> str {
+    return p.texts[p.pos];
+}
+
+fn peek_kind(p: Parser) -> int {
+    return p.kinds[p.pos];
+}
+
+fn advance(p0: Parser) -> Parser {
+    let mut p: Parser = p0;
+    p.pos = p.pos + 1;
+    return p;
+}
+
+fn env_get(p: Parser, name: str) -> int {
+    let mut i: int = 0;
+    while i < len(p.names) {
+        if p.names[i] == name {
+            return p.vals[i];
+        }
+        i = i + 1;
+    }
+    fail("unknown variable");
+    return 0;
+}
+
+fn env_put(p0: Parser, name: str, v: int) -> Parser {
+    let mut p: Parser = p0;
+    let mut i: int = 0;
+    while i < len(p.names) {
+        if p.names[i] == name {
+            p.vals[i] = v;
+            return p;
+        }
+        i = i + 1;
+    }
+    push(p.names, name);
+    push(p.vals, v);
+    return p;
+}
+
+fn parse_expr(p: Parser) -> ParseOut {
+    let left: ParseOut = parse_term(p);
+    let mut pp: Parser = left.p;
+    let mut v: int = left.v;
+    while peek(pp) == "+" || peek(pp) == "-" {
+        let op: str = peek(pp);
+        pp = advance(pp);
+        let right: ParseOut = parse_term(pp);
+        pp = right.p;
+        if op == "+" {
+            v = v + right.v;
+        } else {
+            v = v - right.v;
+        }
+    }
+    return ParseOut { p: pp, v: v };
+}
+
+fn parse_term(p: Parser) -> ParseOut {
+    let left: ParseOut = parse_factor(p);
+    let mut pp: Parser = left.p;
+    let mut v: int = left.v;
+    while peek(pp) == "*" || peek(pp) == "/" {
+        let op: str = peek(pp);
+        pp = advance(pp);
+        let right: ParseOut = parse_factor(pp);
+        pp = right.p;
+        if op == "*" {
+            v = v * right.v;
+        } else {
+            v = v / right.v;
+        }
+    }
+    return ParseOut { p: pp, v: v };
+}
+
+fn parse_factor(p: Parser) -> ParseOut {
+    if peek(p) == "-" {
+        let pp: Parser = advance(p);
+        let inner: ParseOut = parse_factor(pp);
+        return ParseOut { p: inner.p, v: -inner.v };
+    }
+    if peek(p) == "(" {
+        let pp: Parser = advance(p);
+        let inner: ParseOut = parse_expr(pp);
+        let pp2: Parser = inner.p;
+        if peek(pp2) != ")" {
+            fail("expected )");
+        }
+        return ParseOut { p: advance(pp2), v: inner.v };
+    }
+    if peek_kind(p) == 0 {
+        let v: int = parse_int(peek(p));
+        return ParseOut { p: advance(p), v: v };
+    }
+    if peek_kind(p) == 1 {
+        let name: str = peek(p);
+        let pp: Parser = advance(p);
+        return ParseOut { p: pp, v: env_get(pp, name) };
+    }
+    fail("unexpected token in factor");
+    return ParseOut { p: p, v: 0 };
+}
+
+fn parse_stmt(p: Parser) -> ParseOut {
+    if peek(p) == "let" {
+        let mut pp: Parser = advance(p);
+        let name: str = peek(pp);
+        pp = advance(pp);
+        if peek(pp) != "=" {
+            fail("expected = after let name");
+        }
+        pp = advance(pp);
+        let val: ParseOut = parse_expr(pp);
+        let pp2: Parser = env_put(val.p, name, val.v);
+        return ParseOut { p: pp2, v: val.v };
+    }
+    return parse_expr(p);
+}
+
+fn main() -> int {
+    let src: str = "let x = 2 + 3 * 4; x * 2 + 1";
+    let lx: LexOut = lex(src);
+    println("tokens =", len(lx.texts) - 1);
+    let mut i: int = 0;
+    while i < len(lx.texts) - 1 {
+        println("tok", lx.kinds[i], lx.texts[i]);
+        i = i + 1;
+    }
+    let mut p: Parser = Parser { kinds: lx.kinds, texts: lx.texts, pos: 0, names: [], vals: [] };
+    let mut last: int = 0;
+    while peek_kind(p) != 3 {
+        let out: ParseOut = parse_stmt(p);
+        p = out.p;
+        last = out.v;
+        if peek(p) == ";" {
+            p = advance(p);
+        }
+    }
+    println("selfhost result =", last);
+    if last != 29 {
+        fail("selfhost mini failed");
+    }
+    println("selfhost ok");
+    return 0;
+}

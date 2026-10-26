@@ -1,0 +1,33 @@
+// Image demo (0.7.0): load the same 2x2 picture as
+// BMP (binary) and PPM P3 (text), check the pixels
+// agree, print grayscale, and round-trip through
+// a saved PPM. Top row: red, green; bottom row:
+// blue, white.
+import "image.fg";
+fn main() -> int {
+    let bmp: Image = bmp_load("data/test_2x2.bmp");
+    let ppm: Image = ppm_p3_load("data/test_2x2.ppm");
+    println("bmp =", bmp.w, bmp.h, "ppm =", ppm.w, ppm.h);
+    println("bmp px0 =", bmp.pixels[0], bmp.pixels[1], bmp.pixels[2]);
+    println("bmp px1 =", bmp.pixels[3], bmp.pixels[4], bmp.pixels[5]);
+    println("bmp px2 =", bmp.pixels[6], bmp.pixels[7], bmp.pixels[8]);
+    println("bmp px3 =", bmp.pixels[9], bmp.pixels[10], bmp.pixels[11]);
+    let mut same: bool = true;
+    let mut i: int = 0;
+    while i < 12 {
+        if bmp.pixels[i] != ppm.pixels[i] { same = false; }
+        i = i + 1;
+    }
+    println("bmp==ppm ?", same);
+    let gray: [float] = image_gray(bmp);
+    println("gray0 =", gray[0], "gray3 =", gray[3]);
+    let ok: bool = image_save_ppm_p3("/tmp/roundtrip.ppm", bmp);
+    println("saved =", ok);
+    let rt: Image = ppm_p3_load("/tmp/roundtrip.ppm");
+    println("roundtrip px0 =", rt.pixels[0], rt.pixels[1], rt.pixels[2]);
+    if same == false || rt.pixels[0] != 255 || rt.pixels[1] != 0 {
+        fail("image demo mismatch");
+    }
+    println("image ok");
+    return 0;
+}

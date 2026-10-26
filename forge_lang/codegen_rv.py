@@ -11,7 +11,31 @@ Supported subset (v1, everything else raises a clear ForgeError):
   array or over range(n), functions/calls (<= 8 args, recursion works),
   return, print/println (int, bool, str), len (array or str),
   assert/fail (print message, halt with a0 = 1).
-NOT supported: float, structs, enums, match, spawn, extern/FFI, file
+Floats (0.7.0, soft-float v1): float literals/variables,
+  [float] arrays, + - * (IEEE-754 single precision via
+  forge_fadd/forge_fmul helpers, round-to-nearest-even),
+  == / != (bitwise: -0.0 != +0.0, unlike IEEE).
+  Verified: examples/big32_float_demo.fg 12/12 on the
+  Python model AND Icarus Verilog, plus a 60-case
+  randomized differential test vs Python float32,
+  60/60 on both. fadd works in exact 27-bit integer
+  arithmetic (significand << 3 with the shifted
+  operand's guard/round/sticky folded into the low
+  3 bits), so subtraction borrows correctly; the
+  carry shift folds the shifted-out bit into the
+  sticky position. fmul extracts guard/round/sticky
+  from the full dropped field. NOT yet: float
+  division, ordered comparisons (<, >, ...), float
+  printing, int<->float casts, subnormal results
+  (flushed to signed zero) and subnormal inputs
+  (treated as normals — do not rely on them),
+  NaN/Inf inputs. Each gap raises a clear ForgeError
+  instead of silently miscompiling.
+Structs (0.7.0): local struct variables as consecutive
+  frame slots (int/bool/str fields), field reads/writes,
+  struct copies. Struct function params/returns are
+  still rejected (one register cannot carry a struct).
+NOT supported: enums, match, spawn, extern/FFI, file
 I/O, args(), http, clock, string concatenation/comparison, push,
 dynamic allocation. Arithmetic is native RISC-V (wrapping, div by
 zero -> -1, rem by zero -> dividend) -- NOT Forge safe-mode aborts.
@@ -27,6 +51,8 @@ Calling convention (documented, see README "Forge on big32"):
   slot each iteration -- a documented v1 limitation). Strings:
   null-terminated static data, initialised by _start before main.
 """
+
+import struct
 
 from .errors import ForgeError
 from . import ast_nodes as A
@@ -126,8 +152,23 @@ class RVGen:
 
     # ---------- top level ----------
     def generate(self):
-        if self.program.structs:
-            raise ForgeError("structs are not supported on big32 (v1)")
+        # Structs (0.7.0): a struct variable is consecutive
+        # frame slots, one per field, in declaration
+        # order. Fields must be scalar (int/bool/str);
+        # struct-typed function params/returns are still
+        # rejected (one register cannot carry a struct).
+        self.struct_layout = {}
+        for sd in (getattr(self.program, "structs", None) or []):
+            if getattr(sd, "type_params", None):
+                continue
+            fields = []
+            for fname, ftype in sd.fields:
+                if ftype not in ("int", "bool", "str"):
+                    raise ForgeError(
+                        f"big32 structs support int/bool/str fields only, "
+                        f"not {ftype} in struct {sd.name} (v1)")
+                fields.append((fname, ftype))
+            self.struct_layout[sd.name] = fields
         if self.program.enums:
             raise ForgeError("enums are not supported on big32 (v1)")
         if "main" not in self.funcs:
@@ -136,10 +177,12 @@ class RVGen:
             if getattr(fn, "is_extern", False):
                 raise ForgeError("extern functions are not supported on big32")
             for _n, t in fn.params:
-                if t == "float" or t.startswith("[float"):
-                    raise ForgeError("float is not supported on big32 (v1)")
-            if fn.ret == "float":
-                raise ForgeError("float is not supported on big32 (v1)")
+                if t in self.struct_layout:
+                    raise ForgeError(
+                        "struct function parameters are not supported on big32 (v1)")
+            if fn.ret in self.struct_layout:
+                raise ForgeError(
+                    "struct function returns are not supported on big32 (v1)")
         # Emit functions first so string/array slots are discovered;
         # _start (with string init) is prepended at the end.
         body = []
@@ -246,6 +289,326 @@ class RVGen:
         h.append("forge_strlen_done:")
         h.append("    mv a0, t0")
         h.append("    ret")
+        # ---- soft-float v1 (0.7.0) ----
+        # IEEE-754 single precision in integer registers.
+        # Callers spill live temps first (see gen_binop),
+        # so helpers may use any t/s register except s0
+        # (frame pointer), sp and ra. Subnormal inputs
+        # are treated as normals (wrong, documented);
+        # NaN/Inf inputs are not handled.
+        h.append("forge_fsub:")
+        h.append("    li t0, -2147483648")
+        h.append("    xor a1, a1, t0")
+        h.append("    j forge_fadd")
+        h.append("forge_fadd:")
+        h.append("    srli t0, a0, 31")
+        h.append("    slli t0, t0, 31")
+        h.append("    srli t1, a1, 31")
+        h.append("    slli t1, t1, 31")
+        h.append("    srli t2, a0, 23")
+        h.append("    andi t2, t2, 255")
+        h.append("    srli t3, a1, 23")
+        h.append("    andi t3, t3, 255")
+        h.append("    li t6, 8388607")
+        h.append("    and t4, a0, t6")
+        h.append("    and t5, a1, t6")
+        h.append("    or t6, t2, t4")
+        h.append("    bne t6, zero, fa_anotzero")
+        h.append("    or t6, t3, t5")
+        h.append("    beq t6, zero, fa_bothzero")
+        h.append("    mv a0, a1")
+        h.append("    ret")
+        h.append("fa_bothzero:")
+        h.append("    bne t0, t1, fa_bz_pos")
+        h.append("    mv a0, t0")
+        h.append("    ret")
+        h.append("fa_bz_pos:")
+        h.append("    li a0, 0")
+        h.append("    ret")
+        h.append("fa_anotzero:")
+        h.append("    or t6, t3, t5")
+        h.append("    bne t6, zero, fa_bnotzero")
+        h.append("    ret")
+        h.append("fa_bnotzero:")
+        h.append("    li t6, 8388608")
+        h.append("    or t4, t4, t6")
+        h.append("    or t5, t5, t6")
+        h.append("    li s5, 0")
+        h.append("    li s6, 0")
+        h.append("    li s7, 0")
+        h.append("    li s11, 0")
+        h.append("    bge t2, t3, fa_align_b")
+        h.append("    sub s8, t3, t2")
+        h.append("    mv s3, t3")
+        h.append("    li s11, 1")
+        h.append("    j fa_shift_a")
+        h.append("fa_align_b:")
+        h.append("    sub s8, t2, t3")
+        h.append("    mv s3, t2")
+        h.append("    li s11, 2")
+        h.append("    j fa_shift_b")
+        # Shift t4 right by s8, extracting guard (s5),
+        # round (s6) and sticky (s7) from dropped bits.
+        h.append("fa_shift_a:")
+        h.append("    beq s8, zero, fa_addsub")
+        h.append("    li t6, 25")
+        h.append("    blt s8, t6, fa_shift_a_small")
+        h.append("    sltu s7, zero, t4")
+        h.append("    li t4, 0")
+        h.append("    j fa_addsub")
+        h.append("fa_shift_a_small:")
+        h.append("    li t6, 1")
+        h.append("    sll t6, t6, s8")
+        h.append("    addi t6, t6, -1")
+        h.append("    and s10, t4, t6")
+        h.append("    addi s9, s8, -1")
+        h.append("    srl s5, s10, s9")
+        h.append("    andi s5, s5, 1")
+        h.append("    li s6, 0")
+        h.append("    li s9, 2")
+        h.append("    blt s8, s9, fa_shift_a_rdone")
+        h.append("    addi s9, s8, -2")
+        h.append("    srl s6, s10, s9")
+        h.append("    andi s6, s6, 1")
+        h.append("fa_shift_a_rdone:")
+        h.append("    li s7, 0")
+        h.append("    li s9, 3")
+        h.append("    blt s8, s9, fa_shift_a_sdone")
+        h.append("    addi s9, s8, -2")
+        h.append("    li t6, 1")
+        h.append("    sll t6, t6, s9")
+        h.append("    addi t6, t6, -1")
+        h.append("    and t6, s10, t6")
+        h.append("    sltu s7, zero, t6")
+        h.append("fa_shift_a_sdone:")
+        h.append("    srl t4, t4, s8")
+        h.append("    j fa_addsub")
+        h.append("fa_shift_b:")
+        h.append("    beq s8, zero, fa_addsub")
+        h.append("    li t6, 25")
+        h.append("    blt s8, t6, fa_shift_b_small")
+        h.append("    sltu s7, zero, t5")
+        h.append("    li t5, 0")
+        h.append("    j fa_addsub")
+        h.append("fa_shift_b_small:")
+        h.append("    li t6, 1")
+        h.append("    sll t6, t6, s8")
+        h.append("    addi t6, t6, -1")
+        h.append("    and s10, t5, t6")
+        h.append("    addi s9, s8, -1")
+        h.append("    srl s5, s10, s9")
+        h.append("    andi s5, s5, 1")
+        h.append("    li s6, 0")
+        h.append("    li s9, 2")
+        h.append("    blt s8, s9, fa_shift_b_rdone")
+        h.append("    addi s9, s8, -2")
+        h.append("    srl s6, s10, s9")
+        h.append("    andi s6, s6, 1")
+        h.append("fa_shift_b_rdone:")
+        h.append("    li s7, 0")
+        h.append("    li s9, 3")
+        h.append("    blt s8, s9, fa_shift_b_sdone")
+        h.append("    addi s9, s8, -2")
+        h.append("    li t6, 1")
+        h.append("    sll t6, t6, s9")
+        h.append("    addi t6, t6, -1")
+        h.append("    and t6, s10, t6")
+        h.append("    sltu s7, zero, t6")
+        h.append("fa_shift_b_sdone:")
+        h.append("    srl t5, t5, s8")
+        h.append("    j fa_addsub")
+        # 27-bit exact arithmetic (fix for the first
+        # version's borrow bug): fold the shifted
+        # operand's guard/round/sticky into the low 3
+        # bits of a 27-bit significand, so add/sub are
+        # exact integer ops and rounding reads the
+        # low bits directly. The first version kept
+        # the fraction separate and forgot that a
+        # subtraction BORROWS from it (true value =
+        # diff - fraction, not diff + fraction),
+        # which made every cancellation case land
+        # up to 2 ulps high.
+        h.append("fa_addsub:")
+        h.append("    slli t4, t4, 3")
+        h.append("    slli t5, t5, 3")
+        h.append("    beq s11, zero, fa_27_ready")
+        h.append("    li t6, 1")
+        h.append("    beq s11, t6, fa_27_shift_a")
+        h.append("    slli s5, s5, 2")
+        h.append("    slli s6, s6, 1")
+        h.append("    or t5, t5, s5")
+        h.append("    or t5, t5, s6")
+        h.append("    or t5, t5, s7")
+        h.append("    j fa_27_ready")
+        h.append("fa_27_shift_a:")
+        h.append("    slli s5, s5, 2")
+        h.append("    slli s6, s6, 1")
+        h.append("    or t4, t4, s5")
+        h.append("    or t4, t4, s6")
+        h.append("    or t4, t4, s7")
+        h.append("fa_27_ready:")
+        h.append("    bne t0, t1, fa_sub")
+        h.append("    add s4, t4, t5")
+        h.append("    mv s2, t0")
+        h.append("    j fa_norm")
+        h.append("fa_sub:")
+        h.append("    beq t4, t5, fa_sub_zero")
+        h.append("    bltu t5, t4, fa_sub_a_bigger")
+        h.append("    sub s4, t5, t4")
+        h.append("    mv s2, t1")
+        h.append("    j fa_norm")
+        h.append("fa_sub_a_bigger:")
+        h.append("    sub s4, t4, t5")
+        h.append("    mv s2, t0")
+        h.append("    j fa_norm")
+        h.append("fa_sub_zero:")
+        h.append("    li a0, 0")
+        h.append("    ret")
+        h.append("fa_norm:")
+        h.append("    li t6, 134217728")
+        h.append("    and t6, s4, t6")
+        h.append("    beq t6, zero, fa_norm_left")
+        # Carry shift: fold the shifted-out bit into
+        # the sticky position first, or a carry with
+        # fraction bits 1001 would round 1 ulp low.
+        h.append("    andi t6, s4, 1")
+        h.append("    slli t6, t6, 1")
+        h.append("    or s4, s4, t6")
+        h.append("    srli s4, s4, 1")
+        h.append("    addi s3, s3, 1")
+        h.append("    j fa_round")
+        h.append("fa_norm_left:")
+        h.append("    li t6, 67108864")
+        h.append("    and t6, s4, t6")
+        h.append("    bne t6, zero, fa_round")
+        h.append("    beq s3, zero, fa_flush")
+        h.append("    slli s4, s4, 1")
+        h.append("    addi s3, s3, -1")
+        h.append("    j fa_norm_left")
+        h.append("fa_flush:")
+        h.append("    mv a0, s2")
+        h.append("    ret")
+        h.append("fa_round:")
+        h.append("    srli s5, s4, 2")
+        h.append("    andi s5, s5, 1")
+        h.append("    beq s5, zero, fa_assemble")
+        h.append("    srli t6, s4, 1")
+        h.append("    andi t6, t6, 1")
+        h.append("    andi s9, s4, 1")
+        h.append("    or t6, t6, s9")
+        h.append("    srli s9, s4, 3")
+        h.append("    andi s9, s9, 1")
+        h.append("    or t6, t6, s9")
+        h.append("    beq t6, zero, fa_assemble")
+        h.append("    srli s4, s4, 3")
+        h.append("    addi s4, s4, 1")
+        h.append("    li t6, 16777216")
+        h.append("    and t6, s4, t6")
+        h.append("    beq t6, zero, fa_assemble2")
+        h.append("    srli s4, s4, 1")
+        h.append("    addi s3, s3, 1")
+        h.append("    j fa_assemble2")
+        h.append("fa_assemble:")
+        h.append("    srli s4, s4, 3")
+        h.append("fa_assemble2:")
+        h.append("    li t6, 255")
+        h.append("    bge s3, t6, fa_inf")
+        h.append("    bge zero, s3, fa_flush")
+        h.append("    slli t6, s3, 23")
+        h.append("    or a0, s2, t6")
+        h.append("    li t6, 8388607")
+        h.append("    and t6, s4, t6")
+        h.append("    or a0, a0, t6")
+        h.append("    ret")
+        h.append("fa_inf:")
+        h.append("    li t6, 2139095040")
+        h.append("    or a0, s2, t6")
+        h.append("    ret")
+        h.append("forge_fmul:")
+        h.append("    srli t2, a0, 23")
+        h.append("    andi t2, t2, 255")
+        h.append("    srli t3, a1, 23")
+        h.append("    andi t3, t3, 255")
+        h.append("    li t6, 8388607")
+        h.append("    and t4, a0, t6")
+        h.append("    and t5, a1, t6")
+        h.append("    or t6, t2, t4")
+        h.append("    beq t6, zero, fm_zero")
+        h.append("    or t6, t3, t5")
+        h.append("    beq t6, zero, fm_zero")
+        h.append("    xor s2, a0, a1")
+        h.append("    li t6, -2147483648")
+        h.append("    and s2, s2, t6")
+        h.append("    add s3, t2, t3")
+        h.append("    addi s3, s3, -127")
+        h.append("    li t6, 8388608")
+        h.append("    or t4, t4, t6")
+        h.append("    or t5, t5, t6")
+        h.append("    mulhu s4, t4, t5")
+        h.append("    mul s5, t4, t5")
+        h.append("    li t6, 32768")
+        h.append("    bltu s4, t6, fm_shift23")
+        h.append("    slli s6, s4, 8")
+        h.append("    srli t6, s5, 24")
+        h.append("    or s6, s6, t6")
+        h.append("    li t6, 16777215")
+        h.append("    and t6, s5, t6")
+        h.append("    srli s7, t6, 23")
+        h.append("    andi s7, s7, 1")
+        h.append("    srli s8, t6, 22")
+        h.append("    andi s8, s8, 1")
+        h.append("    li s9, 4194303")
+        h.append("    and s9, t6, s9")
+        h.append("    sltu s9, zero, s9")
+        h.append("    addi s3, s3, 1")
+        h.append("    j fm_round")
+        h.append("fm_shift23:")
+        h.append("    slli s6, s4, 9")
+        h.append("    srli t6, s5, 23")
+        h.append("    or s6, s6, t6")
+        h.append("    li t6, 8388607")
+        h.append("    and t6, s5, t6")
+        h.append("    srli s7, t6, 22")
+        h.append("    andi s7, s7, 1")
+        h.append("    srli s8, t6, 21")
+        h.append("    andi s8, s8, 1")
+        h.append("    li s9, 2097151")
+        h.append("    and s9, t6, s9")
+        h.append("    sltu s9, zero, s9")
+        h.append("fm_round:")
+        h.append("    beq s7, zero, fm_assemble")
+        h.append("    or t6, s8, s9")
+        h.append("    andi s10, s6, 1")
+        h.append("    or t6, t6, s10")
+        h.append("    beq t6, zero, fm_assemble")
+        h.append("    addi s6, s6, 1")
+        h.append("    li t6, 16777216")
+        h.append("    and t6, s6, t6")
+        h.append("    beq t6, zero, fm_assemble")
+        h.append("    srli s6, s6, 1")
+        h.append("    addi s3, s3, 1")
+        h.append("fm_assemble:")
+        h.append("    li t6, 255")
+        h.append("    bge s3, t6, fm_inf")
+        h.append("    bge zero, s3, fm_zero_signed")
+        h.append("    slli t6, s3, 23")
+        h.append("    or a0, s2, t6")
+        h.append("    li t6, 8388607")
+        h.append("    and t6, s6, t6")
+        h.append("    or a0, a0, t6")
+        h.append("    ret")
+        h.append("fm_inf:")
+        h.append("    li t6, 2139095040")
+        h.append("    or a0, s2, t6")
+        h.append("    ret")
+        h.append("fm_zero:")
+        h.append("    xor a0, a0, a1")
+        h.append("    li t6, -2147483648")
+        h.append("    and a0, a0, t6")
+        h.append("    ret")
+        h.append("fm_zero_signed:")
+        h.append("    mv a0, s2")
+        h.append("    ret")
         return h
 
     # ---------- functions ----------
@@ -295,8 +658,42 @@ class RVGen:
             return
         if isinstance(stmt, A.Let):
             t = stmt.ann if stmt.ann else self.expr_type(stmt.expr)
-            if t == "float" or t.startswith("[float"):
-                raise ForgeError("float is not supported on big32 (v1)")
+            if t in self.struct_layout:
+                fields = self.struct_layout[t]
+                if isinstance(stmt.expr, A.StructLit):
+                    if stmt.expr.name != t:
+                        raise ForgeError(
+                            f"struct literal type {stmt.expr.name} does not match {t}")
+                    base = self.alloc_slot()
+                    for _ in range(len(fields) - 1):
+                        self.alloc_slot()
+                    self.env[-1][stmt.name] = (base, t)
+                    vals = {}
+                    for fname, fexpr in stmt.expr.fields:
+                        vals[fname] = fexpr
+                    for k, (fname, _ft) in enumerate(fields):
+                        if fname not in vals:
+                            raise ForgeError(f"struct literal missing field {fname}")
+                        r = self.gen_expr(vals[fname])
+                        self.emit(f"    sw {r}, {self.slot_off(base + k)}(s0)")
+                        self.free_reg(r)
+                    return
+                if isinstance(stmt.expr, A.Var):
+                    sbase, st = self.lookup(stmt.expr.name)
+                    if st != t:
+                        raise ForgeError("struct copy type mismatch on big32")
+                    base = self.alloc_slot()
+                    for _ in range(len(fields) - 1):
+                        self.alloc_slot()
+                    self.env[-1][stmt.name] = (base, t)
+                    for k in range(len(fields)):
+                        r = self.alloc()
+                        self.emit(f"    lw {r}, {self.slot_off(sbase + k)}(s0)")
+                        self.emit(f"    sw {r}, {self.slot_off(base + k)}(s0)")
+                        self.free_reg(r)
+                    return
+                raise ForgeError(
+                    "struct variables on big32 come from literals or copies (v1)")
             r = self.gen_expr(stmt.expr)
             slot = self.alloc_slot()
             self.env[-1][stmt.name] = (slot, t)
@@ -304,7 +701,20 @@ class RVGen:
             self.free_reg(r)
             return
         if isinstance(stmt, A.Assign):
-            slot, _t = self.lookup(stmt.name)
+            slot, t = self.lookup(stmt.name)
+            if t in self.struct_layout:
+                if not isinstance(stmt.expr, A.Var):
+                    raise ForgeError(
+                        "struct assignment on big32 copies a struct variable (v1)")
+                sbase, st = self.lookup(stmt.expr.name)
+                if st != t:
+                    raise ForgeError("struct copy type mismatch on big32")
+                for k in range(len(self.struct_layout[t])):
+                    r = self.alloc()
+                    self.emit(f"    lw {r}, {self.slot_off(sbase + k)}(s0)")
+                    self.emit(f"    sw {r}, {self.slot_off(slot + k)}(s0)")
+                    self.free_reg(r)
+                return
             r = self.gen_expr(stmt.expr)
             self.emit(f"    sw {r}, {self.slot_off(slot)}(s0)")
             self.free_reg(r)
@@ -327,7 +737,23 @@ class RVGen:
                 self.free_reg(r)
             return
         if isinstance(stmt, A.FieldAssign):
-            raise ForgeError("structs are not supported on big32 (v1)")
+            fa = stmt.target
+            if not isinstance(fa.base, A.Var):
+                raise ForgeError("field assignment base must be a variable on big32")
+            base, t = self.lookup(fa.base.name)
+            if t not in self.struct_layout:
+                raise ForgeError("field assignment on a non-struct variable on big32")
+            fields = self.struct_layout[t]
+            idx = None
+            for k, (fname, _ft) in enumerate(fields):
+                if fname == fa.field:
+                    idx = k
+            if idx is None:
+                raise ForgeError(f"struct {t} has no field {fa.field}")
+            r = self.gen_expr(stmt.expr)
+            self.emit(f"    sw {r}, {self.slot_off(base + idx)}(s0)")
+            self.free_reg(r)
+            return
         if isinstance(stmt, A.Match):
             raise ForgeError("match/enums are not supported on big32 (v1)")
         if isinstance(stmt, A.Spawn):
@@ -525,7 +951,14 @@ class RVGen:
             self.emit(f"    li {r}, {v}")
             return r
         if isinstance(expr, A.FloatLit):
-            raise ForgeError("float is not supported on big32 (v1)")
+            # Soft-float v1: a float value IS its IEEE-754
+            # single-precision bit pattern in a register.
+            bits = struct.unpack("<I", struct.pack("<f", expr.value))[0]
+            if bits >= 0x80000000:
+                bits -= 0x100000000
+            r = self.alloc()
+            self.emit(f"    li {r}, {bits}")
+            return r
         if isinstance(expr, A.StrLit):
             r = self.alloc()
             self.emit(f"    li {r}, {self.str_addr(expr.value)}")
@@ -535,7 +968,11 @@ class RVGen:
             self.emit(f"    li {r}, {1 if expr.value else 0}")
             return r
         if isinstance(expr, A.Var):
-            slot, _t = self.lookup(expr.name)
+            slot, t = self.lookup(expr.name)
+            if t in self.struct_layout:
+                raise ForgeError(
+                    "struct values cannot be passed or returned on big32 (v1); "
+                    "use field access instead")
             r = self.alloc()
             self.emit(f"    lw {r}, {self.slot_off(slot)}(s0)")
             return r
@@ -544,8 +981,6 @@ class RVGen:
             if et in ("[?]", "int"):
                 raise ForgeError("array literal needs a known element type on big32")
             inner = et[1:-1]
-            if inner == "float":
-                raise ForgeError("float arrays are not supported on big32 (v1)")
             n = len(expr.elems)
             addr = self.static_addr(4 * (n + 1))
             ptr = self.alloc()
@@ -564,13 +999,22 @@ class RVGen:
             self.emit(f"    li {ptr}, {addr}")
             return ptr
         if isinstance(expr, A.StructLit):
-            raise ForgeError("structs are not supported on big32 (v1)")
+            raise ForgeError(
+                "struct literals on big32 appear in let statements only (v1)")
         if isinstance(expr, A.FieldAccess):
-            raise ForgeError("structs are not supported on big32 (v1)")
+            if not isinstance(expr.base, A.Var):
+                raise ForgeError("field access base must be a variable on big32")
+            base, t = self.lookup(expr.base.name)
+            if t not in self.struct_layout:
+                raise ForgeError("field access on a non-struct variable on big32")
+            for k, (fname, _ft) in enumerate(self.struct_layout[t]):
+                if fname == expr.field:
+                    r = self.alloc()
+                    self.emit(f"    lw {r}, {self.slot_off(base + k)}(s0)")
+                    return r
+            raise ForgeError(f"struct {t} has no field {expr.field}")
         if isinstance(expr, A.Index):
-            et = self.expr_type(expr)
-            if et == "float":
-                raise ForgeError("float arrays are not supported on big32 (v1)")
+            # Float elements load as bit patterns, same as ints.
             base = self.gen_expr(expr.base)
             idx = self.gen_expr(expr.index)
             addr = self.alloc()
@@ -582,13 +1026,21 @@ class RVGen:
             self.free_reg(idx)
             return addr
         if isinstance(expr, A.Cast):
-            if expr.target == "float":
-                raise ForgeError("float is not supported on big32 (v1)")
+            if expr.target == "float" or self.expr_type(expr.expr) == "float":
+                raise ForgeError(
+                    "int<->float casts are not supported on big32 (v1)")
             return self.gen_expr(expr.expr)
         if isinstance(expr, A.UnaryOp):
             r = self.gen_expr(expr.expr)
             if expr.op == "-":
-                self.emit(f"    sub {r}, zero, {r}")
+                if self.expr_type(expr.expr) == "float":
+                    # Flip the sign bit only.
+                    s = self.alloc()
+                    self.emit(f"    li {s}, -2147483648")
+                    self.emit(f"    xor {r}, {r}, {s}")
+                    self.free_reg(s)
+                else:
+                    self.emit(f"    sub {r}, zero, {r}")
             elif expr.op == "!":
                 self.emit(f"    xori {r}, {r}, 1")
             else:
@@ -623,6 +1075,39 @@ class RVGen:
         if lt == "str":
             raise ForgeError("string comparison/concatenation is not supported on big32 (v1)")
         op = expr.op
+        if lt == "float":
+            if op in ("/", "%", "<", ">", "<=", ">=", "&", "|", "^",
+                      "<<", ">>"):
+                raise ForgeError(
+                    f"float operator {op} is not supported on big32 (v1)")
+            if op in ("+", "-", "*"):
+                # Soft-float helper call. Spill every live
+                # temp except the operands (helpers use
+                # t/s registers freely; s0/sp/ra are
+                # untouched and the frame is s0-based).
+                saved = [r for r in self.live if r not in (left, right)]
+                if saved:
+                    self.emit(f"    addi sp, sp, -{4 * len(saved)}")
+                    for i, r in enumerate(saved):
+                        self.emit(f"    sw {r}, {4 * i}(sp)")
+                    for r in saved:
+                        self.live.remove(r)
+                self.emit(f"    mv a0, {left}")
+                self.emit(f"    mv a1, {right}")
+                helper = {"+": "forge_fadd", "-": "forge_fsub",
+                          "*": "forge_fmul"}[op]
+                self.emit(f"    jal ra, {helper}")
+                self.emit(f"    mv {left}, a0")
+                self.free_reg(right)
+                if saved:
+                    for i, r in enumerate(saved):
+                        self.emit(f"    lw {r}, {4 * i}(sp)")
+                    self.emit(f"    addi sp, sp, {4 * len(saved)}")
+                    for r in saved:
+                        self.live.append(r)
+                return left
+            # == / != fall through to the int compare
+            # below: bitwise equality on the patterns.
         if op == "+":
             self.emit(f"    add {left}, {left}, {right}")
         elif op == "-":

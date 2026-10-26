@@ -125,6 +125,142 @@ def main():
                    "test loss after ="):
         if r.returncode != 0 or needle not in r.stdout:
             failures.append(f"tgt_tinystories: missing {needle!r} in {r.stdout!r} err={r.stderr!r}")
+    # 0.6.0 ecosystem: new tensor ops (sigmoid/tanh/
+    # mse/maxpool) with gradient checks, import dedup,
+    # RNN/CNN/classical/iris/checkpoint/dev demos.
+    r = run_forge("run", "examples/tensor_ops2_demo.fg")
+    for needle in ("sigmoid max grad diff =", "tanh max grad diff =",
+                   "maxpool winner grad sum =", "tensor ops2 ok"):
+        if r.returncode != 0 or needle not in r.stdout:
+            failures.append(f"tensor_ops2_demo: missing {needle!r} in {r.stdout!r} err={r.stderr!r}")
+    r = run_forge("run", "examples/import_dedup_demo.fg")
+    for needle in ("dedup ok loss = 0.693147", "adam first = 0.99"):
+        if r.returncode != 0 or needle not in r.stdout:
+            failures.append(f"import_dedup_demo: missing {needle!r} in {r.stdout!r} err={r.stderr!r}")
+    r = run_forge("run", "examples/rnn_demo.fg")
+    for needle in ("rnn acc after = 1", "rnn ok"):
+        if r.returncode != 0 or needle not in r.stdout:
+            failures.append(f"rnn_demo: missing {needle!r} in {r.stdout!r} err={r.stderr!r}")
+    r = run_forge("run", "examples/cnn_demo.fg")
+    for needle in ("cnn acc after = 1", "cnn ok"):
+        if r.returncode != 0 or needle not in r.stdout:
+            failures.append(f"cnn_demo: missing {needle!r} in {r.stdout!r} err={r.stderr!r}")
+    r = run_forge("run", "examples/ml_classical_demo.fg")
+    for needle in ("kmeans purity = 1", "knn acc = 1", "logreg acc = 1",
+                   "classical ok"):
+        if r.returncode != 0 or needle not in r.stdout:
+            failures.append(f"ml_classical_demo: missing {needle!r} in {r.stdout!r} err={r.stderr!r}")
+    r = run_forge("run", "examples/iris_pipeline_demo.fg")
+    for needle in ("iris rows = 150 cols = 4", "iris test acc = 0.933333",
+                   "iris ok"):
+        if r.returncode != 0 or needle not in r.stdout:
+            failures.append(f"iris_pipeline_demo: missing {needle!r} in {r.stdout!r} err={r.stderr!r}")
+    r = run_forge("run", "examples/tensor_checkpoint_demo.fg")
+    for needle in ("ckpt saved = true", "ckpt loss diff = 0", "ckpt ok"):
+        if r.returncode != 0 or needle not in r.stdout:
+            failures.append(f"tensor_checkpoint_demo: missing {needle!r} in {r.stdout!r} err={r.stderr!r}")
+    r = run_forge("run", "examples/dev_demo.fg", "--",
+                  "--lr=0.05", "--epochs=40", "input.txt")
+    for needle in ("dev ok",):
+        if r.returncode != 0 or needle not in r.stdout:
+            failures.append(f"dev_demo: missing {needle!r} in {r.stdout!r} err={r.stderr!r}")
+    if "this info is filtered out" in r.stdout:
+        failures.append("dev_demo: logger failed to filter info")
+    # Fuzzer smoke: 5 fixed seeds, hermetic (temp dir
+    # only, no corpus writes). Longer runs are manual
+    # (see tools/fuzz.py); ~4 s per seed, so the suite
+    # keeps this small on purpose.
+    r = subprocess.run([sys.executable, "tools/fuzz.py",
+                        "--seeds", "5", "--start", "0"],
+                       capture_output=True, text=True, cwd=ROOT)
+    if r.returncode != 0 or "no failures" not in r.stdout:
+        failures.append(f"fuzz smoke failed: {r.stdout!r} {r.stderr!r}")
+    # Debugger: --debug must emit #line directives for
+    # BOTH the main file and an imported helper file.
+    c_path = os.path.join(ROOT, "dbg_demo_test.c")
+    bin_path = os.path.join(ROOT, "dbg_demo_test")
+    for p in (c_path, bin_path):
+        try:
+            os.unlink(p)
+        except FileNotFoundError:
+            pass
+    # 0.7.0: image loading (BMP + PPM agree) and the
+    # stacked-conv net (im2col grad check + training).
+    r = run_forge("run", "examples/image_demo.fg")
+    for needle in ("bmp px0 = 255 0 0", "bmp==ppm ? true", "image ok"):
+        if r.returncode != 0 or needle not in r.stdout:
+            failures.append(f"image_demo: missing {needle!r} in {r.stdout!r} err={r.stderr!r}")
+    r = run_forge("run", "examples/cnn_stacked_demo.fg")
+    for needle in ("im2col max grad diff =", "stacked acc after = 1",
+                   "stacked cnn ok"):
+        if r.returncode != 0 or needle not in r.stdout:
+            failures.append(f"cnn_stacked_demo: missing {needle!r} in {r.stdout!r} err={r.stderr!r}")
+    # 0.7.0: curriculum RNN (len-8 wall cracked by
+    # staging) and the self-hosting front-end proto.
+    r = run_forge("run", "examples/rnn_curriculum_demo.fg")
+    for needle in ("curriculum len8 = 1", "curriculum ok"):
+        if r.returncode != 0 or needle not in r.stdout:
+            failures.append(f"rnn_curriculum_demo: missing {needle!r} in {r.stdout!r} err={r.stderr!r}")
+    r = run_forge("run", "examples/selfhost_mini.fg")
+    for needle in ("selfhost result = 29", "selfhost ok"):
+        if r.returncode != 0 or needle not in r.stdout:
+            failures.append(f"selfhost_mini: missing {needle!r} in {r.stdout!r} err={r.stderr!r}")
+    # 0.7.0: big32 struct + soft-float demos must at
+    # least compile to hex (execution is verified
+    # manually against the big32 model + Verilog,
+    # which live outside this repo).
+    import tempfile
+    for demo in ("big32_struct_demo", "big32_float_demo"):
+        with tempfile.TemporaryDirectory() as td:
+            out = os.path.join(td, demo)
+            r = run_forge("build", f"examples/{demo}.fg",
+                          "--target", "big32", "-o", out)
+            if r.returncode != 0 or not os.path.exists(out + ".hex"):
+                failures.append(f"{demo} big32 build failed: {r.stdout!r} {r.stderr!r}")
+    # 0.7.0: WASM strings demo — build, run under
+    # node, read the stdout buffer, compare with the
+    # native run. Skipped only when node is absent.
+    import shutil
+    if shutil.which("node") is not None:
+        with tempfile.TemporaryDirectory() as td:
+            wasm_path = os.path.join(td, "wasm_strings.wasm")
+            r = run_forge("build", "examples/wasm_strings_demo.fg",
+                          "--target", "wasm", "-o", wasm_path)
+            if r.returncode != 0:
+                failures.append(f"wasm_strings build failed: {r.stdout!r} {r.stderr!r}")
+            else:
+                reader = (
+                    "import(\"node:fs\").then(async ({ readFileSync }) => {"
+                    " const { instance } = await WebAssembly.instantiate("
+                    "readFileSync(process.argv[1]), {});"
+                    " instance.exports.main();"
+                    " const mem = new Uint8Array(instance.exports.memory.buffer);"
+                    " const len = new DataView(mem.buffer).getUint32(0, true);"
+                    " process.stdout.write(new TextDecoder().decode("
+                    "mem.subarray(8, 8 + len))); });")
+                r2 = subprocess.run(["node", "-e", reader, wasm_path],
+                                    capture_output=True, text=True, cwd=ROOT)
+                r3 = run_forge("run", "examples/wasm_strings_demo.fg")
+                if r2.returncode != 0 or r2.stdout != r3.stdout:
+                    failures.append(f"wasm_strings output mismatch: wasm={r2.stdout!r} "
+                                    f"native={r3.stdout!r} err={r2.stderr!r}")
+    r = run_forge("build", "examples/dbg_demo.fg", "--debug",
+                  "--keep-c", c_path, "-o", bin_path)
+    if r.returncode != 0:
+        failures.append(f"dbg build failed: {r.stdout!r} {r.stderr!r}")
+    else:
+        c_text = open(c_path, encoding="utf-8").read()
+        for needle in ('#line', "dbg_demo.fg", "dbg_helper.fg"):
+            if needle not in c_text:
+                failures.append(f"dbg_demo.c missing {needle!r}")
+        r2 = subprocess.run([bin_path], capture_output=True, text=True)
+        if r2.returncode != 0 or "dbg = 42" not in r2.stdout:
+            failures.append(f"dbg binary failed: {r2.stdout!r} {r2.stderr!r}")
+    for p in (c_path, bin_path):
+        try:
+            os.unlink(p)
+        except FileNotFoundError:
+            pass
     # CUDA simulation (Python mirror of the .cu kernels).
     r = subprocess.run([sys.executable, "tools/simulate_cuda.py"],
                        capture_output=True, text=True, cwd=ROOT)

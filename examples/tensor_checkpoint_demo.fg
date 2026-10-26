@@ -1,0 +1,55 @@
+// Tensor checkpoint demo (0.6.0): train one step of
+// a tiny tensor model, save its params with nn's
+// checkpoint_save, load them back, and show the loss
+// is unchanged. This program imports nn.fg AND
+// tensor_autograd.fg together — impossible before
+// 0.6.0 import dedup (duplicate struct 'Tensor').
+// Uses /tmp so it never pollutes the repo.
+import "nn.fg";
+import "tensor_autograd.fg";
+
+fn main() -> int {
+    let xdata: [float] = [1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0];
+    let tg: [int] = [0, 1, 1, 0];
+    let mut s: TAg = t_leaf(ttape_new(), [2, 2], [0.3, -0.2, 0.1, 0.4]);
+    let w: int = s.last;
+    s = t_leaf(s.tape, [2], [0.0, 0.0]);
+    let b: int = s.last;
+    s = t_leaf(s.tape, [4, 2], xdata);
+    let xl: int = s.last;
+    s = t_matmul(s, xl, w);
+    let lg: int = s.last;
+    s = t_add_bias(s, lg, b);
+    let logits: int = s.last;
+    s = t_cross_entropy(s, logits, tg);
+    let loss: int = s.last;
+    let loss0: float = s.tape.vals[s.tape.voff[loss]];
+    println("ckpt loss before =", loss0);
+    let params: [float] = [0.3, -0.2, 0.1, 0.4, 0.0, 0.0];
+    let ok: bool = checkpoint_save("/tmp/tckpt_demo.txt", params);
+    println("ckpt saved =", ok);
+    let back: [float] = checkpoint_load("/tmp/tckpt_demo.txt");
+    println("ckpt len =", len(back), "first =", back[0]);
+    // Rebuild with the loaded params and compare loss.
+    let mut t2: TAg = t_leaf(ttape_new(), [2, 2], [back[0], back[1], back[2], back[3]]);
+    let w2: int = t2.last;
+    t2 = t_leaf(t2.tape, [2], [back[4], back[5]]);
+    let b2: int = t2.last;
+    t2 = t_leaf(t2.tape, [4, 2], xdata);
+    let xl2: int = t2.last;
+    t2 = t_matmul(t2, xl2, w2);
+    let lg2: int = t2.last;
+    t2 = t_add_bias(t2, lg2, b2);
+    let logits2: int = t2.last;
+    t2 = t_cross_entropy(t2, logits2, tg);
+    let loss2: int = t2.last;
+    let loss1: float = t2.tape.vals[t2.tape.voff[loss2]];
+    let mut diff: float = loss0 - loss1;
+    if diff < 0.0 { diff = -diff; }
+    println("ckpt loss diff =", diff);
+    if diff > 0.0001 {
+        fail("checkpoint round-trip changed the loss");
+    }
+    println("ckpt ok");
+    return 0;
+}

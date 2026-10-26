@@ -1,0 +1,160 @@
+// RNN curriculum demo (0.7.0): the length-8
+// first-bit task that stalls at chance from random
+// init (see rnn_demo.fg's honest limit) is attacked
+// the way curricula attack it: train length 3,
+// transfer the weights to length 5, then to
+// length 8. Same LSTM (hid 8), same Adam, same
+// forget-bias init. Each stage is evaluated on
+// HELD-OUT bitstreams, not the training ones.
+// Self-checks: length-8 held-out accuracy >= 0.9.
+import "nn.fg";
+import "rnn.fg";
+
+fn dlcg(seed: int) -> int {
+    return (1103515245 * seed + 12345) % 2147483647;
+}
+
+fn seq_bits(seed: int, n: int, len_: int) -> [int] {
+    let mut out: [int] = [];
+    let mut s: int = seed;
+    let mut i: int = 0;
+    while i < n * len_ {
+        s = dlcg(s);
+        push(out, s % 2);
+        i = i + 1;
+    }
+    return out;
+}
+
+fn slice_f(a: [float], off: int, n: int) -> [float] {
+    let mut out: [float] = [];
+    let mut i: int = 0;
+    while i < n { push(out, a[off + i]); i = i + 1; }
+    return out;
+}
+
+fn forward_len(params: [float], bits: [int], off: int, len_: int) -> TAg {
+    let hid: int = 8;
+    let mut s: TAg = t_leaf(ttape_new(), [10, 32], slice_f(params, 0, 320));
+    let w: int = s.last;
+    s = t_leaf(s.tape, [32], slice_f(params, 320, 32));
+    let b: int = s.last;
+    s = t_leaf(s.tape, [8, 2], slice_f(params, 352, 16));
+    let wh: int = s.last;
+    s = t_leaf(s.tape, [2], slice_f(params, 368, 2));
+    let bh: int = s.last;
+    let mut xdata: [float] = [];
+    let mut t: int = 0;
+    while t < len_ {
+        if bits[off + t] == 0 {
+            push(xdata, 1.0);
+            push(xdata, 0.0);
+        } else {
+            push(xdata, 0.0);
+            push(xdata, 1.0);
+        }
+        t = t + 1;
+    }
+    s = t_leaf(s.tape, [len_, 2], xdata);
+    let xseq: int = s.last;
+    s = t_leaf(s.tape, [1, 8], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+    let h: int = s.last;
+    s = t_leaf(s.tape, [1, 8], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+    let c: int = s.last;
+    let mut out: [int] = [0, 0];
+    let mut hh: int = h;
+    let mut cc: int = c;
+    t = 0;
+    while t < len_ {
+        s = t_gather(s, xseq, [t]);
+        let xt: int = s.last;
+        s = lstm_cell(s, xt, hh, cc, w, b, hid, out);
+        hh = out[0];
+        cc = out[1];
+        t = t + 1;
+    }
+    s = t_matmul(s, hh, wh);
+    let lg: int = s.last;
+    s = t_add_bias(s, lg, bh);
+    return s;
+}
+
+fn eval_len(params: [float], bits: [int], len_: int) -> float {
+    let mut correct: int = 0;
+    let mut i: int = 0;
+    while i < 64 {
+        let tt: TAg = forward_len(params, bits, i * len_, len_);
+        let vals: [float] = tvals_of(tt.tape, tt.last);
+        let mut pr: int = 0;
+        if vals[1] > vals[0] { pr = 1; }
+        if pr == bits[i * len_] { correct = correct + 1; }
+        i = i + 1;
+    }
+    return correct as float / 64.0;
+}
+
+fn train_stage(st0: OptimState, bits: [int], len_: int, epochs: int) -> OptimState {
+    let mut st: OptimState = st0;
+    let mut epoch: int = 0;
+    while epoch < epochs {
+        let mut i2: int = 0;
+        while i2 < 64 {
+            let mut tt: TAg = forward_len(st.params, bits, i2 * len_, len_);
+            let logits: int = tt.last;
+            tt = t_cross_entropy(tt, logits, [bits[i2 * len_]]);
+            let loss: int = tt.last;
+            let grads: [float] = t_backward(tt.tape, loss);
+            let gw: [float] = t_grad_of(tt.tape, grads, 0);
+            let gb: [float] = t_grad_of(tt.tape, grads, 1);
+            let gwh: [float] = t_grad_of(tt.tape, grads, 2);
+            let gbh: [float] = t_grad_of(tt.tape, grads, 3);
+            let mut all: [float] = [];
+            let mut j: int = 0;
+            while j < len(gw) { push(all, gw[j]); j = j + 1; }
+            j = 0;
+            while j < len(gb) { push(all, gb[j]); j = j + 1; }
+            j = 0;
+            while j < len(gwh) { push(all, gwh[j]); j = j + 1; }
+            j = 0;
+            while j < len(gbh) { push(all, gbh[j]); j = j + 1; }
+            j = 0;
+            while j < len(all) {
+                if all[j] > 5.0 { all[j] = 5.0; }
+                if all[j] < -5.0 { all[j] = -5.0; }
+                j = j + 1;
+            }
+            st = adam_step(st, all, 0.05, 0.9, 0.999, 0.00000001);
+            i2 = i2 + 1;
+        }
+        epoch = epoch + 1;
+    }
+    return st;
+}
+
+fn main() -> int {
+    let mut params: [float] = rnn_init(352, 777);
+    let hp: [float] = rnn_init(18, 888);
+    let mut i: int = 0;
+    while i < 18 {
+        push(params, hp[i]);
+        i = i + 1;
+    }
+    i = 0;
+    while i < 8 {
+        params[320 + 8 + i] = 1.0;
+        i = i + 1;
+    }
+    let mut st: OptimState = optim_new(params);
+    st = train_stage(st, seq_bits(999, 64, 3), 3, 30);
+    println("curriculum len3 =", eval_len(st.params, seq_bits(5555, 64, 3), 3));
+    st = train_stage(st, seq_bits(999, 64, 5), 5, 30);
+    println("curriculum len5 =", eval_len(st.params, seq_bits(5555, 64, 5), 5));
+    st = train_stage(st, seq_bits(999, 64, 8), 8, 60);
+    let acc8: float = eval_len(st.params, seq_bits(5555, 64, 8), 8);
+    println("curriculum len8 =", acc8);
+    if acc8 < 0.9 {
+        fail("curriculum demo: length-8 accuracy below 0.9");
+    }
+    println("curriculum ok");
+    return 0;
+}

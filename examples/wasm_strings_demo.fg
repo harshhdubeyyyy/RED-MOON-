@@ -1,0 +1,39 @@
+// WASM strings + arrays demo (0.7.0): runs on the
+// native backend AND the WASM backend. On WASM,
+// println output goes to the exported stdout buffer
+// (see docs/WASM_STRINGS.md); main returns the sum,
+// so the stock runner prints 23.
+// Expected stdout buffer:
+//   hello jal pari
+//   len = 14
+//   xs len = 5
+//   xs[2] = 4
+//   after push len = 6
+//   xs[5] = 9
+//   lily
+//   true
+//   sum = 23
+fn main() -> int {
+    let greeting: str = "hello";
+    let name: str = "jal pari";
+    let full: str = greeting + " " + name;
+    println(full);
+    println("len =", len(full));
+    let mut xs: [int] = [3, 1, 4, 1, 5];
+    println("xs len =", len(xs));
+    println("xs[2] =", xs[2]);
+    push(xs, 9);
+    println("after push len =", len(xs));
+    println("xs[5] =", xs[5]);
+    let words: [str] = ["lily", "sun", "moon"];
+    println(words[0]);
+    println(words[1] == "sun");
+    let mut total: int = 0;
+    let mut i: int = 0;
+    while i < len(xs) {
+        total = total + xs[i];
+        i = i + 1;
+    }
+    println("sum =", total);
+    return total;
+}

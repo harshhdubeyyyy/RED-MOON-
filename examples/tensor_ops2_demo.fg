@@ -1,0 +1,119 @@
+// Gradient checks for the 0.6.0 tensor ops: sigmoid (18),
+// tanh (19), mse_loss (20), maxpool2d (17). Analytic
+// gradients are compared against central finite
+// differences (sigmoid/tanh/mse) or exact argmax routing
+// (maxpool). Self-fails if any check is off.
+import "tensor_autograd.fg";
+
+fn sig_fwd(x: [float], targets: [float]) -> float {
+    let mut loss: float = 0.0;
+    let mut j: int = 0;
+    while j < len(x) {
+        let y: float = 1.0 / (1.0 + exp(-x[j]));
+        let d: float = y - targets[j];
+        loss = loss + d * d;
+        j = j + 1;
+    }
+    return loss / len(x) as float;
+}
+
+fn tanh_fwd(x: [float], targets: [float]) -> float {
+    let mut loss: float = 0.0;
+    let mut j: int = 0;
+    while j < len(x) {
+        let e: float = exp(2.0 * x[j]);
+        let y: float = (e - 1.0) / (e + 1.0);
+        let d: float = y - targets[j];
+        loss = loss + d * d;
+        j = j + 1;
+    }
+    return loss / len(x) as float;
+}
+
+fn pert(data: [float], idx: int, delta: float) -> [float] {
+    let mut out: [float] = [];
+    let mut i: int = 0;
+    while i < len(data) {
+        if i == idx {
+            push(out, data[i] + delta);
+        } else {
+            push(out, data[i]);
+        }
+        i = i + 1;
+    }
+    return out;
+}
+
+fn main() -> int {
+    // --- sigmoid + mse ---
+    let xdata: [float] = [-1.0, 0.0, 2.0];
+    let tg: [float] = [0.2, 0.5, 0.9];
+    let mut s: TAg = t_leaf(ttape_new(), [3], xdata);
+    let x: int = s.last;
+    s = t_sigmoid(s, x);
+    let sg: int = s.last;
+    s = t_mse_loss(s, sg, tg);
+    let loss: int = s.last;
+    let grads: [float] = t_backward(s.tape, loss);
+    let ga: [float] = t_grad_of(s.tape, grads, x);
+    let mut maxdiff: float = 0.0;
+    let mut j: int = 0;
+    while j < 3 {
+        let num: float = (sig_fwd(pert(xdata, j, 0.00001), tg) - sig_fwd(pert(xdata, j, -0.00001), tg)) / 0.00002;
+        let mut d: float = ga[j] - num;
+        if d < 0.0 { d = -d; }
+        if d > maxdiff { maxdiff = d; }
+        j = j + 1;
+    }
+    println("sigmoid max grad diff =", maxdiff);
+    // --- tanh + mse ---
+    let mut t: TAg = t_leaf(ttape_new(), [3], xdata);
+    let tx: int = t.last;
+    t = t_tanh(t, tx);
+    let th: int = t.last;
+    t = t_mse_loss(t, th, tg);
+    let tloss: int = t.last;
+    let tgrads: [float] = t_backward(t.tape, tloss);
+    let tga: [float] = t_grad_of(t.tape, tgrads, tx);
+    let mut tmax: float = 0.0;
+    j = 0;
+    while j < 3 {
+        let num: float = (tanh_fwd(pert(xdata, j, 0.00001), tg) - tanh_fwd(pert(xdata, j, -0.00001), tg)) / 0.00002;
+        let mut d: float = tga[j] - num;
+        if d < 0.0 { d = -d; }
+        if d > tmax { tmax = d; }
+        j = j + 1;
+    }
+    println("tanh max grad diff =", tmax);
+    // --- maxpool routing: 4x4 input, winners at
+    // (0,1)=5, (0,3)=9, (2,0)=7, (3,2)=8 ---
+    let img: [float] = [1.0, 5.0, 2.0, 9.0, 0.0, 3.0, 4.0, 1.0, 7.0, 2.0, 6.0, 0.0, 1.0, 4.0, 8.0, 3.0];
+    let mtg: [float] = [4.0, 8.0, 6.0, 7.0];
+    let mut m: TAg = t_leaf(ttape_new(), [4, 4], img);
+    let mi: int = m.last;
+    m = t_maxpool2d(m, mi);
+    let mp: int = m.last;
+    m = t_reshape(m, mp, [4]);
+    let mf: int = m.last;
+    m = t_mse_loss(m, mf, mtg);
+    let mloss: int = m.last;
+    let mgrads: [float] = t_backward(m.tape, mloss);
+    let mga: [float] = t_grad_of(m.tape, mgrads, mi);
+    // winners: indices 1, 3, 8, 14. All other grads 0.
+    let mut winsum: float = mga[1] + mga[3] + mga[8] + mga[14];
+    let mut othersum: float = 0.0;
+    j = 0;
+    while j < 16 {
+        if j != 1 && j != 3 && j != 8 && j != 14 {
+            othersum = othersum + mga[j];
+        }
+        j = j + 1;
+    }
+    println("maxpool winner grad sum =", winsum);
+    println("maxpool other grad sum =", othersum);
+    if maxdiff > 0.01 || tmax > 0.01 || othersum > 0.000001 || othersum < -0.000001 {
+        fail("tensor ops2 gradient check failed");
+    }
+    println("tensor ops2 ok");
+    return 0;
+}

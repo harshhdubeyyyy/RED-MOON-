@@ -1,0 +1,218 @@
+// Stacked-conv demo (0.7.0): proves conv layers
+// now stack. Part 1 checks t_im2col's backward
+// rule against finite differences. Part 2 trains
+// a TWO-conv network on the cross-vs-border task:
+// conv1 3x3 x 2 -> relu -> conv2 3x3 x 2 over both
+// input channels -> relu -> linear -> CE.
+// Learning rate is 0.01, not the 0.05 the single-conv
+// demo uses: at 0.05 this deeper net oscillates
+// between the alternating classes and freezes at
+// chance (diagnosed 26 Oct 2026: gradients exact,
+// single-image overfit to loss 0, full training
+// frozen at ln 2). At 0.01 it hits 1.0 by epoch 10.
+// Self-checks: grad diffs < 0.01, test acc >= 0.85.
+import "nn.fg";
+import "cnn.fg";
+
+fn clcg(seed: int) -> int {
+    return (1103515245 * seed + 12345) % 2147483647;
+}
+
+fn slice_f(a: [float], off: int, n: int) -> [float] {
+    let mut out: [float] = [];
+    let mut i: int = 0;
+    while i < n { push(out, a[off + i]); i = i + 1; }
+    return out;
+}
+
+fn im2col_loss(vals: [float]) -> float {
+    let mut s: TAg = t_leaf(ttape_new(), [4, 4], vals);
+    let x: int = s.last;
+    s = t_im2col(s, x, 2, 2);
+    let im: int = s.last;
+    let mut tg: [float] = [];
+    let mut i: int = 0;
+    while i < 36 { push(tg, 0.0); i = i + 1; }
+    s = t_mse_loss(s, im, tg);
+    let loss: int = s.last;
+    return s.tape.vals[s.tape.voff[loss]];
+}
+
+fn make_img(cls: int, seed: int) -> [float] {
+    let mut img: [float] = [];
+    let mut r: int = 0;
+    while r < 8 {
+        let mut c: int = 0;
+        while c < 8 {
+            let mut v: float = 0.0;
+            if cls == 0 {
+                if r == c || r + c == 7 { v = 1.0; }
+            } else {
+                if r == 0 || r == 7 || c == 0 || c == 7 { v = 1.0; }
+            }
+            push(img, v);
+            c = c + 1;
+        }
+        r = r + 1;
+    }
+    let mut s: int = seed;
+    let mut i: int = 0;
+    while i < 64 {
+        s = clcg(s);
+        if s % 8 == 0 {
+            if img[i] == 0.0 { img[i] = 1.0; } else { img[i] = 0.0; }
+        }
+        i = i + 1;
+    }
+    return img;
+}
+
+// Params: W1 [9,2] @0, b1 [2] @18, W2 [18,2] @20
+// (2 input channels x 3x3, 2 output channels),
+// b2 [2] @56, Wh [32,2] @58, bh [2] @122 (124).
+// Conv2 is a STANDARD multi-channel conv: each
+// filter map is im2col'd separately, the patch
+// matrices are concatenated to [16,18], and one
+// matmul sums over both input channels.
+fn forward_img(params: [float], img: [float]) -> TAg {
+    let mut s: TAg = t_leaf(ttape_new(), [9, 2], slice_f(params, 0, 18));
+    let w1: int = s.last;
+    s = t_leaf(s.tape, [2], slice_f(params, 18, 2));
+    let b1: int = s.last;
+    s = t_leaf(s.tape, [18, 2], slice_f(params, 20, 36));
+    let w2: int = s.last;
+    s = t_leaf(s.tape, [2], slice_f(params, 56, 2));
+    let b2: int = s.last;
+    s = t_leaf(s.tape, [32, 2], slice_f(params, 58, 64));
+    let wh: int = s.last;
+    s = t_leaf(s.tape, [2], slice_f(params, 122, 2));
+    let bh: int = s.last;
+    s = t_leaf(s.tape, [8, 8], img);
+    let x: int = s.last;
+    s = cnn_conv2d_tape(s, x, 3, 3, w1, b1);
+    let c1: int = s.last;
+    s = t_relu(s, c1);
+    let r1: int = s.last;
+    // Per-filter im2col, concatenated over channels.
+    let mut patches: int = -1;
+    let mut f: int = 0;
+    while f < 2 {
+        s = t_col_slice(s, r1, f, 1);
+        let col: int = s.last;
+        s = t_reshape(s, col, [6, 6]);
+        let sq: int = s.last;
+        s = t_im2col(s, sq, 3, 3);
+        let im: int = s.last;
+        if f == 0 {
+            patches = im;
+        } else {
+            s = t_concat_cols(s, patches, im);
+            patches = s.last;
+        }
+        f = f + 1;
+    }
+    s = t_matmul(s, patches, w2);
+    let c2: int = s.last;
+    s = t_add_bias(s, c2, b2);
+    let ab: int = s.last;
+    s = t_relu(s, ab);
+    let r2: int = s.last;
+    s = t_reshape(s, r2, [1, 32]);
+    let fl: int = s.last;
+    s = t_matmul(s, fl, wh);
+    let lg: int = s.last;
+    s = t_add_bias(s, lg, bh);
+    return s;
+}
+
+fn eval_set(params: [float], n: int, seed0: int) -> float {
+    let mut correct: int = 0;
+    let mut i: int = 0;
+    while i < n {
+        let cls: int = i % 2;
+        let img: [float] = make_img(cls, seed0 + i * 131);
+        let tt: TAg = forward_img(params, img);
+        let vals: [float] = tvals_of(tt.tape, tt.last);
+        let mut pr: int = 0;
+        if vals[1] > vals[0] { pr = 1; }
+        if pr == cls { correct = correct + 1; }
+        i = i + 1;
+    }
+    return correct as float / n as float;
+}
+
+fn main() -> int {
+    // Part 1: im2col gradient check on a 4x4 input.
+    let mut vals: [float] = [];
+    let mut s0: int = 7;
+    let mut i: int = 0;
+    while i < 16 {
+        s0 = clcg(s0);
+        push(vals, (s0 % 100) as float / 100.0);
+        i = i + 1;
+    }
+    let mut s: TAg = t_leaf(ttape_new(), [4, 4], vals);
+    let x: int = s.last;
+    s = t_im2col(s, x, 2, 2);
+    let im: int = s.last;
+    let mut tg: [float] = [];
+    i = 0;
+    while i < 36 { push(tg, 0.0); i = i + 1; }
+    s = t_mse_loss(s, im, tg);
+    let loss: int = s.last;
+    let grads: [float] = t_backward(s.tape, loss);
+    let ga: [float] = t_grad_of(s.tape, grads, x);
+    let mut maxdiff: float = 0.0;
+    let pix: [int] = [0, 5, 10, 15];
+    for p in pix {
+        let mut vp: [float] = [];
+        let mut j: int = 0;
+        while j < 16 { push(vp, vals[j]); j = j + 1; }
+        vp[p] = vp[p] + 0.00001;
+        let lp: float = im2col_loss(vp);
+        let lm: float = im2col_loss(vals);
+        let num: float = (lp - lm) / 0.00001;
+        let mut d: float = ga[p] - num;
+        if d < 0.0 { d = -d; }
+        if d > maxdiff { maxdiff = d; }
+    }
+    println("im2col max grad diff =", maxdiff);
+    if maxdiff > 0.01 {
+        fail("im2col gradient check failed");
+    }
+    // Part 2: stacked-conv training.
+    let mut params: [float] = cnn_init(124, 4242);
+    println("stacked acc before =", eval_set(params, 20, 9000));
+    let mut st: OptimState = optim_new(params);
+    let mut epoch: int = 0;
+    while epoch < 30 {
+        let mut k: int = 0;
+        while k < 40 {
+            let cls: int = k % 2;
+            let img: [float] = make_img(cls, 1000 + k * 131);
+            let mut tt: TAg = forward_img(st.params, img);
+            let logits: int = tt.last;
+            tt = t_cross_entropy(tt, logits, [cls]);
+            let l2: int = tt.last;
+            let g2: [float] = t_backward(tt.tape, l2);
+            let mut all: [float] = [];
+            let mut q: int = 0;
+            while q < 6 {
+                let gq: [float] = t_grad_of(tt.tape, g2, q);
+                let mut j: int = 0;
+                while j < len(gq) { push(all, gq[j]); j = j + 1; }
+                q = q + 1;
+            }
+            st = adam_step(st, all, 0.01, 0.9, 0.999, 0.00000001);
+            k = k + 1;
+        }
+        epoch = epoch + 1;
+    }
+    let acc: float = eval_set(st.params, 20, 9000);
+    println("stacked acc after =", acc);
+    if acc < 0.85 {
+        fail("stacked cnn demo: accuracy below 0.85");
+    }
+    println("stacked cnn ok");
+    return 0;
+}

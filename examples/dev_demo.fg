@@ -1,0 +1,53 @@
+// Developer libraries demo (0.6.0): test helpers,
+// logging, CLI parsing and collections, exercised
+// together. Run with: forge.py run dev_demo.fg
+// --lr=0.05 --epochs=40 input.txt
+// (options use the = form here so the bare value
+// "40" is not mistaken for a positional —
+// cli_positional counts every non-flag token, and
+// that simple rule is documented in cli.fg.)
+import "test.fg";
+import "log.fg";
+import "cli.fg";
+import "collections.fg";
+
+fn main() -> int {
+    let mut fails: int = 0;
+    fails = fails + check_eq_int("stack push/pop", 1, 1);
+    let mut st: IntStack = stack_new();
+    st = stack_push(st, 10);
+    st = stack_push(st, 20);
+    fails = fails + check_eq_int("stack top", stack_top(st), 20);
+    fails = fails + check_eq_int("stack len", stack_len(st), 2);
+    st = stack_pop(st);
+    fails = fails + check_eq_int("stack after pop", stack_top(st), 10);
+    let mut s: IntSet = set_new();
+    s = set_add(s, 5);
+    s = set_add(s, 5);
+    s = set_add(s, 7);
+    fails = fails + check_eq_int("set dedup len", set_len(s), 2);
+    fails = fails + check("set has", set_has(s, 7));
+    fails = fails + check("set missing", set_has(s, 9) == false);
+    let mut ss: StrSet = strset_new();
+    ss = strset_add(ss, "lily");
+    ss = strset_add(ss, "lily");
+    fails = fails + check("strset has", strset_has(ss, "lily"));
+    fails = fails + check_close("close float", 0.3000001, 0.3, 0.00001);
+    let a: [str] = args();
+    fails = fails + check("cli has lr", cli_has(a, "lr"));
+    fails = fails + check_close("cli lr value", cli_opt_float(a, "lr", 0.0), 0.05, 0.000001);
+    fails = fails + check_eq_str("cli positional", cli_positional(a, 0), "input.txt");
+    let lg: Logger = logger_new(2);
+    let n: int = logger_log(lg, 1, "this info is filtered out");
+    fails = fails + check_eq_int("logger filtered", n, 0);
+    let n2: int = logger_log(lg, 3, "this error shows");
+    fails = fails + check_eq_int("logger shown", n2, 0);
+    let li: int = log_info("dev demo finished");
+    fails = fails + check_eq_int("log_info returns 0", li, 0);
+    if fails > 0 {
+        println("dev fails =", fails);
+        fail("dev demo failed");
+    }
+    println("dev ok");
+    return 0;
+}

@@ -14,16 +14,39 @@ from . import ast_nodes as A
 
 
 def load_program(path, seen=None):
-    """Parse a file and recursively resolve its imports into one Program."""
+    """Parse a file and recursively resolve its imports into one Program.
+
+    `seen` is a true visited set, not just the current path:
+    a file already included through another import branch is
+    skipped instead of included twice. Before this change the
+    set was cleared on return (`seen.remove`), so diamond
+    imports (nn.fg + tensor_autograd.fg both pulling in
+    tensor.fg) duplicated every struct and function and
+    failed with "duplicate struct 'Tensor'". That forced
+    every library to avoid shared imports and made libraries
+    uncombinable — the single biggest ecosystem blocker.
+    Circular imports now resolve to an empty contribution
+    for the repeated file; the checker's duplicate-name
+    errors still catch two DIFFERENT files defining the
+    same name, which is a real conflict, not dedup's job.
+    """
     if seen is None:
         seen = set()
     real = os.path.realpath(path)
     if real in seen:
-        raise ForgeError(f"circular import: {path}")
+        return A.Program([], [], [], [])
     seen.add(real)
     with open(path, "r", encoding="utf-8") as f:
         source = f.read()
     prog = parse(source)
+    # Stamp this file's own functions with their source
+    # file (imports are merged below, after stamping,
+    # so each function keeps its own file). This is
+    # what makes --debug #line directives correct
+    # across files instead of misattributing stdlib
+    # code to the main file.
+    for fn in prog.funcs:
+        fn.file = real
     base = os.path.dirname(real)
     all_funcs = list(prog.funcs)
     all_structs = list(prog.structs or [])
@@ -42,7 +65,6 @@ def load_program(path, seen=None):
         all_funcs.extend(sub.funcs)
         all_structs.extend(sub.structs or [])
         all_enums.extend(sub.enums or [])
-    seen.remove(real)
     return A.Program([], all_funcs, all_structs, all_enums)
 
 
@@ -53,11 +75,11 @@ def compile_source(source, mode="safe"):
     return generate(program, types, mode=mode), program
 
 
-def compile_file(path, mode="safe", require_main=True):
+def compile_file(path, mode="safe", require_main=True, debug=False):
     program = load_program(path)
     check(program, require_main=require_main)
     types = infer_types(program)
-    return generate(program, types, mode=mode), program
+    return generate(program, types, mode=mode, debug=debug), program
 
 
 def build_shared(source_path, output_path, mode="safe"):
@@ -111,8 +133,8 @@ def _cc_flags(mode):
     return ["cc", "-O2", "-std=gnu11", "-Wall", "-Wextra", "-Wno-unused-function", "-pthread"]
 
 
-def build(source_path, output_path, mode="safe", keep_c=None):
-    c_source, _ = compile_file(source_path, mode=mode)
+def build(source_path, output_path, mode="safe", keep_c=None, debug=False):
+    c_source, _ = compile_file(source_path, mode=mode, debug=debug)
     if keep_c:
         with open(keep_c, "w", encoding="utf-8") as f:
             f.write(c_source)
@@ -127,10 +149,11 @@ def build(source_path, output_path, mode="safe", keep_c=None):
         # HTTPS needs OpenSSL; if the machine lacks libssl, retry
         # without it (programs that never call http_get still link,
         # because the unused SSL helper is optimised away).
-        result = subprocess.run(_cc_flags(mode) + ["-o", output_path, c_path, "-lm", "-lssl", "-lcrypto"],
+        flags = _cc_flags(mode) + (["-g"] if debug else [])
+        result = subprocess.run(flags + ["-o", output_path, c_path, "-lm", "-lssl", "-lcrypto"],
                                 capture_output=True, text=True)
         if result.returncode != 0 and "cannot find -lssl" in result.stderr:
-            result = subprocess.run(_cc_flags(mode) + ["-o", output_path, c_path, "-lm"],
+            result = subprocess.run(flags + ["-o", output_path, c_path, "-lm"],
                                     capture_output=True, text=True)
         if result.returncode != 0:
             raise ForgeError(f"C compiler failed:\n{result.stderr}")
