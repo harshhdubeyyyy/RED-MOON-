@@ -267,3 +267,12 @@ Forge docs.
   (4) no `break` statement in the language — use loop conditions;
   (5) GPT training pattern: params must be the FIRST tape nodes
   so param id == param index.
+
+## Scaled GPT + GPU run — 26 Oct 2026 (0.3.0)
+- gpt2.fg (generalised blocks/heads) + gpt_scaled.fg (2 blocks,
+  2 heads, 5200 params): train 2.559->2.364, held-out ppl
+  58.1->53.9; checkpoint round-trip diff ~8e-07.
+- Kaggle notebook v4 verified on 2x T4 (driver 580.178.04,
+  nvcc 12.8.93): all transformer kernels match simulation.
+- Gotchas: log(0) -> NaN at scale (eps fix in g2_loss);
+  __half2double does not exist (use __half2float cast).

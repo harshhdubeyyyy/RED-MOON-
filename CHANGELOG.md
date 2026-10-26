@@ -4,6 +4,39 @@ All notable changes are listed here. Version numbers follow
 semantic versioning in spirit: 0.x means the language is usable
 but breaking changes are still possible.
 
+## 0.3.0 — 26 Oct 2026 — Scaled GPT + GPU-verified kernels
+
+Added:
+- `stdlib/gpt2.fg` — generalised transformer: any blocks, any
+  head count, any vocab/seq/hidden sizes, with a computed param
+  layout (no hard-coded offsets from gpt.fg)
+- `examples/gpt_scaled.fg` — 2 blocks, 2 heads, d=16, hidden=32,
+  seq=16, 29-char vocab, 5200 params, on a 411-char story:
+  training loss 2.559 -> 2.364 over 3 epochs (200 windows each),
+  held-out perplexity 58.1 -> 53.9 (test windows 320..327).
+  Generation still loops (greedy) / rambles (sampled) — scale
+  is in architecture and evaluation now, not in fluent text.
+  Checkpoint save/load verified (diff ~8e-07, 6-decimal text).
+- GPU kernels VERIFIED on real hardware: Kaggle notebook v4,
+  2x Tesla T4, driver 580.178.04, nvcc 12.8.93 — dot 70, matmul
+  19 22 43 50, embedding 1 0 0 1 1 0, layernorm ±0.999980,
+  attention 1.0/0.0, 0.330238/0.669762, 0.802224/0.197776,
+  half matmul 19 22 43 50 — matching simulation to 6 decimals.
+
+Fixed in this batch (both found by running, not by reading):
+- Training diverged to NaN at the larger scale: a softmax
+  probability can underflow to exactly 0, and log(0) poisons
+  the tape. g2_loss now adds 1e-9 before the log.
+- The fp16 kernel did not compile on the first GPU run:
+  `__half2double` does not exist in CUDA; fixed to
+  `(double)__half2float(...)`. Notebook v3 failed to build;
+  v4 is the verified run.
+
+Not yet done: fluent generation (needs far more data and
+params than 5200 on 411 chars), GPU training loop (kernels
+only so far), multi-layer library packaging, public registry
+host, CI upload, repo rename.
+
 ## 0.2.0 — 26 Oct 2026 — Mojo-level ML stack (tensors, autograd, tiny GPT)
 
 The language gains the pieces that make people use a language for

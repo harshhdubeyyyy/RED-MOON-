@@ -176,7 +176,7 @@ void forge_cuda_matmul_half(const double *a, const double *b, double *out, long 
     forge_matmul_half_kernel<<<grid, block>>>(da, db, dout, n);
     __half *ho = (__half *)malloc(sizeof(__half) * n * n);
     cudaMemcpy(ho, dout, sizeof(__half) * n * n, cudaMemcpyDeviceToHost);
-    for (long long i = 0; i < n * n; i++) out[i] = __half2double(ho[i]);
+    for (long long i = 0; i < n * n; i++) out[i] = (double)__half2float(ho[i]);
     cudaFree(da); cudaFree(db); cudaFree(dout);
     free(ha); free(hb); free(ho);
 }

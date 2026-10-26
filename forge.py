@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The Jal Pari Language compiler CLI (formerly Forge v2).
 
-Version: 0.2.0 — first Jal Pari market release (see CHANGELOG.md).
+Version: 0.3.0 — first Jal Pari market release (see CHANGELOG.md).
 
 Usage:
     jalpari run examples/jal_pari_demo.fg
@@ -31,7 +31,7 @@ from forge_lang.errors import ForgeError  # noqa: E402
 from forge_lang.compiler import compile_file, build  # noqa: E402
 
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 
 
 def main(argv=None):

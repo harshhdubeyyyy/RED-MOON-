@@ -139,3 +139,23 @@ blocks as a library (the GPT code is 1 block, 1 head),
 WASM strings/arrays, big32 floats/structs, a public registry
 host, CI upload, debugger, fuzzing, self-hosting compiler.
 Each needs its own pass; none is half-claimed here.
+
+## 0.3.0 addendum — scaled GPT + GPU-verified kernels
+- `gpt2.fg` generalises the transformer (any blocks/heads/sizes);
+  `gpt_scaled.fg` is 2 blocks, 2 heads, d=16, hidden=32, seq=16,
+  29-char vocab, 5200 params, on a 411-char story. Training
+  (200 windows, 3 epochs, Adam lr 0.02, clip 1.0): loss
+  2.559 -> 2.364. Held-out test (windows 320..327): loss
+  4.063 -> 3.987, perplexity 58.1 -> 53.9 — a small, real
+  generalisation gain. An earlier split (20 training windows
+  only) made held-out perplexity WORSE (39.2 -> 50.8): with
+  almost no training text, the model memorises, it does not
+  generalise. Generation still loops/rambles.
+- GPU kernels are now GPU-verified, not just simulated: Kaggle
+  notebook v4, 2x Tesla T4, driver 580.178.04, nvcc 12.8.93.
+  Outputs match `tools/simulate_cuda.py` to 6 decimals on
+  every kernel (see CHANGELOG 0.3.0). Two bugs were found
+  only by running on GPU: log(0) NaN in training (fixed with
+  a 1e-9 epsilon in g2_loss) and `__half2double` not existing
+  in CUDA (fixed to `(double)__half2float`); notebook v3
+  failed to build, v4 is the verified run.

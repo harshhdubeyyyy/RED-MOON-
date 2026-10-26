@@ -129,10 +129,12 @@ Not a promise of LLMs — a small-model stack that actually trains:
   params, trained by autograd on one sentence —
   loss **2.274 → 0.360** in ~5 seconds. Generation loops or
   rambles (honest for this size); the training is the proof.
-- **Inference** (`stdlib/inference.fg`): KV-cache steps match a
+ - **Inference** (`stdlib/inference.fg`): KV-cache steps match a
   full forward exactly (diff 0). **GPU**: fused attention /
   LayerNorm / embedding / fp16 kernels in `examples/cuda/`,
-  simulation-verified, awaiting a Kaggle GPU run.
+  verified on Kaggle Tesla T4 (dot 70, attention 0.330/0.670).
+- **Scaled GPT** (`examples/gpt_scaled.fg`): 2 blocks, 2 heads,
+  5,200 params, held-out perplexity 58.1 → 53.9.
 
 ```sh
 python3 forge.py run examples/tiny_gpt.fg      # trains + generates

@@ -30,6 +30,13 @@ block per query position, seq <= 256, d <= 256) and
 `tools/simulate_cuda.py` mirrors them exactly: embedding
 1 0 0 1 1 0, layernorm ±0.99998, attention rows
 1.0/0.0, 0.330/0.670, 0.802/0.198, half matmul 19 22 43 50.
-These kernels have NOT run on a real GPU yet — the Kaggle T4 run
-for them is still to be done, and is not claimed here. The
-dot/matmul kernels above were the ones verified on T4.
+VERIFIED on a real GPU 26 Oct 2026 — Kaggle notebook v4
+(arshhdubeyy/forge-cuda-kernel), 2x Tesla T4, driver 580.178.04,
+nvcc 12.8.93: dot 70, matmul 19 22 43 50, embedding
+1 0 0 1 1 0, layernorm ±0.999980, attention 1.0/0.0,
+0.330238/0.669762, 0.802224/0.197776, half matmul
+19 22 43 50 — matching tools/simulate_cuda.py to 6 decimals.
+Notebook v3 failed to build (`__half2double` does not exist
+in CUDA; fixed to `(double)__half2float`); v4 is the run
+above. The dot/matmul kernels were also verified on T4 in
+the earlier run.
