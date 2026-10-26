@@ -60,14 +60,17 @@ def name(s):
 
 I32 = 0x7F
 I64 = 0x7E
+F64 = 0x7C
 
 
 def valtype(t):
     if t == "int":
         return I64
+    if t == "float":
+        return F64
     if t == "bool":
         return I32
-    raise ForgeError(f"wasm: type {t} is not supported (v1: int, bool, void only)")
+    raise ForgeError(f"wasm: type {t} is not supported (v2: int, float, bool, void only)")
 
 
 class WasmGen:
@@ -93,11 +96,11 @@ class WasmGen:
     def gen(self):
         # Validate signatures first, so errors are Forge errors, not bad binaries.
         for fn in self.funcs:
-            if fn.ret not in ("void", "int", "bool"):
-                raise ForgeError(f"wasm: function '{fn.name}' returns {fn.ret}, not supported in v1")
+            if fn.ret not in ("void", "int", "float", "bool"):
+                raise ForgeError(f"wasm: function '{fn.name}' returns {fn.ret}, not supported in v2")
             for _pn, pt in fn.params:
-                if pt not in ("int", "bool"):
-                    raise ForgeError(f"wasm: parameter of type {pt} in '{fn.name}' is not supported in v1")
+                if pt not in ("int", "float", "bool"):
+                    raise ForgeError(f"wasm: parameter of type {pt} in '{fn.name}' is not supported in v2")
         type_entries = []
         type_index = {}
         for fn in self.funcs:
@@ -153,8 +156,8 @@ class WasmGen:
         if isinstance(stmt, A.Let):
             code = self.gen_expr(stmt.expr)
             t = stmt.ann or self.expr_type(stmt.expr)
-            if t not in ("int", "bool"):
-                raise ForgeError(f"wasm: let of type {t} is not supported in v1")
+            if t not in ("int", "float", "bool"):
+                raise ForgeError(f"wasm: let of type {t} is not supported in v2")
             idx = self.local_count
             self.local_count += 1
             self.locals.append(valtype(t))
@@ -197,7 +200,8 @@ class WasmGen:
         if isinstance(expr, A.IntLit):
             return b"\x42" + sleb(int(expr.value))
         if isinstance(expr, A.FloatLit):
-            raise ForgeError("wasm: float literals are not supported in v1")
+            import struct as _struct
+            return b"\x44" + _struct.pack("<d", float(expr.value))
         if isinstance(expr, A.StrLit):
             raise ForgeError("wasm: strings are not supported in v1")
         if isinstance(expr, A.BoolLit):
@@ -207,6 +211,8 @@ class WasmGen:
         if isinstance(expr, A.UnaryOp):
             inner = self.gen_expr(expr.expr)
             if expr.op == "-":
+                if self.expr_type(expr.expr) == "float":
+                    return inner + b"\x9a"  # f64.neg
                 # WASM has no integer neg: 0 - x.
                 return b"\x42\x00" + inner + b"\x7d"  # i64.const 0, x, i64.sub
             if expr.op == "!":
@@ -219,13 +225,24 @@ class WasmGen:
             if lt == "int":
                 ops = {"+": 0x7C, "-": 0x7D, "*": 0x7E, "/": 0x7F, "%": 0x81,
                        "==": 0x51, "!=": 0x52, "<": 0x53, ">": 0x55, "<=": 0x57, ">=": 0x59}
+            elif lt == "float":
+                ops = {"+": 0xA0, "-": 0xA1, "*": 0xA2, "/": 0xA3,
+                       "==": 0x61, "!=": 0x62, "<": 0x63, ">": 0x64, "<=": 0x65, ">=": 0x66}
             elif lt == "bool":
                 ops = {"&&": 0x71, "||": 0x72, "==": 0x46, "!=": 0x47}
             else:
                 raise ForgeError(f"wasm: binary op on {lt} is not supported in v1")
             if expr.op not in ops:
-                raise ForgeError(f"wasm: operator {expr.op} on {lt} is not supported in v1")
+                raise ForgeError(f"wasm: operator {expr.op} on {lt} is not supported in v2")
             return left + right + bytes([ops[expr.op]])
+        if isinstance(expr, A.Cast):
+            inner = self.gen_expr(expr.expr)
+            src = self.expr_type(expr.expr)
+            if src == "int" and expr.target == "float":
+                return inner + b"\xb9"  # f64.convert_i64_s
+            if src == "float" and expr.target == "int":
+                return inner + b"\xb0"  # i64.trunc_f64_s
+            raise ForgeError(f"wasm: cast {src} -> {expr.target} is not supported in v2")
         if isinstance(expr, A.Call):
             if expr.name not in self.func_index:
                 raise ForgeError(f"wasm: call to '{expr.name}' is not supported in v1 "

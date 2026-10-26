@@ -7,6 +7,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CASES = [
     ("examples/wasm/sum.fg", "55"),
     ("examples/wasm/fib.fg", "55"),
+    ("examples/wasm/float_demo.fg", "12566"),
 ]
 
 

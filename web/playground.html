@@ -1,0 +1,30 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>The Jal Pari Language — Web Playground</title>
+<style>body{font-family:system-ui;max-width:720px;margin:40px auto;padding:0 20px}button{padding:10px 16px;margin:4px}pre{background:#f4f4f4;padding:12px}</style></head>
+<body>
+<h1>🧜‍♀️ The Jal Pari Language — Web Playground</h1>
+<p>Dedicated to Teju — Jal Pari. These programs were compiled with the Jal Pari WASM backend
+(<code>forge.py emit-wasm</code>) and run <b>in your browser</b>, no server, no install.
+WASM functions here return a number; there is no print in WASM yet, so the result is shown below.</p>
+<button onclick="run('sum')">sum 1..10</button>
+<button onclick="run('fib')">fib(10)</button>
+<button onclick="run('float')">circle area (r=2) × 1000</button>
+<pre id="out">Click a program to run it.</pre>
+<script>
+const programs = {
+  sum: "AGFzbQEAAAABBQFgAAF+AwIBAAcIAQRtYWluAAAKLwEtAQJ+QgAhAEIBIQECQANAIAFCCldFDQEgACABfCEAIAFCAXwhAQwACwsgAA8L",
+  fib: "AGFzbQEAAAABCgJgAX4BfmAAAX4DAwIAAQcOAgNmaWIAAARtYWluAAEKJwIdACAAQgJTBEAgAA8LIABCAX0QACAAQgJ9EAB8DwsHAEIKEAAPCw==",
+  float: "AGFzbQEAAAABCgJgAXwBfGAAAX4DAwIAAQcPAgRhcmVhAAAEbWFpbgABCjgCEgBEboYb8PkhCUAgAKIgAKIPCyMBAnxEAAAAAAAAAEAQACEAIABEAAAAAABAj0CiIQEgAbAPCw=="
+};
+const expected = {sum: "55", fib: "55", float: "12566 (12.566 × 1000)"};
+async function run(name) {
+  const bytes = Uint8Array.from(atob(programs[name]), c => c.charCodeAt(0));
+  const {instance} = await WebAssembly.instantiate(bytes, {});
+  const result = instance.exports.main();
+  document.getElementById('out').textContent = name + '() = ' + result.toString() + '\nExpected: ' + expected[name];
+}
+</script>
+<p>To compile your own program: <code>python3 forge.py emit-wasm yourfile.fg -o out.wasm</code>,
+then load it in a page like this one and call <code>instance.exports.main()</code>.
+WASM v2 supports int, float, bool — strings and arrays are not yet supported there, honestly.</p>
+</body></html>

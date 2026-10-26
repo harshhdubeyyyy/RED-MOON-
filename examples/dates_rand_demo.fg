@@ -1,0 +1,16 @@
+// Dates + deterministic PRNG demo.
+import "dates.fg";
+import "rand.fg";
+
+fn main() -> int {
+    println("epoch =", days_from_civil(1970, 1, 1));
+    println("2026-10-26 minus 2026-01-01 =", days_between(2026, 1, 1, 2026, 10, 26));
+    println("leap 2024 =", is_leap(2024));
+    println("leap 2025 =", is_leap(2025));
+    println("feb 2024 =", days_in_month(2024, 2));
+    let mut seed: int = 42;
+    seed = rand_next(seed);
+    println("rand seed =", seed);
+    println("rand float =", rand_float(seed));
+    return 0;
+}
