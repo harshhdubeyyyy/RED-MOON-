@@ -74,9 +74,13 @@ from scratch, and do not silently drop a phase.
   matrix 58 64 139 154, regression w=2.0211 b=0.923818 (500 iters),
   MLP XOR 0/1/1/0, benchmark dot(5000) ~5-6 micros, 1M array-read
   loop ~1.2 ms. Tests: python3 tests/run_tests.py passes.
-  GitHub push BLOCKED only on the user creating an empty public
-  repo (token cannot create repos, 403, same as tiny8/big32) —
-  push is immediate once the repo name is given.
+  GitHub push DONE 26 Oct 2026: user created jayantt1dubeyy/RED-MOON-
+  (created 2026-10-26T05:38:10Z, starter LICENSE + README only).
+  Pushed 33 files via Git Data API, verified live: commit
+  fbf8b14094f3b7a83d527e31859178ca46499789, README sha
+  90c06fc5a51e8cad089e9ee73057a70cd191f5b4, with figures/ (3D loss
+  surface, scaling, convergence, XOR heatmap) and scripts/
+  make_figures.py. Repo: https://github.com/jayantt1dubeyy/RED-MOON-
 
 ## Research findings that now lock v2's design (26 Oct 2026)
 
