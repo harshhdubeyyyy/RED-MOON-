@@ -20,3 +20,16 @@ run here. On any machine with a CUDA GPU and nvcc, run:
 and expect the same output as above. The Kaggle notebook that
 produced the verified run is in `kaggle/` (private, GPU
 enabled, writes its output to `cuda_output.txt`).
+
+## Transformer kernels (0.2.0, simulation-verified only)
+`kernel.cu` now also has: `forge_embedding_kernel`,
+`forge_layernorm_kernel` (launch with blockDim.x == d, d a power
+of two), `forge_attention_kernel` (fused QK^T + softmax + PV, one
+block per query position, seq <= 256, d <= 256) and
+`forge_matmul_half_kernel` (fp16, via `__half`).
+`tools/simulate_cuda.py` mirrors them exactly: embedding
+1 0 0 1 1 0, layernorm ±0.99998, attention rows
+1.0/0.0, 0.330/0.670, 0.802/0.198, half matmul 19 22 43 50.
+These kernels have NOT run on a real GPU yet — the Kaggle T4 run
+for them is still to be done, and is not claimed here. The
+dot/matmul kernels above were the ones verified on T4.

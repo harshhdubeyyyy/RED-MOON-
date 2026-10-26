@@ -1,0 +1,142 @@
+// Inference demo: KV-cache steps must match a full-sequence
+// forward over the same weights, and int8-quantized weights must
+// stay close to full precision on the same step.
+import "inference.fg";
+import "gpt.fg";
+import "tokenizer.fg";
+
+fn slice_p(params: [float], start: int, n: int) -> [float] {
+    let mut out: [float] = [];
+    let mut i: int = 0;
+    while i < n {
+        push(out, params[start + i]);
+        i = i + 1;
+    }
+    return out;
+}
+
+fn lin(params: [float], woff: int, boff: int, ind: int, outd: int) -> Linear {
+    return Linear { w: slice_p(params, woff, ind * outd), b: slice_p(params, boff, outd), in_dim: ind, out_dim: outd };
+}
+
+fn main() -> int {
+    let params: [float] = gpt_init_params(42);
+    let q: Linear = lin(params, 176, 240, 8, 8);
+    let k: Linear = lin(params, 248, 312, 8, 8);
+    let v: Linear = lin(params, 320, 384, 8, 8);
+    let o: Linear = lin(params, 392, 456, 8, 8);
+    let m1: Linear = lin(params, 480, 608, 8, 16);
+    let m2: Linear = lin(params, 624, 752, 16, 8);
+    let ln1g: [float] = slice_p(params, 160, 8);
+    let ln1b: [float] = slice_p(params, 168, 8);
+    let ln2g: [float] = slice_p(params, 464, 8);
+    let ln2b: [float] = slice_p(params, 472, 8);
+    let vocab: str = " helopwrdjai";
+    let toks: [int] = char_encode("hel", vocab);
+    let mut xs: [float] = [];
+    let mut p: int = 0;
+    while p < 3 {
+        let mut c: int = 0;
+        while c < 8 {
+            push(xs, params[toks[p] * 8 + c] + params[96 + p * 8 + c]);
+            c = c + 1;
+        }
+        p = p + 1;
+    }
+    // Full-sequence forward with nn.fg blocks.
+    let mut ln1f: [float] = [];
+    p = 0;
+    while p < 3 {
+        let mut pos: [float] = [];
+        let mut c: int = 0;
+        while c < 8 {
+            push(pos, xs[p * 8 + c]);
+            c = c + 1;
+        }
+        let ln: [float] = layernorm_forward(pos, ln1g, ln1b, 0.00001);
+        for a in ln {
+            push(ln1f, a);
+        }
+        p = p + 1;
+    }
+    let att: [float] = attention_forward(ln1f, 3, 8, q, k, v, o);
+    let mut res1: [float] = [];
+    let mut i: int = 0;
+    while i < 24 {
+        push(res1, att[i] + xs[i]);
+        i = i + 1;
+    }
+    let mut full: [float] = [];
+    p = 0;
+    while p < 3 {
+        let mut pos: [float] = [];
+        let mut c: int = 0;
+        while c < 8 {
+            push(pos, res1[p * 8 + c]);
+            c = c + 1;
+        }
+        let ln: [float] = layernorm_forward(pos, ln2g, ln2b, 0.00001);
+        let mlp: [float] = mlp_forward(ln, m1, m2);
+        let mut c2: int = 0;
+        while c2 < 8 {
+            push(full, mlp[c2] + pos[c2]);
+            c2 = c2 + 1;
+        }
+        p = p + 1;
+    }
+    // KV-cache steps, one token at a time.
+    let mut cache: Cache = kv_cache_new();
+    let mut kvout: [float] = [];
+    p = 0;
+    while p < 3 {
+        let mut pos: [float] = [];
+        let mut c: int = 0;
+        while c < 8 {
+            push(pos, xs[p * 8 + c]);
+            c = c + 1;
+        }
+        let step: KvOut = infer_step(cache, pos, q, k, v, o, m1, m2, ln1g, ln1b, ln2g, ln2b);
+        cache = step.cache;
+        kvout = step.out;
+        p = p + 1;
+    }
+    println("full last =", full[16], full[17]);
+    println("kv last =", kvout[0], kvout[1]);
+    let mut d0: float = full[16] - kvout[0];
+    if d0 < 0.0 {
+        d0 = -d0;
+    }
+    println("kv diff =", d0);
+    println("cache len =", cache.len);
+    // Quantized weights on the same first step.
+    let qq: Quant = quantize(params);
+    let params_q: [float] = dequantize(qq);
+    let q2: Linear = lin(params_q, 176, 240, 8, 8);
+    let k2: Linear = lin(params_q, 248, 312, 8, 8);
+    let v2: Linear = lin(params_q, 320, 384, 8, 8);
+    let o2: Linear = lin(params_q, 392, 456, 8, 8);
+    let m12: Linear = lin(params_q, 480, 608, 8, 16);
+    let m22: Linear = lin(params_q, 624, 752, 16, 8);
+    let mut pos0: [float] = [];
+    let mut c: int = 0;
+    while c < 8 {
+        push(pos0, xs[c]);
+        c = c + 1;
+    }
+    let step_q: KvOut = infer_step(kv_cache_new(), pos0, q2, k2, v2, o2, m12, m22, slice_p(params_q, 160, 8), slice_p(params_q, 168, 8), slice_p(params_q, 464, 8), slice_p(params_q, 472, 8));
+    let step_f: KvOut = infer_step(kv_cache_new(), pos0, q, k, v, o, m1, m2, ln1g, ln1b, ln2g, ln2b);
+    let mut worst: float = 0.0;
+    i = 0;
+    while i < 8 {
+        let mut dd: float = step_q.out[i] - step_f.out[i];
+        if dd < 0.0 {
+            dd = -dd;
+        }
+        if dd > worst {
+            worst = dd;
+        }
+        i = i + 1;
+    }
+    println("quant step max diff =", worst);
+    return 0;
+}

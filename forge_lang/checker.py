@@ -19,7 +19,7 @@ from .generics import (parse_generic, mangle_type, substitute_type,
 SCALARS = {"int", "float", "bool", "str"}
 STMT_BUILTINS = {"print", "println", "push", "fail", "assert"}
 EXPR_BUILTINS = {"len", "range", "clock_micros", "sqrt", "exp", "log", "pow", "abs",
-                 "read_file", "write_file", "file_exists", "args", "parse_int",
+                 "read_file", "write_file", "file_exists", "args", "parse_int", "parse_float",
                  "split", "join", "substr", "trim", "starts_with", "ends_with",
                  "http_get", "alloc_count", "free_count",
                  "parallel_dot", "parallel_matmul",
@@ -799,6 +799,11 @@ class Checker:
                 raise ForgeError("parse_int() takes exactly one str argument",
                                  call.line, call.col)
             return "int"
+        if call.name == "parse_float":
+            if len(call.args) != 1 or self.check_expr(call.args[0]) != "str":
+                raise ForgeError("parse_float() takes exactly one str argument",
+                                 call.line, call.col)
+            return "float"
         if call.name == "split":
             if len(call.args) != 2:
                 raise ForgeError("split() takes exactly two arguments", call.line, call.col)

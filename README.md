@@ -115,6 +115,31 @@ python3 forge.py run examples/matrix.fg
 
 ---
 
+## 🧠 Mojo-level ML stack (0.2.0): tensors, autograd, tiny GPT
+
+Not a promise of LLMs — a small-model stack that actually trains:
+
+- **Tensors** (`stdlib/tensor.fg`): shape + flat data, matmul,
+  softmax, GELU. **Autograd** (`stdlib/autograd.fg`): a real
+  reverse-mode tape — no hand-written backward code.
+- **Transformer blocks** (`stdlib/nn.fg`): Linear, LayerNorm,
+  causal attention, MLP, Adam/AdamW, schedules, clipping,
+  checkpoints, int8 quantization, sampling.
+- **Tiny GPT** (`examples/tiny_gpt.fg`): 1 block, 1 head, 776
+  params, trained by autograd on one sentence —
+  loss **2.274 → 0.360** in ~5 seconds. Generation loops or
+  rambles (honest for this size); the training is the proof.
+- **Inference** (`stdlib/inference.fg`): KV-cache steps match a
+  full forward exactly (diff 0). **GPU**: fused attention /
+  LayerNorm / embedding / fp16 kernels in `examples/cuda/`,
+  simulation-verified, awaiting a Kaggle GPU run.
+
+```sh
+python3 forge.py run examples/tiny_gpt.fg      # trains + generates
+python3 forge.py run examples/inference_demo.fg # KV-cache proof
+python3 tools/simulate_cuda.py                  # CUDA mirrors
+```
+
 ## 🧭 How a Forge program becomes a binary
 
 ```mermaid

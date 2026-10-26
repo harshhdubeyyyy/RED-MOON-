@@ -1,0 +1,29 @@
+// NN library demo: Linear, LayerNorm, Adam, schedules, clipping,
+// checkpoint round-trip, int8 quantization, sampling.
+import "nn.fg";
+
+fn main() -> int {
+    let l: Linear = linear_new(3, 2, 42);
+    let y: [float] = linear_forward(l, [1.0, 0.0, 1.0]);
+    println("linear out len =", len(y));
+    let ln: [float] = layernorm_forward([1.0, 2.0, 3.0, 4.0], [1.0, 1.0, 1.0, 1.0], [0.0, 0.0, 0.0, 0.0], 0.00001);
+    println("layernorm mean-ish =", ln[0] + ln[1] + ln[2] + ln[3]);
+    let mut st: OptimState = optim_new([1.0, -1.0]);
+    st = adam_step(st, [0.5, -0.5], 0.01, 0.9, 0.999, 0.00000001);
+    println("adam step =", st.step, "p0 =", st.params[0]);
+    println("lr cosine =", lr_cosine(0, 100, 0.01, 0.0));
+    println("lr step =", lr_step_decay(20, 0.01, 10, 0.5));
+    let clipped: [float] = grad_clip([3.0, 4.0], 2.5);
+    println("clip norm =", grad_norm(clipped));
+    let ok: bool = checkpoint_save("nn_ckpt.txt", [0.5, -0.25, 1.5]);
+    println("ckpt saved =", ok);
+    let back: [float] = checkpoint_load("nn_ckpt.txt");
+    println("ckpt =", back[0], back[1], back[2]);
+    let q: Quant = quantize([0.5, -1.0, 0.25]);
+    println("quant scale =", q.scale, "max err =", quant_max_error([0.5, -1.0, 0.25], q));
+    println("greedy =", sample_greedy([0.1, 5.0, 1.0]));
+    println("topk =", sample_topk([0.1, 5.0, 1.0], 1, 1.0, 0.5));
+    println("int_to_str =", int_to_str(-42));
+    println("float_to_fixed =", float_to_fixed(-3.14159, 3));
+    return 0;
+}

@@ -252,3 +252,18 @@ benchmarks (Zig 5x, Jai <1s, Goose vs Rust) are unverified; several
 roundups were low-quality SEO blogs, with official docs prioritised
 where they conflicted. Verify these again before quoting them in
 Forge docs.
+
+## Mojo-level ML batch — 26 Oct 2026 (0.2.0)
+- Tensor + autograd + nn + tokenizer + dataset + gpt + inference
+  stdlibs; tiny GPT trains (loss 2.274 -> 0.360, 20 epochs, ~5 s);
+  KV-cache diff 0; CUDA fused kernels simulation-verified only.
+- Gotchas found in this batch: (1) a struct containing another
+  struct must be defined in the SAME file after the inner struct
+  (C emission order) — NodeVec lives in autograd.fg for this
+  reason; (2) pushing to a plain array parameter does NOT reach
+  the caller — return values, don't fill caller arrays; (3) stdlib
+  files must not both import rand.fg (duplicate definitions) —
+  leaf files leave rand to the importing program or to nn.fg;
+  (4) no `break` statement in the language — use loop conditions;
+  (5) GPT training pattern: params must be the FIRST tape nodes
+  so param id == param index.

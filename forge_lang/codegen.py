@@ -204,6 +204,13 @@ static bool forge_write_file(const char *path, const char *content) {
     return true;
 }
 
+static double forge_parse_float(const char *s) {
+    char *end = NULL;
+    double v = strtod(s, &end);
+    if (end == s || *end != '\0') forge_fail("parse_float: not a number");
+    return v;
+}
+
 static long long forge_parse_int(const char *s) {
     char *end = NULL;
     long long v = strtoll(s, &end, 10);
@@ -1315,6 +1322,8 @@ class Codegen:
                         f"{self.gen_expr(expr.args[1])})")
             if expr.name == "args":
                 return "forge_args_global"
+            if expr.name == "parse_float":
+                return f"forge_parse_float({self.gen_expr(expr.args[0])})"
             if expr.name == "parse_int":
                 return f"forge_parse_int({self.gen_expr(expr.args[0])})"
             if expr.name == "split":

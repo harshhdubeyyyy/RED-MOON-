@@ -74,6 +74,40 @@ def main():
            "For Teju, my Jal Pari\n\n   \\ | /\n    \\|/\n  -- * --\n    /|\\\n   / | \\\n     |\n     |\n    \\|/\n\nThat smile.\nGolden hour suits her.\n\n*\n**\n***\n****\n*****\n\nTeju, you are special.\nSmiles, sunsets, good songs.\nNo pressure, just this: you are thought of kindly,\nand the door is open, whenever you want.\n- Jayant\n")
     expect("examples/dates_rand_demo.fg",
            "epoch = 0\n2026-10-26 minus 2026-01-01 = 298\nleap 2024 = true\nleap 2025 = false\nfeb 2024 = 29\nrand seed = 1250496048\nrand float = 0.610197\n")
+    expect("examples/tensor_demo.fg",
+           "matmul = 19 22 43 50\ntranspose = 1 3 2 4\nadd sum = 36\n"
+           "reshape = 1 4\nget2 = 3\nsoftmax sum = 1\nargmax = 1\n")
+    expect("examples/autograd_demo.fg",
+           "f = 21.9526\ndfdx = 10.0452\ndfdy = 3\nnumeric dfdx = 10.0452\n")
+    expect("examples/nn_demo.fg",
+           "linear out len = 2\nlayernorm mean-ish = 0\nadam step = 1 p0 = 0.99\n"
+           "lr cosine = 0.01\nlr step = 0.0025\nclip norm = 2.5\n"
+           "ckpt saved = true\nckpt = 0.5 -0.25 1.5\n"
+           "quant scale = 0.00787402 max err = 0.00590551\ngreedy = 1\ntopk = 1\n"
+           "int_to_str = -42\nfloat_to_fixed = -3.141\n")
+    expect("examples/tokenizer_demo.fg",
+           "char vocab = helo wrd\nchar ids len = 23\n"
+           "char roundtrip = hello world hello world\nbpe merges = 5\n"
+           "bpe ids len = 13\nbpe roundtrip = hello world hello world\n"
+           "windows = 19\ntrain + test = 19\nbatch = 3\nshuffled = 19\n")
+    expect("examples/gpt_forward_demo.fg",
+           "params = 776\nlogits = 96\nloss = 2.89085\ngraph nodes = 13886\n")
+    expect("examples/imported_demo.fg",
+           "tok = 0.5 -0.25 1 0\nln1_g = 1 1\n")
+    # Inference: KV-cache must match full forward exactly (diff 0).
+    r = run_forge("run", "examples/inference_demo.fg")
+    for needle in ("full last =", "kv last =", "kv diff = 0", "cache len = 3",
+                   "quant step max diff ="):
+        if r.returncode != 0 or needle not in r.stdout:
+            failures.append(f"inference_demo: missing {needle!r} in {r.stdout!r} err={r.stderr!r}")
+    # CUDA simulation (Python mirror of the .cu kernels).
+    r = subprocess.run([sys.executable, "tools/simulate_cuda.py"],
+                       capture_output=True, text=True, cwd=ROOT)
+    for needle in ("cuda dot = 70.0", "cuda attention =", "cuda layernorm =",
+                   "cuda half matmul = 19.0 22.0 43.0 50.0",
+                   "cuda simulation ok"):
+        if r.returncode != 0 or needle not in r.stdout:
+            failures.append(f"simulate_cuda: missing {needle!r} in {r.stdout!r} err={r.stderr!r}")
     expect("examples/ml_train_xor.fg",
            "epoch 0 loss = 0.558973\nepoch 10000 loss = 0.000267766\nxor 0 0 = 0 (raw 0.0115718 )\nxor 0 1 = 1 (raw 0.986735 )\nxor 1 0 = 1 (raw 0.989128 )\nxor 1 1 = 0 (raw 0.010358 )\n")
     expect("examples/ecosystem/word_stats.fg",
@@ -97,7 +131,7 @@ def main():
         except Exception as e:
             failures.append(f"fmt: {path} failed to format: {e}")
     # File I/O + args: writes a file, reads it back, reports args.
-    for fname in ("forge_output.txt", "forge_test_out.txt"):
+    for fname in ("forge_output.txt", "forge_test_out.txt", "nn_ckpt.txt"):
         try:
             os.unlink(os.path.join(ROOT, fname))
         except FileNotFoundError:

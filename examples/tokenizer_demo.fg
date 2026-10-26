@@ -1,0 +1,37 @@
+// Tokenizer + dataset demo: char round-trip, BPE round-trip
+// (BPE must compress: fewer tokens than characters), and a
+// sequence split + batch that adds back up to the full count.
+import "rand.fg";
+import "tokenizer.fg";
+import "dataset.fg";
+
+fn main() -> int {
+    let text: str = "hello world hello world";
+    let vocab: str = char_vocab_from_text(text);
+    println("char vocab =", vocab);
+    let ids: [int] = char_encode(text, vocab);
+    println("char ids len =", len(ids));
+    println("char roundtrip =", char_decode(ids, vocab));
+    let bpe: Bpe = bpe_train(text, 5);
+    println("bpe merges =", len(bpe.merges));
+    let mut init: [str] = [];
+    let mut i: int = 0;
+    while i < len(vocab) {
+        push(init, substr(vocab, i, 1));
+        i = i + 1;
+    }
+    let bvocab: [str] = bpe_vocab(bpe, init);
+    let bids: [int] = bpe_encode(text, bpe, bvocab);
+    println("bpe ids len =", len(bids));
+    println("bpe roundtrip =", bpe_decode(bids, bvocab));
+    let data: SeqData = make_sequences(ids, 4);
+    println("windows =", data.count);
+    let tr: SeqData = seq_train(data, 75);
+    let te: SeqData = seq_test(data, 75);
+    println("train + test =", tr.count + te.count);
+    let batch: SeqData = seq_batch(data, 0, 3);
+    println("batch =", batch.count);
+    let shuf: SeqData = seq_shuffle(data, 42);
+    println("shuffled =", shuf.count);
+    return 0;
+}

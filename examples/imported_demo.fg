@@ -1,0 +1,12 @@
+// PyTorch-import demo: weights imported from a text file
+// (the format tools/import_torch_weights.py produces from a
+// .pt state dict on a machine with torch) come back as arrays.
+import "imported_weights.fg";
+
+fn main() -> int {
+    let tok: [float] = imported_tok_emb();
+    let g: [float] = imported_ln1_g();
+    println("tok =", tok[0], tok[1], tok[2], tok[3]);
+    println("ln1_g =", g[0], g[1]);
+    return 0;
+}

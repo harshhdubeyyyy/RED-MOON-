@@ -1,0 +1,20 @@
+// Tensor stdlib demo: shape, matmul, transpose, softmax, reshape.
+import "tensor.fg";
+
+fn main() -> int {
+    let a: Tensor = tensor_from([2, 2], [1.0, 2.0, 3.0, 4.0]);
+    let b: Tensor = tensor_from([2, 2], [5.0, 6.0, 7.0, 8.0]);
+    let m: Tensor = tensor_matmul(a, b);
+    println("matmul =", m.data[0], m.data[1], m.data[2], m.data[3]);
+    let t: Tensor = tensor_transpose2(a);
+    println("transpose =", t.data[0], t.data[1], t.data[2], t.data[3]);
+    let s: Tensor = tensor_add(a, b);
+    println("add sum =", tensor_sum(s));
+    let r: Tensor = tensor_reshape(a, [4]);
+    println("reshape =", r.data[0], r.data[3]);
+    println("get2 =", tensor_get2(a, 1, 0));
+    let sm: [float] = tensor_softmax1([1.0, 2.0, 3.0]);
+    println("softmax sum =", sm[0] + sm[1] + sm[2]);
+    println("argmax =", tensor_argmax([1.0, 5.0, 3.0]));
+    return 0;
+}

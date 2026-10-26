@@ -1,0 +1,32 @@
+// GPT forward demo (no training): one window, cross-entropy loss,
+// and the size of the autograd graph the forward pass builds.
+import "gpt.fg";
+import "tokenizer.fg";
+
+fn main() -> int {
+    let vocab: str = " helopwrdjai";
+    let text: str = "hello world hello jal pari";
+    let ids: [int] = char_encode(text, vocab);
+    let mut x: [int] = [];
+    let mut y: [int] = [];
+    let mut i: int = 0;
+    while i < 8 {
+        push(x, ids[i]);
+        push(y, ids[i + 1]);
+        i = i + 1;
+    }
+    let params: [float] = gpt_init_params(42);
+    println("params =", len(params));
+    let mut s: Ag = ag_input(tape_new(), params[0]);
+    i = 1;
+    while i < len(params) {
+        s = ag_input(s.tape, params[i]);
+        i = i + 1;
+    }
+    let logits: NodeVec = gpt_logits(s, x, 8, 8, 16, 12);
+    println("logits =", len(logits.ids));
+    let loss: Ag = gpt_loss(logits.ag, logits.ids, y, 8, 12);
+    println("loss =", loss.tape.vals[loss.last]);
+    println("graph nodes =", len(loss.tape.vals));
+    return 0;
+}
