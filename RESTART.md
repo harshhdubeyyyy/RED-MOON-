@@ -174,6 +174,15 @@ from scratch, and do not silently drop a phase.
   passes. Push this pass next; still NOT done: CUDA
   execution on hardware, Python float/str arrays, dynamic
   centrally hosted registry.
+- "Finish remaining 3" pass (26 Oct 2026): Python float/str
+  arrays + nested structs DONE (sum_float 7.0, join_str,
+  outer_sum 42, make_outer 3,4,hello); CUDA simulation DONE
+  (dot 70, matmul 19 22 43 50, .cu ready package, NOT run
+  — no GPU/nvcc here); dynamic registry DONE as a server
+  (auth 401, publish ok, duplicate 409, Dockerfile + deploy
+  README, NOT hosted on a public host yet). Full suite
+  passes. Push this pass next; still NOT done: CUDA
+  execution on hardware, a public registry host.
 
 ## Research findings that now lock v2's design (26 Oct 2026)
 

@@ -309,11 +309,13 @@ parser, a self-hosted HTTP registry, a WASM backend, string
 GC v1, CPU-thread parallel kernels, Python interop via a
 shared library, public registry discovery, array GC v2,
 struct GC, Python arrays/structs, CUDA codegen, and a static
-GitHub-Pages registry are done (26 Oct 2026). It still has
-no CUDA execution on real GPU hardware, Python interop for
-[float]/[str] arrays or nested structs, or a dynamic
-centrally hosted registry yet. Those are the next phases in
-`SPEC_V2.md`, not hidden features.
+GitHub-Pages registry are done (26 Oct 2026), and now also
+Python [float]/[str] arrays + nested structs, a CUDA
+simulation + ready-to-run package, and a dynamic registry
+with auth and a Dockerfile. It still has no CUDA execution
+on real GPU hardware, and no registry actually running on a
+public host yet. Those are the next phases in `SPEC_V2.md`,
+not hidden features.
 
 ## 🔁 Regenerate the figures
 

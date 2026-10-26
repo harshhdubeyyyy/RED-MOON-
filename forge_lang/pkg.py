@@ -159,12 +159,14 @@ def cmd_publish(cwd):
     return 0
 
 
-def _http_json(url, method="GET", body=None):
+def _http_json(url, method="GET", body=None, token=None):
     import urllib.request
     import urllib.error
     data = json.dumps(body).encode() if body is not None else None
-    req = urllib.request.Request(url, data=data, method=method,
-                                 headers={"Content-Type": "application/json"} if body is not None else {})
+    headers = {"Content-Type": "application/json"} if body is not None else {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(url, data=data, method=method, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
             return resp.status, resp.read().decode()
@@ -176,15 +178,18 @@ def cmd_serve(cwd, rest):
     from .registry_server import serve
     root = os.path.expanduser("~/.forge_registry_server")
     port = 8765
+    token = None
     if "--dir" in rest:
         root = rest[rest.index("--dir") + 1]
     if "--port" in rest:
         port = int(rest[rest.index("--port") + 1])
-    serve(root, port)
+    if "--token" in rest:
+        token = rest[rest.index("--token") + 1]
+    serve(root, port, token=token)
     return 0
 
 
-def cmd_publish_remote(cwd, url):
+def cmd_publish_remote(cwd, url, token=None):
     _mp, _text, pkg, _deps = read_manifest(cwd)
     name = pkg.get("name")
     version = pkg.get("version", "0.1.0")
@@ -201,7 +206,8 @@ def cmd_publish_remote(cwd, url):
         print("forge pkg: nothing to publish (src/ has no library files)", file=sys.stderr)
         return 1
     status, body = _http_json(url.rstrip("/") + "/api/publish", method="POST",
-                              body={"name": name, "version": version, "files": files})
+                              body={"name": name, "version": version, "files": files},
+                              token=token)
     if status != 200:
         print(f"forge pkg: publish failed ({status}): {body}", file=sys.stderr)
         return 1
@@ -289,9 +295,10 @@ def dispatch(argv, forge_path, cwd):
             return cmd_serve(cwd, rest)
         if cmd == "publish-remote":
             if not rest:
-                print("usage: forge pkg publish-remote <url>", file=sys.stderr)
+                print("usage: forge pkg publish-remote <url> [--token TOKEN]", file=sys.stderr)
                 return 1
-            return cmd_publish_remote(cwd, rest[0])
+            token = rest[rest.index("--token") + 1] if "--token" in rest else None
+            return cmd_publish_remote(cwd, rest[0], token=token)
         if cmd == "add-remote":
             if len(rest) < 2:
                 print("usage: forge pkg add-remote <url> name@version", file=sys.stderr)

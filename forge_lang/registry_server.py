@@ -1,6 +1,6 @@
-"""Forge hosted registry server (simple HTTP, no auth).
+"""Forge hosted registry server (dynamic, with optional auth).
 
-Run:  python3 forge.py pkg serve --dir DIR --port 8765
+Run:  python3 forge.py pkg serve --dir DIR --port 8765 [--token TOKEN]
   or: python3 -m forge_lang.registry_server --dir DIR --port 8765
 
 Endpoints (all JSON unless noted):
@@ -10,10 +10,17 @@ Endpoints (all JSON unless noted):
   GET  /api/packages/<name>/<version>/<file> -> raw .fg text
   POST /api/publish  {"name":..., "version":..., "files": {name: text}}
        -> {"ok": true, "name":..., "version":...}
+       (with --token, requires header "Authorization: Bearer <token>";
+        without it, publishing is rejected with 401. Publishing an
+        existing name@version is rejected with 409, so a published
+        version is immutable — publish a new version instead.)
 
-This is a local HTTP registry, not a public hosted service and
-not authenticated: run it on your own machine or trusted network,
-like a private Go module proxy. Clients are `forge pkg
+Deploy: this server is a single file with no dependencies, so it
+runs anywhere Python runs. See registry/Dockerfile and
+registry/README.md for a one-command Docker deploy and for
+Render/Fly/VPS instructions. Central hosting still needs a host
+you control — this repo provides the server and the deploy
+files, not the host itself. Clients are `forge pkg
 publish-remote` and `forge pkg add-remote` in pkg.py.
 """
 
@@ -28,10 +35,15 @@ def safe_name(s):
     return re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]*", s) is not None
 
 
-def make_handler(root):
+def make_handler(root, token=None):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
             pass
+
+        def _check_auth(self):
+            if token is None:
+                return True
+            return self.headers.get("Authorization") == f"Bearer {token}"
 
         def _json(self, obj, code=200):
             body = json.dumps(obj).encode()
@@ -98,6 +110,9 @@ def make_handler(root):
             if urlparse(self.path).path != "/api/publish":
                 self._json({"error": "not found"}, 404)
                 return
+            if not self._check_auth():
+                self._json({"error": "unauthorized"}, 401)
+                return
             length = int(self.headers.get("Content-Length", 0))
             try:
                 data = json.loads(self.rfile.read(length).decode())
@@ -108,6 +123,9 @@ def make_handler(root):
             if not name or not safe_name(name) or not version or not safe_name(version) \
                     or not isinstance(files, dict) or not files:
                 self._json({"error": "bad publish body"}, 400)
+                return
+            if os.path.isdir(os.path.join(root, name, version)):
+                self._json({"error": "version already exists"}, 409)
                 return
             dest = os.path.join(root, name, version, "src")
             os.makedirs(dest, exist_ok=True)
@@ -121,10 +139,10 @@ def make_handler(root):
     return Handler
 
 
-def serve(root, port):
+def serve(root, port, token=None):
     os.makedirs(root, exist_ok=True)
-    server = HTTPServer(("0.0.0.0", port), make_handler(root))
-    print(f"forge registry serving {root} on port {port}")
+    server = HTTPServer(("0.0.0.0", port), make_handler(root, token))
+    print(f"forge registry serving {root} on port {port} (auth={'on' if token else 'off'})")
     server.serve_forever()
 
 
@@ -134,5 +152,6 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", default=os.path.expanduser("~/.forge_registry_server"))
     ap.add_argument("--port", type=int, default=8765)
+    ap.add_argument("--token", default=None)
     args = ap.parse_args()
-    serve(args.dir, args.port)
+    serve(args.dir, args.port, token=args.token)

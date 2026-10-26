@@ -308,11 +308,44 @@ and pull request.
   Pages, but read-only for clients — publishing is via git
   push, not via POST, unlike the dynamic server above.
 
+## New in the "finish the remaining 3" pass (26 Oct 2026)
+
+- **Python [float]/[str] arrays + nested structs:** done.
+  Verified: sum_float([1.5,2.5,3.0]) = 7.0,
+  double_float([1.0,2.5]) = [2.0,5.0],
+  join_str(["jayant","teju"]) = "jayant,teju",
+  str-array round-trip = ["a","b"],
+  outer_sum(Outer{Inner(10,32)}) = 42,
+  make_outer(3,4,"hello") = (3,4,"hello").
+  Str-array elements are malloc'd in Python and freed by
+  Forge on return, exactly like plain str arguments.
+- **CUDA execution:** still blocked on hardware, honestly.
+  This VM has no GPU and no nvcc (re-checked). What is new:
+  `tools/simulate_cuda.py` runs the exact CUDA block/thread
+  logic in Python and asserts dot = 70, matmul = 19 22 43 50,
+  and `examples/cuda/` is a ready-to-run package (.cu +
+  README with the nvcc command and expected output).
+  Simulation proves the algorithm, not the hardware — to
+  actually run it, you need a CUDA GPU machine, or a Kaggle/
+  Colab GPU with a token you re-supply (your Kaggle token is
+  never stored, so I cannot start that run for you).
+- **Dynamic centrally hosted registry:** the server is now
+  production-shaped — POST publishing with an optional Bearer
+  token, immutable versions (re-publishing the same version
+  returns 409), and a Dockerfile + deploy README in
+  `registry/`. Verified end to end: publish without token
+  -> 401, publish with token -> ok, re-publish -> 409,
+  list-remote -> "hostlib 0.1.0", add-remote -> vendored.
+  What is still not provided: a host. Central hosting means
+  running that server on a VPS/Render/Fly host you control
+  and sharing its URL — this repo gives the server and the
+  deploy files, not the host itself.
+
 ## What is still not in the ecosystem
 
-No execution of CUDA kernels on real GPU hardware (the .cu
-file above is generated, not run, because no GPU/nvcc here),
-no Python interop for [float]/[str] arrays or nested
-structs, and no dynamic centrally hosted registry with POST
-publishing (the static registry above is read-only). Those
+No CUDA execution on real GPU hardware (needs a GPU machine
+or a GPU token you supply), no Python interop for generic
+arrays/structs beyond the types above, and no registry
+actually running on a public host (the server above is
+ready to deploy, but no host is provisioned here). Those
 are the next phases, in that order.

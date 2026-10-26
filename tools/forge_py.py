@@ -79,6 +79,62 @@ def _read_int_array(struct):
     return out
 
 
+def _c_float_array(values):
+    n = len(values)
+    data = _libc.malloc(ctypes.sizeof(ctypes.c_double) * max(n, 1))
+    arr = (ctypes.c_double * n).from_address(data) if n else None
+    for i, v in enumerate(values):
+        arr[i] = v
+    ref = _libc.malloc(ctypes.sizeof(ctypes.c_longlong))
+    ctypes.cast(ref, ctypes.POINTER(ctypes.c_longlong))[0] = 1
+    return ForgeFloatArray(ctypes.cast(data, ctypes.POINTER(ctypes.c_double)),
+                           n, n, ctypes.cast(ref, ctypes.POINTER(ctypes.c_longlong)))
+
+
+def _read_float_array(struct):
+    out = [struct.data[i] for i in range(struct.len)]
+    if struct.data:
+        _libc.free(ctypes.cast(struct.data, ctypes.c_void_p))
+    if struct.ref:
+        _libc.free(ctypes.cast(struct.ref, ctypes.c_void_p))
+    return out
+
+
+class ForgeStrArray(ctypes.Structure):
+    _fields_ = [("data", ctypes.POINTER(ctypes.c_void_p)),
+                ("len", ctypes.c_longlong),
+                ("cap", ctypes.c_longlong),
+                ("ref", ctypes.POINTER(ctypes.c_longlong))]
+
+
+def _c_str_array(values):
+    """Malloc a Forge [str] array. Each element is malloc'd, and Forge
+    frees the elements, data, and ref on return — do NOT free in Python."""
+    n = len(values)
+    data = _libc.malloc(ctypes.sizeof(ctypes.c_void_p) * max(n, 1))
+    ptrs = (ctypes.c_void_p * n).from_address(data) if n else None
+    for i, v in enumerate(values):
+        ptrs[i] = _c_str(v)
+    ref = _libc.malloc(ctypes.sizeof(ctypes.c_longlong))
+    ctypes.cast(ref, ctypes.POINTER(ctypes.c_longlong))[0] = 1
+    return ForgeStrArray(ctypes.cast(data, ctypes.POINTER(ctypes.c_void_p)),
+                         n, n, ctypes.cast(ref, ctypes.POINTER(ctypes.c_longlong)))
+
+
+def _read_str_array(struct):
+    out = []
+    for i in range(struct.len):
+        ptr = struct.data[i]
+        out.append(ctypes.string_at(ptr).decode() if ptr else "")
+        if ptr:
+            _libc.free(ptr)
+    if struct.data:
+        _libc.free(ctypes.cast(struct.data, ctypes.c_void_p))
+    if struct.ref:
+        _libc.free(ctypes.cast(struct.ref, ctypes.c_void_p))
+    return out
+
+
 class ForgeLib:
     def __init__(self, path):
         if not os.path.exists(path):
@@ -137,6 +193,35 @@ class ForgeLib:
         fn.argtypes = [ForgeIntArray]
         fn.restype = ForgeIntArray
         return _read_int_array(fn(_c_int_array(values)))
+
+    def call_float_array(self, name, values):
+        fn = getattr(self.lib, name)
+        fn.argtypes = [ForgeFloatArray]
+        fn.restype = ctypes.c_double
+        return fn(_c_float_array(values))
+
+    def call_float_array_out(self, name, values):
+        fn = getattr(self.lib, name)
+        fn.argtypes = [ForgeFloatArray]
+        fn.restype = ForgeFloatArray
+        return _read_float_array(fn(_c_float_array(values)))
+
+    def call_str_array(self, name, values):
+        fn = getattr(self.lib, name)
+        fn.argtypes = [ForgeStrArray]
+        fn.restype = ctypes.c_void_p
+        ptr = fn(_c_str_array(values))
+        try:
+            return ctypes.string_at(ptr).decode() if ptr else ""
+        finally:
+            if ptr:
+                _libc.free(ptr)
+
+    def call_str_array_out(self, name, values):
+        fn = getattr(self.lib, name)
+        fn.argtypes = [ForgeStrArray]
+        fn.restype = ForgeStrArray
+        return _read_str_array(fn(_c_str_array(values)))
 
     def call_struct(self, name, struct_type, struct_value, restype=ctypes.c_longlong):
         """Call a Forge fn(Struct) -> int, with a ctypes Structure value.

@@ -1,0 +1,51 @@
+struct Inner {
+    x: int;
+    y: int;
+}
+
+struct Outer {
+    inner: Inner;
+    name: str;
+}
+
+fn sum_float(a: [float]) -> float {
+    let mut s: float = 0.0;
+    let mut i: int = 0;
+    while i < len(a) {
+        s = s + a[i];
+        i = i + 1;
+    }
+    return s;
+}
+
+fn double_float(a: [float]) -> [float] {
+    let mut out: [float] = [];
+    let mut i: int = 0;
+    while i < len(a) {
+        push(out, a[i] * 2.0);
+        i = i + 1;
+    }
+    return out;
+}
+
+fn join_str(a: [str]) -> str {
+    return join(a, ",");
+}
+
+fn upper_first(a: [str]) -> [str] {
+    let mut out: [str] = [];
+    let mut i: int = 0;
+    while i < len(a) {
+        push(out, a[i]);
+        i = i + 1;
+    }
+    return out;
+}
+
+fn outer_sum(o: Outer) -> int {
+    return o.inner.x + o.inner.y;
+}
+
+fn make_outer(x: int, y: int, name: str) -> Outer {
+    return Outer { inner: Inner { x: x, y: y }, name: name };
+}
