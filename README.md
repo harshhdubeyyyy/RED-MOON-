@@ -311,11 +311,11 @@ shared library, public registry discovery, array GC v2,
 struct GC, Python arrays/structs, CUDA codegen, and a static
 GitHub-Pages registry are done (26 Oct 2026), and now also
 Python [float]/[str] arrays + nested structs, a CUDA
-simulation + ready-to-run package, and a dynamic registry
-with auth and a Dockerfile. It still has no CUDA execution
-on real GPU hardware, and no registry actually running on a
-public host yet. Those are the next phases in `SPEC_V2.md`,
-not hidden features.
+simulation + ready-to-run package, a dynamic registry
+with auth and a Dockerfile, and now CUDA execution verified
+on a real Kaggle Tesla T4 GPU (26 Oct 2026). It still has
+no registry actually running on a public host yet. That is
+the next phase in `SPEC_V2.md`, not a hidden feature.
 
 ## 🔁 Regenerate the figures
 

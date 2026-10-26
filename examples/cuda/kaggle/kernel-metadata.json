@@ -1,0 +1,14 @@
+{
+  "id": "arshhdubeyy/forge-cuda-kernel",
+  "title": "Forge CUDA Kernel",
+  "code_file": "forge-cuda-kernel.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": "true",
+  "enable_gpu": "true",
+  "enable_internet": "false",
+  "dataset_sources": [],
+  "competition_sources": [],
+  "kernel_sources": [],
+  "model_sources": []
+}

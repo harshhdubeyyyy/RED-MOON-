@@ -319,16 +319,17 @@ and pull request.
   make_outer(3,4,"hello") = (3,4,"hello").
   Str-array elements are malloc'd in Python and freed by
   Forge on return, exactly like plain str arguments.
-- **CUDA execution:** still blocked on hardware, honestly.
-  This VM has no GPU and no nvcc (re-checked). What is new:
-  `tools/simulate_cuda.py` runs the exact CUDA block/thread
-  logic in Python and asserts dot = 70, matmul = 19 22 43 50,
-  and `examples/cuda/` is a ready-to-run package (.cu +
-  README with the nvcc command and expected output).
-  Simulation proves the algorithm, not the hardware — to
-  actually run it, you need a CUDA GPU machine, or a Kaggle/
-  Colab GPU with a token you re-supply (your Kaggle token is
-  never stored, so I cannot start that run for you).
+- **CUDA execution:** VERIFIED ON A REAL GPU 26 Oct 2026.
+  Kaggle GPU notebook `arshhdubeyy/forge-cuda-kernel` v2,
+  2x Tesla T4 (15360 MiB each), driver 580.178.04, nvcc 12.8:
+  cuda dot = 70.000000, cuda matmul = 19 22 43 50 — exactly
+  matching the CPU-thread kernels, the serial code, and the
+  `tools/simulate_cuda.py` simulation. The Kaggle token used
+  for this run was supplied transiently for this session
+  only and was not stored. This VM itself still has no GPU
+  or nvcc, so the .cu file cannot run here — the verified
+  run happened on Kaggle, and `examples/cuda/` now records
+  it with the GPU, driver, and nvcc versions above.
 - **Dynamic centrally hosted registry:** the server is now
   production-shaped — POST publishing with an optional Bearer
   token, immutable versions (re-publishing the same version

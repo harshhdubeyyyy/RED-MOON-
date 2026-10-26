@@ -183,6 +183,12 @@ from scratch, and do not silently drop a phase.
   README, NOT hosted on a public host yet). Full suite
   passes. Push this pass next; still NOT done: CUDA
   execution on hardware, a public registry host.
+- CUDA REAL GPU RUN (26 Oct 2026, Kaggle, token transient
+  only, not stored): notebook arshhdubeyy/forge-cuda-kernel
+  v2, 2x Tesla T4, driver 580.178.04, nvcc 12.8, output
+  dot 70.000000, matmul 19 22 43 50. Docs updated to record
+  this. Push this verification next; still NOT done: a
+  public registry host.
 
 ## Research findings that now lock v2's design (26 Oct 2026)
 
