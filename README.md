@@ -139,6 +139,13 @@ Not a promise of LLMs — a small-model stack that actually trains:
   TinyStories data (200 stories, 24,000 words, 500-word vocab),
   12,608 params, held-out perplexity 1078.88 → 247.39. Sampled
   output is real words in salad order — not fluent sentences.
+- **0.5.0 engine batch**: tape freeing (loop-body locals now
+  freed — the 0.4.0 OOM leak is gone), tensor autograd
+  (100 nodes per forward vs 221,844 scalar; gradients
+  checked to ~1e-9), KV-cache for the gpt2 layout
+  (diff 4.44e-16 vs full forward), scaled TinyStories
+  (49,664 params, perplexity 1118.87 → 189.13).
+  See CHANGELOG.md and docs/BENCHMARKS.md.
 
 ```sh
 python3 forge.py run examples/tiny_gpt.fg      # trains + generates

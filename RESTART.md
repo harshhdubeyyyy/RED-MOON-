@@ -290,3 +290,26 @@ Forge docs.
   process OOM-killed at 1500 steps x ~221k nodes. Train
   one epoch per process with checkpoint resume; eval in
   its own process. Tape freeing is the 0.5.0 compiler fix.
+
+## 0.5.0 engine batch — 26 Oct 2026
+- Tape freeing FIXED in forge_lang/codegen.py
+  (emit_free_frame on Block/If/While/For ends; frame
+  frees only names absent from outer frames, or Assign
+  targets double-free). Probe: 1000 allocs / 1000 frees.
+  gpt_tinystories.fg now trains 3 epochs in ONE process.
+- Tensor autograd (stdlib/tensor_autograd.fg) + tensor
+  GPT (stdlib/tgt.fg): grad checks ~1e-9; small run
+  100 nodes, 4.35 ms/step, ppl 549 -> 283; scaled run
+  (data_scaled/, 49,664 params) ppl 1119 -> 189.
+- KV-cache for gpt2 (stdlib/inference_gpt2.fg): diff
+  4.44e-16 vs full forward. Positions clamp to seq-1
+  past the trained length (documented approximation).
+- Ecosystem: docs/BENCHMARKS.md, web/landing/index.html,
+  pip install . verified in a clean venv, docs/DEBUGGING.md,
+  examples/cuda/mlp_train.cu (CODE ONLY, no GPU run yet).
+- Still NOT done: fluent generation, GPU training run,
+  WASM strings/arrays (no linear memory in backend),
+  big32 floats/structs (integer-only core), source-level
+  debugger (AST lacks file tracking), self-hosting,
+  registry host / CI upload / repo rename / PyPI publish
+  (maintainer's clicks/accounts).

@@ -5,21 +5,18 @@
 // data/tinystories_README.md and tools/prepare_tinystories.py).
 // Training: Adam lr 0.02, clip 1.0, 500 strided windows
 // (stride 4, covering the first ~2000 words) x 3 epochs,
-// run as THREE one-epoch processes, not one three-epoch
-// process. Reason, found by running it: the native backend
-// retains each training tape's arrays, so a single process
-// doing 1500 steps x ~221k nodes grows until the VM's OOM
-// killer ends it (killed during epoch 1, after epoch 0 had
-// already averaged 4.98). One epoch per process stays well
-// under the limit, and the checkpoint between epochs is
-// exactly the resume mechanism this program exercises:
-//   forge run examples/gpt_tinystories.fg
+// in ONE process since 0.5.0. Before 0.5.0 this had to run
+// as three one-epoch processes: block-scoped variables were
+// never freed, so each step's ~221k-node tape leaked and
+// the VM's OOM killer ended the run (twice). The 0.5.0
+// compiler fix frees a block's variables when the block
+// ends, so one process now trains all 3 epochs. Resume
+// still works for continuing from a checkpoint:
 //   forge run examples/gpt_tinystories.fg resume
 //   forge run examples/gpt_tinystories.fg resume final
 // Checkpoint: /tmp/tinystories_ckpt.txt (6-decimal floats,
 // so a resumed run loses ~1e-6 per parameter — negligible
 // at this scale, and the printed ckpt diff shows it).
-// Tape-memory freeing is the open compiler fix (0.5.0).
 // Evaluation: held-out windows from word offset 20000
 // (later stories the model never trained on), loss and
 // perplexity before and after. Checkpoint: saved to /tmp
@@ -185,37 +182,45 @@ fn main() -> int {
         println("test loss before =", test_before, "ppl =", exp(test_before));
     }
     let mut st: OptimState = optim_new(init);
-    let mut total: float = 0.0;
-    let mut w: int = 0;
-    while w < 500 {
-        let start: int = w * 4;
-        let mut x: [int] = [];
-        let mut y: [int] = [];
-        let mut i: int = 0;
-        while i < 8 {
-            push(x, ids[start + i]);
-            push(y, ids[start + i + 1]);
-            i = i + 1;
-        }
-        let tape: Ag = build_tape(st.params);
-        let logits: NodeVec = g2_logits(tape, x, 8, 16, 2, 32, vlen, 2);
-        let loss: Ag = g2_loss(logits.ag, logits.ids, y, 8, vlen);
-        let back: Ag = ag_backward(loss, loss.last);
-        total = total + back.tape.vals[loss.last];
-        let mut grads: [float] = [];
-        i = 0;
-        while i < len(st.params) {
-            push(grads, back.tape.grads[i]);
-            i = i + 1;
-        }
-        let clipped: [float] = grad_clip(grads, 1.0);
-        st = adam_step(st, clipped, 0.02, 0.9, 0.999, 0.00000001);
-        w = w + 1;
+    let mut epochs: int = 3;
+    if resume {
+        epochs = 1;
     }
-    println("epoch avg loss =", total / 500.0);
+    let mut epoch: int = 0;
+    while epoch < epochs {
+        let mut total: float = 0.0;
+        let mut w: int = 0;
+        while w < 500 {
+            let start: int = w * 4;
+            let mut x: [int] = [];
+            let mut y: [int] = [];
+            let mut i: int = 0;
+            while i < 8 {
+                push(x, ids[start + i]);
+                push(y, ids[start + i + 1]);
+                i = i + 1;
+            }
+            let tape: Ag = build_tape(st.params);
+            let logits: NodeVec = g2_logits(tape, x, 8, 16, 2, 32, vlen, 2);
+            let loss: Ag = g2_loss(logits.ag, logits.ids, y, 8, vlen);
+            let back: Ag = ag_backward(loss, loss.last);
+            total = total + back.tape.vals[loss.last];
+            let mut grads: [float] = [];
+            i = 0;
+            while i < len(st.params) {
+                push(grads, back.tape.grads[i]);
+                i = i + 1;
+            }
+            let clipped: [float] = grad_clip(grads, 1.0);
+            st = adam_step(st, clipped, 0.02, 0.9, 0.999, 0.00000001);
+            w = w + 1;
+        }
+        println("epoch", epoch, "avg loss =", total / 500.0);
+        epoch = epoch + 1;
+    }
     let ok: bool = checkpoint_save("/tmp/tinystories_ckpt.txt", st.params);
     println("ckpt saved =", ok);
-    if final_run {
+    if final_run || !resume {
         let test_after: float = eval_loss(st.params, ids, 20000, 20, vlen);
         println("test loss after =", test_after, "ppl =", exp(test_after));
         let back_params: [float] = checkpoint_load("/tmp/tinystories_ckpt.txt");

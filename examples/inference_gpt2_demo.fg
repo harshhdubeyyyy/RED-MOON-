@@ -1,0 +1,92 @@
+// KV-cache check for the gpt2 layout (0.5.0): a fixed
+// 4-token prompt is run two ways — full-sequence tape
+// forward, and one cache step per token — and the final
+// logits must match. Then 10 greedy tokens are generated
+// through the cache, with positions clamped to seq-1 once
+// generation runs past the trained length (documented
+// approximation in inference_gpt2.fg). Timing for cache
+// vs full-forward generation is printed for the record;
+// it varies run to run and is not suite-checked.
+import "inference_gpt2.fg";
+
+fn build_tape(params: [float]) -> Ag {
+    let mut s: Ag = ag_input(tape_new(), params[0]);
+    let mut i: int = 1;
+    while i < len(params) {
+        s = ag_input(s.tape, params[i]);
+        i = i + 1;
+    }
+    return s;
+}
+
+fn main() -> int {
+    let vocab: int = 50;
+    let d: int = 8;
+    let seq: int = 4;
+    let hidden: int = 16;
+    let blocks: int = 1;
+    let heads: int = 2;
+    let params: [float] = g2_init_params(vocab, d, seq, hidden, blocks, 7);
+    let tokens: [int] = [3, 10, 20, 5];
+    let tape: Ag = build_tape(params);
+    let logits: NodeVec = g2_logits(tape, tokens, seq, d, heads, hidden, vocab, blocks);
+    let mut full_last: [float] = [];
+    let mut v: int = 0;
+    while v < vocab {
+        push(full_last, logits.ag.tape.vals[logits.ids[(seq - 1) * vocab + v]]);
+        v = v + 1;
+    }
+    let mut cache: G2Cache = G2Cache { k: [], v: [], len: 0 };
+    let mut step: G2Step = G2Step { logits: [], cache: cache };
+    let mut p: int = 0;
+    while p < seq {
+        step = g2c_step(params, step.cache, tokens[p], p, vocab, d, seq, heads, hidden, blocks);
+        p = p + 1;
+    }
+    let mut diff: float = 0.0;
+    v = 0;
+    while v < vocab {
+        let mut dd: float = full_last[v] - step.logits[v];
+        if dd < 0.0 {
+            dd = -dd;
+        }
+        if dd > diff {
+            diff = dd;
+        }
+        v = v + 1;
+    }
+    println("kv2 diff =", diff);
+    if diff > 0.000000001 {
+        fail("gpt2 kv-cache does not match full forward");
+    }
+    println("kv2 cache len =", step.cache.len);
+    println("kv2 full last0 =", full_last[0], "cache last0 =", step.logits[0]);
+    // Greedy generation through the cache, positions clamped.
+    let mut gen: [int] = [];
+    let t0: int = clock_micros();
+    let mut g: int = 0;
+    while g < 10 {
+        let mut best: int = 0;
+        let mut c: int = 1;
+        while c < vocab {
+            if step.logits[c] > step.logits[best] {
+                best = c;
+            }
+            c = c + 1;
+        }
+        push(gen, best);
+        let pos: int = step.cache.len;
+        let mut clamped: int = pos;
+        if clamped > seq - 1 {
+            clamped = seq - 1;
+        }
+        step = g2c_step(params, step.cache, best, clamped, vocab, d, seq, heads, hidden, blocks);
+        g = g + 1;
+    }
+    let t1: int = clock_micros();
+    println("kv2 cache gen micros =", t1 - t0);
+    for tok in gen {
+        println("kv2 gen token =", tok);
+    }
+    return 0;
+}

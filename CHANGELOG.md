@@ -4,6 +4,108 @@ All notable changes are listed here. Version numbers follow
 semantic versioning in spirit: 0.x means the language is usable
 but breaking changes are still possible.
 
+## 0.5.0 — 26 Oct 2026 — Engine batch: tape freeing, tensor autograd, KV-cache, scaled training
+
+Fixed (compiler, the 0.4.0 leak):
+- `forge_lang/codegen.py` now frees a block's variables
+  when the block ends (`emit_free_frame`, applied to
+  Block, If arms, While and For bodies). Before this,
+  every array or struct created inside a loop body leaked
+  once per iteration — measured on a tape loop: 1,000
+  arrays allocated, 0 freed. After: 1,000 allocated,
+  1,000 freed, and the scalar TinyStories program trains
+  all 3 epochs in ONE process (previously OOM-killed
+  twice). A subtlety found while fixing: Assign re-adds
+  its target to the current frame even when declared
+  outside it, so a frame frees only names absent from
+  outer frames — otherwise the same value is freed twice
+  (caught by a double-free in testing, fixed before ship).
+- `examples/gpt_tinystories.fg` now trains 3 epochs in one
+  process by default (resume still works). Single-process
+  run 26 Oct 2026: train losses 4.98375, 4.49469, 4.41384;
+  held-out loss 6.98368 -> 5.95341, perplexity 1078.88 ->
+  385.06. Note: this differs from 0.4.0's 247.39 because
+  the old split-process runs reset Adam's moments every
+  epoch — an accidental regulariser. The new number is
+  the methodologically cleaner one; both are recorded.
+
+Added (tensor autograd):
+- `stdlib/tensor_autograd.fg` — a tensor-level tape: one
+  node per tensor op (matmul, add, bias, transpose,
+  softmax, causal softmax, GELU, layernorm, mul, scale,
+  gather, cross-entropy, ReLU, col-slice, concat-cols,
+  reshape), with exact backward rules. Every rule is
+  checked against central finite differences in
+  `examples/tensor_autograd_demo.fg` (all diffs ~1e-9,
+  and the demo fails itself if any diff exceeds 0.01).
+- `stdlib/tgt.fg` — the gpt2 transformer rebuilt on
+  tensor autograd (fused QKV, tied head, 12,608 params at
+  the small size), plus tensor Adam and grad clipping.
+- `examples/tgt_tinystories.fg` — same data and sizes as
+  the scalar run: forward 100 nodes (scalar: 221,844),
+  1500 steps in 6.5 s (4.35 ms/step), held-out loss
+  6.30804 -> 5.64615, perplexity 548.97 -> 283.20.
+  Sampled generation is still word salad; greedy still
+  collapses (now on <unk>). Fluency is NOT claimed.
+
+Added (KV-cache for gpt2):
+- `stdlib/inference_gpt2.fg` — plain-float KV-cache step
+  for any gpt2 layout (blocks, heads, separate Q/K/V).
+  `examples/inference_gpt2_demo.fg` verifies it against
+  full-sequence forward: max logit diff 4.44e-16
+  (float rounding only). Generation past the trained
+  sequence length clamps positions to seq-1 — a
+  documented approximation, not a silent model change.
+
+Added (scaled training):
+- `tools/prepare_tinystories.py` gains `--out-dir`
+  (default `data`); `data_scaled/` holds 500 stories,
+  75,000 words, 1000-word vocab, UNK 8.5%.
+- `examples/tgt_tinystories_scaled.fg` — 2 blocks,
+  4 heads, d=32, hidden=64, seq=16 words, 49,664 params,
+  1500 strided windows (stride 8) x 3 epochs: train
+  5.45016, 4.94801, 4.86257; held-out (offset 60000)
+  loss 7.02007 -> 5.24241, perplexity 1118.87 -> 189.13;
+  117.6 s total, 26.1 ms/step, forward 136 nodes.
+  Sampled output is still salad order, with more
+  plausible fragments than at the small size.
+
+Added (ecosystem, all verified by running):
+- `docs/BENCHMARKS.md` — dot(5000): Jal Pari 8 µs,
+  NumPy 29 µs, Python loops 788 µs; matmul 64x64:
+  Jal Pari 615 µs, NumPy 343 µs (BLAS wins, stated
+  plainly), Python 476,501 µs.
+- `web/landing/index.html` — static landing page with
+  the verified numbers and honest limits.
+- `setup.py` + `pyproject.toml` + `bin/jalpari-pip` —
+  `pip install .` verified in a clean venv
+  (`jalpari-pip --version`, demo runs from another cwd).
+  PyPI publication still needs the maintainer's account.
+- `docs/DEBUGGING.md` — gdb-on-emitted-C recipe,
+  allocation counters, and the missing piece (see below).
+- `examples/cuda/mlp_train.cu` — GPU SGD trainer for
+  XOR using only the verified square-matmul wrapper.
+  CODE ONLY, never compiled or run (no nvcc/GPU here);
+  needs a Kaggle session with Jayant's token.
+- `examples/cuda/kernel.cu` comment corrected: the
+  transformer kernels WERE verified on Kaggle T4 in
+  0.3.0 (the old "not yet run" comment was stale).
+
+Still NOT done (stated, not implied):
+- Fluent generation; GPU training run (code exists,
+  run needs a Kaggle token); WASM strings/arrays (the
+  backend is 259 lines with no linear memory at all —
+  needs memory + a bump allocator + string/array ops,
+  a backend rewrite, not a patch); big32 floats/structs
+  (the core is integer-only, no FPU — a core extension);
+  a source-level debugger (AST nodes carry line but not
+  file, so `#line` mapping would misattribute stdlib
+  code — needs file tracking through the parser);
+  self-hosting compiler; public registry host, CI upload
+  and repo rename (maintainer's clicks/accounts);
+  PyPI publication; Mojo/PyTorch benchmark numbers
+  (neither installed here).
+
 ## 0.4.0 — 26 Oct 2026 — TinyStories word GPT
 
 Added:

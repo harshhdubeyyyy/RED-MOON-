@@ -105,6 +105,26 @@ def main():
                    "quant step max diff ="):
         if r.returncode != 0 or needle not in r.stdout:
             failures.append(f"inference_demo: missing {needle!r} in {r.stdout!r} err={r.stderr!r}")
+    # Tensor autograd: gradient checks must pass (the demo
+    # fails itself if any analytic-vs-numeric diff > 0.01).
+    r = run_forge("run", "examples/tensor_autograd_demo.fg")
+    for needle in ("part A nodes = 5", "part B nodes = 9",
+                   "max grad diff ="):
+        if r.returncode != 0 or needle not in r.stdout:
+            failures.append(f"tensor_autograd_demo: missing {needle!r} in {r.stdout!r} err={r.stderr!r}")
+    # KV-cache for the gpt2 layout: must match full forward
+    # to 1e-9 (the demo fails itself otherwise).
+    r = run_forge("run", "examples/inference_gpt2_demo.fg")
+    for needle in ("kv2 diff =", "kv2 cache len = 4"):
+        if r.returncode != 0 or needle not in r.stdout:
+            failures.append(f"inference_gpt2_demo: missing {needle!r} in {r.stdout!r} err={r.stderr!r}")
+    # Tensor GPT on TinyStories: the full small training run
+    # (6.5 s of training inside a ~20 s program run).
+    r = run_forge("run", "examples/tgt_tinystories.fg")
+    for needle in ("params = 12608", "tensor forward nodes = 100",
+                   "test loss after ="):
+        if r.returncode != 0 or needle not in r.stdout:
+            failures.append(f"tgt_tinystories: missing {needle!r} in {r.stdout!r} err={r.stderr!r}")
     # CUDA simulation (Python mirror of the .cu kernels).
     r = subprocess.run([sys.executable, "tools/simulate_cuda.py"],
                        capture_output=True, text=True, cwd=ROOT)

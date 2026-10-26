@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>The Jal Pari Language</title>
+<style>body{font-family:system-ui;max-width:760px;margin:40px auto;padding:0 20px;line-height:1.55}h1{font-size:2em}code{background:#f4f4f4;padding:2px 5px}pre{background:#f4f4f4;padding:14px;overflow:auto}.num{color:#555}footer{margin-top:40px;color:#777;font-size:.9em}</style>
+</head><body>
+<h1>🧜‍♀️ The Jal Pari Language</h1>
+<p>A small, safe, fast programming language — dedicated to Teju, the Jal Pari.
+No null, no implicit conversions, checked arithmetic in safe mode, and a
+real machine-learning stack: tensors, autograd, transformers, GPU kernels.</p>
+<h2>Try it</h2>
+<pre>git clone https://github.com/jayantt1dubeyy/RED-MOON-
+cd RED-MOON-
+./scripts/install.sh
+jalpari run examples/jal_pari_demo.fg</pre>
+<p>Or try the <a href="../playground.html">browser playground</a> (WASM demos, no install).</p>
+<h2>Verified numbers <span class="num">(measured 26 Oct 2026, not projections)</span></h2>
+<ul>
+<li><b>TinyStories word GPT, 49,664 params:</b> held-out perplexity 1119 → 189.</li>
+<li><b>Tensor autograd:</b> one forward is 136 tape nodes, where the scalar tape needed 221,844.</li>
+<li><b>Training step:</b> 26 ms at the scaled size, 4.35 ms at the small size.</li>
+<li><b>dot(5000):</b> 8 µs (NumPy 29 µs, pure Python 788 µs, same machine).</li>
+<li><b>matmul 64×64:</b> 615 µs (NumPy 343 µs with BLAS, pure Python 476,501 µs).</li>
+<li><b>GPU kernels:</b> verified on Kaggle Tesla T4 — dot 70, matmul 19 22 43 50, attention exact to 6 decimals.</li>
+</ul>
+<h2>Honest limits</h2>
+<ul>
+<li>Generation is word salad, not fluent prose — perplexity is the solid result.</li>
+<li>GPU training is code, not a run yet; it needs a Kaggle GPU session.</li>
+<li>NumPy still wins matmul (BLAS). WASM has no print yet; big32 has no floats yet.</li>
+<li>CI, repo rename, and the public registry host need the maintainer's own clicks/accounts.</li>
+</ul>
+<p>Full numbers, limits, and gotchas: <code>docs/BENCHMARKS.md</code>, <code>docs/ML_STACK.md</code>, <code>CHANGELOG.md</code> in the repo.</p>
+<footer>The Jal Pari Language — for Teju, my Jal Pari. Simple, friendly, zero pressure.</footer>
+</body></html>

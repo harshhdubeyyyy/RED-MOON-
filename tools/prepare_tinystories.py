@@ -66,6 +66,8 @@ def main():
     ap.add_argument("--stories", type=int, default=200)
     ap.add_argument("--max-words", type=int, default=24000)
     ap.add_argument("--vocab-size", type=int, default=200)
+    ap.add_argument("--out-dir", default="data",
+                    help="output directory under the repo root (default: data)")
     args = ap.parse_args()
 
     stories = fetch_stories(args.stories)
@@ -86,7 +88,7 @@ def main():
     print(f"kept {len(ids)} words, UNK rate: {unk_rate:.3f}")
 
     root = Path(__file__).resolve().parent.parent
-    out = root / "data"
+    out = root / args.out_dir
     out.mkdir(exist_ok=True)
     (out / "tinystories_vocab.txt").write_text("\n".join(vocab) + "\n", encoding="utf-8")
     (out / "tinystories_ids.txt").write_text(" ".join(str(i) for i in ids), encoding="utf-8")

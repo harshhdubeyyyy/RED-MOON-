@@ -524,18 +524,45 @@ class Codegen:
                     out.append((name, typ))
         return out
 
+    def _emit_free_one(self, name, typ):
+        if typ == "str":
+            self.emit(f"forge_free_str({name});")
+        elif typ.startswith("[") and typ.endswith("]"):
+            elem = typ[1:-1]
+            free_fn = {"int": "forge_int_array_free", "float": "forge_float_array_free",
+                       "bool": "forge_bool_array_free", "str": "forge_str_array_free"}.get(elem)
+            if free_fn:
+                self.emit(f"{free_fn}({name});")
+        elif self.is_struct_type(typ):
+            self.emit_struct_free(name, typ)
+
     def emit_free_owned(self):
         for name, typ in self.owned_all():
-            if typ == "str":
-                self.emit(f"forge_free_str({name});")
-            elif typ.startswith("[") and typ.endswith("]"):
-                elem = typ[1:-1]
-                free_fn = {"int": "forge_int_array_free", "float": "forge_float_array_free",
-                           "bool": "forge_bool_array_free", "str": "forge_str_array_free"}.get(elem)
-                if free_fn:
-                    self.emit(f"{free_fn}({name});")
-            elif self.is_struct_type(typ):
-                self.emit_struct_free(name, typ)
+            self._emit_free_one(name, typ)
+
+    def emit_free_frame(self):
+        # Free only the current (innermost) ownership frame: the
+        # variables declared inside one block / loop body / if arm.
+        # Previously these frames were popped without freeing, so
+        # every array or struct created inside a loop body leaked
+        # once per iteration — the leak that OOM-killed long
+        # training runs (each step's ~221k-node tape). Function
+        # exit and Return already free all frames, so a Return
+        # inside a body makes this code unreachable, never a
+        # double free. Values that escape the frame via Assign
+        # or Return already gained their own reference/copy.
+        frame = self.owned_stack[-1] if self.owned_stack else {}
+        # A variable assigned inside this frame may also sit in an
+        # outer frame (Assign re-adds its target to the current
+        # frame even when declared outside it). Free only names
+        # this frame truly owns: the outer frame frees the rest
+        # when it ends, and freeing both would double-free.
+        outer = set()
+        for f in self.owned_stack[:-1]:
+            outer.update(f.keys())
+        for name, typ in frame.items():
+            if name not in outer:
+                self._emit_free_one(name, typ)
 
     def is_array_type(self, t):
         return t.startswith("[") and t.endswith("]") and t[1:-1] in ("int", "float", "bool", "str")
@@ -868,6 +895,7 @@ class Codegen:
             self.indent += 1
             self.owned_stack.append({})
             self.gen_block(stmt, ret_type)
+            self.emit_free_frame()
             self.owned_stack.pop()
             self.indent -= 1
             self.emit("}")
@@ -1053,6 +1081,7 @@ class Codegen:
             self.indent += 1
             self.owned_stack.append({})
             self.gen_block(stmt.then, ret_type)
+            self.emit_free_frame()
             self.owned_stack.pop()
             self.indent -= 1
             if stmt.els is not None:
@@ -1060,6 +1089,7 @@ class Codegen:
                 self.indent += 1
                 self.owned_stack.append({})
                 self.gen_block(stmt.els, ret_type)
+                self.emit_free_frame()
                 self.owned_stack.pop()
                 self.indent -= 1
             self.emit("}")
@@ -1069,6 +1099,7 @@ class Codegen:
             self.indent += 1
             self.owned_stack.append({})
             self.gen_block(stmt.body, ret_type)
+            self.emit_free_frame()
             self.owned_stack.pop()
             self.indent -= 1
             self.emit("}")
@@ -1088,6 +1119,7 @@ class Codegen:
             self.emit(f"{C_SCALAR[et]} {stmt.name} = {arr_tmp}.data[{idx}];")
             self.owned_stack.append({})
             self.gen_block(stmt.body, ret_type)
+            self.emit_free_frame()
             self.owned_stack.pop()
             self.indent -= 1
             self.emit("}")

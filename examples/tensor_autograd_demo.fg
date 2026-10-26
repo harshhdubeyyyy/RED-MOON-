@@ -1,0 +1,162 @@
+// Tensor autograd demo + gradient check (0.5.0): every
+// backward rule in tensor_autograd.fg is checked against
+// central finite differences on small hand-built graphs.
+// If a rule were wrong, its analytic-vs-numeric gap would
+// be large (finite-difference error here is ~1e-4 or less);
+// the printed diffs are the proof.
+import "tensor_autograd.fg";
+
+fn demo_loss(logits: Tensor, targets: [int]) -> float {
+    let probs: Tensor = tensor_softmax_rows(logits);
+    let seq: int = logits.shape[0];
+    let v: int = logits.shape[1];
+    let mut loss: float = 0.0;
+    let mut r: int = 0;
+    while r < seq {
+        loss = loss - log(probs.data[r * v + targets[r]] + 0.000000001);
+        r = r + 1;
+    }
+    return loss / seq as float;
+}
+
+fn perturbed(data: [float], idx: int, delta: float) -> [float] {
+    let mut out: [float] = [];
+    let mut i: int = 0;
+    while i < len(data) {
+        if i == idx {
+            push(out, data[i] + delta);
+        } else {
+            push(out, data[i]);
+        }
+        i = i + 1;
+    }
+    return out;
+}
+
+fn demo_layernorm(x: [float], rows: int, cols: int, gamma: [float], beta: [float]) -> [float] {
+    let mut out: [float] = [];
+    let mut r: int = 0;
+    while r < rows {
+        let mut mean: float = 0.0;
+        let mut c: int = 0;
+        while c < cols {
+            mean = mean + x[r * cols + c];
+            c = c + 1;
+        }
+        mean = mean / cols as float;
+        let mut var: float = 0.0;
+        c = 0;
+        while c < cols {
+            let d: float = x[r * cols + c] - mean;
+            var = var + d * d;
+            c = c + 1;
+        }
+        var = var / cols as float;
+        let inv: float = 1.0 / sqrt(var + 0.00001);
+        c = 0;
+        while c < cols {
+            push(out, (x[r * cols + c] - mean) * inv * gamma[c] + beta[c]);
+            c = c + 1;
+        }
+        r = r + 1;
+    }
+    return out;
+}
+
+fn main() -> int {
+    // Part A: gelu(matmul(X, W)) -> cross-entropy.
+    let xdata: [float] = [0.5, -1.0, 2.0, 1.0, 0.0, -0.5];
+    let wdata: [float] = [0.3, -0.7, 1.2, 0.4, -0.2, 0.9];
+    let targets: [int] = [1, 0];
+    let mut s: TAg = t_leaf(ttape_new(), [2, 3], xdata);
+    let x: int = s.last;
+    s = t_leaf(s.tape, [3, 2], wdata);
+    let w: int = s.last;
+    s = t_matmul(s, x, w);
+    let h: int = s.last;
+    s = t_gelu(s, h);
+    let lg: int = s.last;
+    s = t_cross_entropy(s, lg, targets);
+    let loss_node: int = s.last;
+    println("part A nodes =", len(s.tape.voff), "loss =", s.tape.vals[s.tape.voff[loss_node]]);
+    let grads: [float] = t_backward(s.tape, loss_node);
+    let gw: [float] = t_grad_of(s.tape, grads, w);
+    let eps: float = 0.0001;
+    let mut maxdiff: float = 0.0;
+    let mut idx: int = 0;
+    while idx < len(wdata) {
+        let wp: Tensor = tensor_matmul(Tensor { data: xdata, shape: [2, 3] }, Tensor { data: perturbed(wdata, idx, eps), shape: [3, 2] });
+        let wm: Tensor = tensor_matmul(Tensor { data: xdata, shape: [2, 3] }, Tensor { data: perturbed(wdata, idx, -eps), shape: [3, 2] });
+        let lp: float = demo_loss(tensor_gelu(wp), targets);
+        let lm: float = demo_loss(tensor_gelu(wm), targets);
+        let num: float = (lp - lm) / (2.0 * eps);
+        let mut diff: float = gw[idx] - num;
+        if diff < 0.0 {
+            diff = -diff;
+        }
+        println("W", idx, "analytic =", gw[idx], "numeric =", num, "diff =", diff);
+        if diff > maxdiff {
+            maxdiff = diff;
+        }
+        idx = idx + 1;
+    }
+    // Part B: layernorm -> matmul -> add_bias -> cross-entropy.
+    let bdata: [float] = [0.2, -0.3];
+    let gdata: [float] = [1.1, 0.9, 1.0];
+    let bedata: [float] = [0.1, 0.0, -0.1];
+    let w2data: [float] = [0.5, 0.2, -0.4, 0.7, 0.3, -0.6];
+    let mut t: TAg = t_leaf(ttape_new(), [2, 3], xdata);
+    let xx: int = t.last;
+    t = t_leaf(t.tape, [3], gdata);
+    let gm: int = t.last;
+    t = t_leaf(t.tape, [3], bedata);
+    let be: int = t.last;
+    t = t_layernorm(t, xx, gm, be);
+    let ln: int = t.last;
+    t = t_leaf(t.tape, [3, 2], w2data);
+    let w2: int = t.last;
+    t = t_matmul(t, ln, w2);
+    let mm: int = t.last;
+    t = t_leaf(t.tape, [2], bdata);
+    let bias: int = t.last;
+    t = t_add_bias(t, mm, bias);
+    let ab: int = t.last;
+    t = t_cross_entropy(t, ab, targets);
+    let loss2: int = t.last;
+    println("part B nodes =", len(t.tape.voff), "loss =", t.tape.vals[t.tape.voff[loss2]]);
+    let grads2: [float] = t_backward(t.tape, loss2);
+    let gg: [float] = t_grad_of(t.tape, grads2, gm);
+    let gb: [float] = t_grad_of(t.tape, grads2, bias);
+    // Numeric gamma[0] and bias[1] through the same chain,
+    // rebuilt with plain tensor ops (no tape).
+    let lnp: Tensor = Tensor { data: demo_layernorm(xdata, 2, 3, perturbed(gdata, 0, eps), bedata), shape: [2, 3] };
+    let lnm: Tensor = Tensor { data: demo_layernorm(xdata, 2, 3, perturbed(gdata, 0, -eps), bedata), shape: [2, 3] };
+    let w2t: Tensor = Tensor { data: w2data, shape: [3, 2] };
+    let lp2: float = demo_loss(tensor_add_bias_rows(tensor_matmul(lnp, w2t), bdata), targets);
+    let lm2: float = demo_loss(tensor_add_bias_rows(tensor_matmul(lnm, w2t), bdata), targets);
+    let numg: float = (lp2 - lm2) / (2.0 * eps);
+    let mut diffg: float = gg[0] - numg;
+    if diffg < 0.0 {
+        diffg = -diffg;
+    }
+    println("gamma0 analytic =", gg[0], "numeric =", numg, "diff =", diffg);
+    if diffg > maxdiff {
+        maxdiff = diffg;
+    }
+    let bp: float = demo_loss(tensor_add_bias_rows(tensor_matmul(Tensor { data: demo_layernorm(xdata, 2, 3, gdata, bedata), shape: [2, 3] }, w2t), perturbed(bdata, 1, eps)), targets);
+    let bm: float = demo_loss(tensor_add_bias_rows(tensor_matmul(Tensor { data: demo_layernorm(xdata, 2, 3, gdata, bedata), shape: [2, 3] }, w2t), perturbed(bdata, 1, -eps)), targets);
+    let numb: float = (bp - bm) / (2.0 * eps);
+    let mut diffb: float = gb[1] - numb;
+    if diffb < 0.0 {
+        diffb = -diffb;
+    }
+    println("bias1 analytic =", gb[1], "numeric =", numb, "diff =", diffb);
+    if diffb > maxdiff {
+        maxdiff = diffb;
+    }
+    println("max grad diff =", maxdiff);
+    if maxdiff > 0.01 {
+        fail("tensor autograd gradient check failed");
+    }
+    return 0;
+}

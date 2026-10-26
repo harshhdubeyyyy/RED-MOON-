@@ -1,0 +1,11 @@
+Metadata-Version: 2.4
+Name: jalpari
+Version: 0.5.0
+Summary: The Jal Pari Language — a small, safe, fast language with an ML stack
+Author: Jayant Dubey
+License: MIT
+Requires-Python: >=3.10
+Dynamic: author
+Dynamic: license
+Dynamic: requires-python
+Dynamic: summary

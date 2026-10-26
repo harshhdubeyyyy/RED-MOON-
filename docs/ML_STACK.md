@@ -176,3 +176,27 @@ Each needs its own pass; none is half-claimed here.
   tapes, so long runs must checkpoint-and-restart (one
   epoch per process; eval in its own process). Tape
   freeing + tensor-level autograd are the 0.5.0 unlocks.
+
+## 0.5.0 addendum — engine batch
+- Tape freeing (codegen.py `emit_free_frame`): block
+  variables are freed at block end. The 0.4.0 leak — a
+  tape per training step, 0 frees ever — is gone
+  (1,000/1,000 freed on the probe). Scalar TinyStories
+  now trains 3 epochs in one process: train 4.98375,
+  4.49469, 4.41384; held-out ppl 1078.88 -> 385.06
+  (differs from 0.4.0's 247.39 because the old runs
+  reset Adam moments each epoch).
+- Tensor autograd (stdlib/tensor_autograd.fg, 17 ops,
+  flat tape) + tensor GPT (stdlib/tgt.fg): forward 100
+  nodes vs 221,844 scalar; gradients checked against
+  finite differences to ~1e-9; small TinyStories run
+  1500 steps in 6.5 s, held-out ppl 548.97 -> 283.20.
+- KV-cache for gpt2 (stdlib/inference_gpt2.fg): matches
+  full forward to 4.44e-16 on the demo prompt.
+- Scaled tensor run (49,664 params, 500 stories,
+  75,000 words, vocab 1000): held-out ppl 1118.87 ->
+  189.13, 26.1 ms/step, forward 136 nodes. Generation
+  still salad order — fluency is NOT claimed.
+- GPU training loop exists as code only
+  (examples/cuda/mlp_train.cu, XOR MLP, square-matmul
+  wrapper); the GPU run needs a Kaggle token.

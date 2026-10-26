@@ -31,7 +31,7 @@ from forge_lang.errors import ForgeError  # noqa: E402
 from forge_lang.compiler import compile_file, build  # noqa: E402
 
 
-VERSION = "0.4.0"
+VERSION = "0.5.0"
 
 
 def main(argv=None):
