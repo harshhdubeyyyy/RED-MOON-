@@ -55,7 +55,7 @@ def run_program(source):
         exe = os.path.join(td, "prog")
         with open(c_path, "w", encoding="utf-8") as f:
             f.write(c_source)
-        cc = subprocess.run(["cc", "-O2", "-std=gnu11", "-o", exe, c_path, "-lm"],
+        cc = subprocess.run(["cc", "-O2", "-std=gnu11", "-pthread", "-o", exe, c_path, "-lm"],
                             capture_output=True, text=True)
         if cc.returncode != 0:
             return 1, "", f"C compiler failed:\n{cc.stderr}"

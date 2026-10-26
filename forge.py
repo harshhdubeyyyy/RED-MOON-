@@ -42,6 +42,8 @@ def main(argv=None):
     p = sub.add_parser("fmt")
     p.add_argument("file")
     p.add_argument("--check", action="store_true")
+    p = sub.add_parser("doc")
+    p.add_argument("file")
     sub.add_parser("lsp")
     sub.add_parser("repl")
     p = sub.add_parser("pkg")
@@ -68,6 +70,10 @@ def main(argv=None):
             with open(args.file, "w", encoding="utf-8") as f:
                 f.write(formatted)
             print(f"formatted: {args.file}")
+            return 0
+        if args.cmd == "doc":
+            from forge_lang.docgen import docs_for_file
+            print(docs_for_file(args.file), end="")
             return 0
         if args.cmd == "lsp":
             from forge_lang.lsp import serve
@@ -104,8 +110,8 @@ def main(argv=None):
                 exe = os.path.join(td, "prog")
                 with open(c_path, "w", encoding="utf-8") as f:
                     f.write(c_source)
-                flags = (["cc", "-O3", "-march=native", "-std=gnu11"] if args.mode == "fast"
-                         else ["cc", "-O2", "-std=gnu11"])
+                flags = (["cc", "-O3", "-march=native", "-std=gnu11", "-pthread"] if args.mode == "fast"
+                         else ["cc", "-O2", "-std=gnu11", "-pthread"])
                 cc = subprocess.run(flags + ["-o", exe, c_path, "-lm"],
                                     capture_output=True, text=True)
                 if cc.returncode != 0:

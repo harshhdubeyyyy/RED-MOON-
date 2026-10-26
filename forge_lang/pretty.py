@@ -83,7 +83,7 @@ class Formatter:
     def fmt_program(self, prog):
         for imp in prog.imports:
             self.emit(0, f'import {escape_str(imp)};')
-        if prog.imports and (prog.structs or prog.funcs):
+        if prog.imports and (prog.structs or prog.funcs or prog.enums):
             self.emit(0)
         for sd in (prog.structs or []):
             self.emit(0, f"struct {sd.name} {{")
@@ -91,12 +91,18 @@ class Formatter:
                 self.emit(1, f"{fname}: {ftype};")
             self.emit(0, "}")
             self.emit(0)
+        for ed in (prog.enums or []):
+            self.emit(0, f"enum {ed.name} {{ {', '.join(ed.variants)} }}")
+            self.emit(0)
         for i, fn in enumerate(prog.funcs):
             params = ", ".join(f"{n}: {t}" for n, t in fn.params)
             ret = f" -> {fn.ret}" if fn.ret != "void" else ""
-            self.emit(0, f"fn {fn.name}({params}){ret} {{")
-            self.fmt_block(fn.body, 1)
-            self.emit(0, "}")
+            if getattr(fn, "is_extern", False):
+                self.emit(0, f"extern fn {fn.name}({params}){ret};")
+            else:
+                self.emit(0, f"fn {fn.name}({params}){ret} {{")
+                self.fmt_block(fn.body, 1)
+                self.emit(0, "}")
             if i < len(prog.funcs) - 1:
                 self.emit(0)
         # Trim trailing blank lines, keep one final newline.
@@ -127,6 +133,17 @@ class Formatter:
             return
         if isinstance(stmt, A.FieldAssign):
             self.emit(indent, f"{fmt_expr(stmt.target)} = {fmt_expr(stmt.expr)};")
+            return
+        if isinstance(stmt, A.Match):
+            self.emit(indent, f"match {fmt_expr(stmt.expr)} {{")
+            for pat, body in stmt.arms:
+                self.emit(indent + 1, f"{pat} => {{")
+                self.fmt_block(body, indent + 2)
+                self.emit(indent + 1, "}")
+            self.emit(indent, "}")
+            return
+        if isinstance(stmt, A.Spawn):
+            self.emit(indent, f"spawn {fmt_expr(stmt.call)};")
             return
         if isinstance(stmt, A.If):
             self.emit(indent, f"if {fmt_expr(stmt.cond)} {{")

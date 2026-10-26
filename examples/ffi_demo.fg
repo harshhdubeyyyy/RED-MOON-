@@ -1,0 +1,11 @@
+extern fn puts(s: str) -> int;
+
+extern fn system(cmd: str) -> int;
+
+fn main() -> int {
+    let r: int = puts("hello from C puts");
+    println("puts returned", r);
+    let s: int = system("echo forge-ffi-ok");
+    println("system returned", s);
+    return 0;
+}

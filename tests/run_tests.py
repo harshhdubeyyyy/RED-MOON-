@@ -33,6 +33,21 @@ def main():
     expect("examples/strings_demo.fg",
            "parts = 3 b\njoined = a-b-c\nsub = world\ntrim = hi\n"
            "starts = true\nends = true\n")
+    # Enums + match + assert.
+    expect("examples/enums_match.fg", "green\nother\n")
+    # Spawn: both workers must finish (main joins them).
+    r = run_forge("run", "examples/spawn_demo.fg")
+    for needle in ("main done, waiting for workers", "worker done 1", "worker done 2"):
+        if r.returncode != 0 or needle not in r.stdout:
+            failures.append(f"spawn_demo: missing {needle!r} in {r.stdout!r} err={r.stderr!r}")
+    # FFI: puts returns length+newline, system returns 0.
+    r = run_forge("run", "examples/ffi_demo.fg")
+    for needle in ("puts returned 18", "system returned 0"):
+        if r.returncode != 0 or needle not in r.stdout:
+            failures.append(f"ffi_demo: missing {needle!r} in {r.stdout!r} err={r.stderr!r}")
+    # Map + JSON stdlib.
+    expect("examples/map_json_demo.fg",
+           "apples = 7\nhas pears = false\ncity = Gorakhpur\n")
     expect("examples/ecosystem/word_stats.fg",
            "words = 8\nlines = 4\nmean line length = 10.25\n"
            "median line length = 12\n")

@@ -13,6 +13,8 @@ Commands (run from the package directory):
   forge pkg run [-- args...]           build, then run the binary
   forge pkg test            run every tests/*.fg, each must exit 0
   forge pkg list            show name, version, dependencies
+  forge pkg lock            write forge.lock with sha256 of vendor files
+  forge pkg verify          check vendor files against forge.lock
 
 Dependencies are vendored, Go-style, not downloaded: `forge pkg add`
 copies files, so a build never needs the network or a registry.
@@ -21,6 +23,8 @@ to the package root, e.g. `import "vendor/stats/stats.fg";` — the
 compiler resolves imports relative to the file, then the current
 directory (the package root when you run `forge pkg build`).
 """
+import hashlib
+import json
 import os
 import re
 import shutil
@@ -201,6 +205,49 @@ def dispatch(argv, forge_path, cwd):
             print(f"{pkg.get('name', '?')} {pkg.get('version', '?')}")
             for k, v in deps.items():
                 print(f"  {k} = {v}")
+            return 0
+        if cmd == "lock":
+            _mp, _text, pkg, deps = read_manifest(cwd)
+            lock = {"package": pkg.get("name", "?"), "dependencies": {}}
+            vendor_dir = os.path.join(cwd, "vendor")
+            if os.path.isdir(vendor_dir):
+                for dep in sorted(os.listdir(vendor_dir)):
+                    dep_dir = os.path.join(vendor_dir, dep)
+                    if not os.path.isdir(dep_dir):
+                        continue
+                    lock["dependencies"][dep] = {}
+                    for fn in sorted(os.listdir(dep_dir)):
+                        if fn.endswith(".fg"):
+                            with open(os.path.join(dep_dir, fn), "rb") as f:
+                                lock["dependencies"][dep][fn] = hashlib.sha256(f.read()).hexdigest()
+            with open(os.path.join(cwd, "forge.lock"), "w", encoding="utf-8") as f:
+                json.dump(lock, f, indent=2)
+                f.write("\n")
+            print(f"wrote forge.lock ({len(lock['dependencies'])} dependencies)")
+            return 0
+        if cmd == "verify":
+            lock_path = os.path.join(cwd, "forge.lock")
+            if not os.path.exists(lock_path):
+                print("forge pkg: no forge.lock (run 'forge pkg lock' first)", file=sys.stderr)
+                return 1
+            with open(lock_path, encoding="utf-8") as f:
+                lock = json.load(f)
+            bad = []
+            for dep, files in lock.get("dependencies", {}).items():
+                for fn, want in files.items():
+                    path = os.path.join(cwd, "vendor", dep, fn)
+                    if not os.path.exists(path):
+                        bad.append(f"{dep}/{fn} missing")
+                        continue
+                    with open(path, "rb") as f:
+                        got = hashlib.sha256(f.read()).hexdigest()
+                    if got != want:
+                        bad.append(f"{dep}/{fn} changed")
+            if bad:
+                for b in bad:
+                    print(f"MISMATCH {b}")
+                return 1
+            print("forge.lock verified: all vendored files match")
             return 0
         print(f"forge pkg: unknown subcommand '{cmd}'", file=sys.stderr)
         return 1

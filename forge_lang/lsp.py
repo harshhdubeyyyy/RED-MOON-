@@ -21,11 +21,13 @@ from .parser import Parser
 from .checker import Checker
 
 KEYWORDS = ["fn", "let", "mut", "if", "else", "while", "for", "in",
-            "return", "true", "false", "import", "as", "struct"]
+            "return", "true", "false", "import", "as", "struct",
+            "enum", "match", "spawn", "extern"]
 BUILTINS = ["print", "println", "push", "fail", "len", "range",
             "clock_micros", "sqrt", "exp", "log", "pow", "abs",
             "read_file", "write_file", "args", "parse_int",
-            "split", "join", "substr", "trim", "starts_with", "ends_with"]
+            "split", "join", "substr", "trim", "starts_with", "ends_with",
+            "http_get", "assert"]
 
 
 def diagnostics_for(text):

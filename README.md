@@ -218,12 +218,13 @@ The full tooling is documented in `docs/ECOSYSTEM.md`:
 ## ⚠️ Honest gaps
 
 Forge v2 is production-*oriented*, not a finished Rust/Go/Mojo
-rival. Structs, file I/O, CLI args, `forge test`, and the ecosystem
-above are now done (Phase C + ecosystem, 26 Oct 2026). It still has
-no generics, `Option`/`Result`, concurrency, GPU kernels, Python
-interop, registry, or lockfile yet. Array and string values are not
-yet freed (a GC is the next memory-manager item). Those are the
-next phases in `SPEC_V2.md`, not hidden features.
+rival. Structs, file I/O, CLI args, `forge test`, the ecosystem,
+and now enums+match, spawn threads, C FFI, HTTP, Map/JSON stdlib,
+assert, `forge doc`, and a package lockfile are done (26 Oct 2026).
+It still has no generics, `Option`/`Result` (needs generic enums),
+GPU kernels, TLS, database stdlib, registry, or GC yet. Array and
+string values are not yet freed. Those are the next phases in
+`SPEC_V2.md`, not hidden features.
 
 ## 🔁 Regenerate the figures
 

@@ -111,6 +111,19 @@ from scratch, and do not silently drop a phase.
   idempotency over all examples/stdlib. Push ecosystem next;
   still NOT done: registry, lockfile, HTTP/DB stdlib, generics,
   Option/Result, concurrency, GPU, GC.
+- "Build everything" pass (26 Oct 2026): enums + exhaustive match
+  (wildcard must be last), spawn threads (void fn, 0/1 int arg,
+  auto-join in main, pthread wrappers generated per spawned fn),
+  assert builtin, extern C FFI (const char * str, C int, fixes
+  puts/system conflicting-type error), http_get (HTTP only, local
+  server test passed), stdlib/map.fg + json.fg (flat objects only),
+  forge doc, forge pkg lock/verify (tamper detected). Two
+  supporting fixes that Map needed: index assignment and push
+  through a struct field (m.vals[i] = v, push(m.keys, k)), and
+  empty array literals in struct literals (map_new). Full suite
+  passes including enums/spawn/FFI/map-json tests. Push this pass
+  next; still NOT done: generics, Option/Result (needs generic
+  enums), GPU, TLS, DB stdlib, registry, GC, WASM backend.
 
 ## Research findings that now lock v2's design (26 Oct 2026)
 

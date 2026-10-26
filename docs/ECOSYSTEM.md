@@ -92,10 +92,34 @@ split/join/substr/trim/starts_with/ends_with.
 over examples and stdlib, and the ecosystem example on every push
 and pull request.
 
+## New in the "build everything" pass (26 Oct 2026)
+
+- **Enums + match:** `enum Color { Red, Green, Blue }`, exhaustive
+  `match` with a trailing `_` wildcard arm.
+- **Concurrency:** `spawn worker(1);` — threads (pthreads) for
+  void functions taking 0 or 1 int argument; main joins them at
+  the end (and before any return from main).
+- **C FFI:** `extern fn puts(s: str) -> int;` — call real C
+  functions; str is `const char *`, int is C `int` in the
+  declaration, so standard-library functions work.
+- **HTTP:** `http_get(url) -> str` — HTTP only, no TLS yet; the
+  body is returned, headers are stripped. Tested against a local
+  HTTP server.
+- **Collections + JSON:** `stdlib/map.fg` (str->int map, put
+  returns the updated map) and `stdlib/json.fg` (flat string
+  objects only, documented as such).
+- **Tests:** `assert(condition, "message")` as a statement builtin.
+- **Docs:** `forge doc <file.fg>` — Markdown from // comments
+  above structs, enums, and functions.
+- **Lockfile:** `forge pkg lock` writes `forge.lock` with sha256
+  of every vendored file; `forge pkg verify` detects changes
+  (tested: tampering a vendored file is reported as MISMATCH).
+
 ## What is still not in the ecosystem
 
-No registry (packages are vendored by path), no HTTP/TLS or
-database stdlib, no generics/`Option`/`Result`, no concurrency,
-no GPU kernels, and no package lockfile yet — the package manager
-records dependencies in `forge.toml`, but does not yet pin exact
-versions. Those are the next phases, in that order.
+No registry (packages are vendored by path, now with a lockfile),
+no TLS, no database stdlib, no generics/`Option`/`Result`
+(those need generic enums/structs, the hardest remaining type
+work), no GPU kernels, no GC (arrays/strings are still never
+freed), and no full WASM backend. Those are the next phases, in
+that order.

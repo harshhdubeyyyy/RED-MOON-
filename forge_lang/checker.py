@@ -13,10 +13,11 @@ from .errors import ForgeError
 from . import ast_nodes as A
 
 SCALARS = {"int", "float", "bool", "str"}
-STMT_BUILTINS = {"print", "println", "push", "fail"}
+STMT_BUILTINS = {"print", "println", "push", "fail", "assert"}
 EXPR_BUILTINS = {"len", "range", "clock_micros", "sqrt", "exp", "log", "pow", "abs",
                  "read_file", "write_file", "args", "parse_int",
-                 "split", "join", "substr", "trim", "starts_with", "ends_with"}
+                 "split", "join", "substr", "trim", "starts_with", "ends_with",
+                 "http_get"}
 BUILTINS = STMT_BUILTINS | EXPR_BUILTINS
 
 
@@ -29,6 +30,8 @@ class Checker:
         self.program = program
         self.funcs = {}
         self.structs = {}  # name -> {field: type}
+        self.enums = {}  # name -> [variants]
+        self.enum_variants = {}  # variant -> enum name
         self.scopes = []
         self.current_ret = "void"
         self.current_fn = None
@@ -36,7 +39,7 @@ class Checker:
     def valid_type(self, t):
         if t in SCALARS or t == "void":
             return True
-        if t in self.structs:
+        if t in self.structs or t in self.enums:
             return True
         if t.startswith("[") and t.endswith("]"):
             inner = t[1:-1]
@@ -82,8 +85,22 @@ class Checker:
                                              sd.line, sd.col)
                         stack.append(ftype)
 
+    def check_enums(self):
+        enums = getattr(self.program, "enums", None) or []
+        for ed in enums:
+            if ed.name in self.enums or ed.name in self.structs or ed.name in SCALARS:
+                raise ForgeError(f"duplicate type '{ed.name}'", ed.line, ed.col)
+            seen = set()
+            for v in ed.variants:
+                if v in seen or v in self.enum_variants:
+                    raise ForgeError(f"duplicate enum variant '{v}'", ed.line, ed.col)
+                seen.add(v)
+                self.enum_variants[v] = ed.name
+            self.enums[ed.name] = list(ed.variants)
+
     def check(self):
         self.check_structs()
+        self.check_enums()
         for fn in self.program.funcs:
             if fn.name in self.funcs:
                 raise ForgeError(f"duplicate function '{fn.name}'", fn.line, fn.col)
@@ -106,6 +123,9 @@ class Checker:
                 raise ForgeError(f"parameter type '{pt}' is not a value type", fn.line, fn.col)
         if not self.valid_type(fn.ret):
             raise ForgeError(f"unknown return type '{fn.ret}'", fn.line, fn.col)
+        if getattr(fn, "is_extern", False):
+            # No body to check; the C function must exist at link time.
+            return
         self.current_ret = fn.ret
         self.current_fn = fn
         self.scopes = [{n: (t, False) for n, t in fn.params}]
@@ -120,6 +140,8 @@ class Checker:
         for scope in reversed(self.scopes):
             if name in scope:
                 return scope[name]
+        if name in self.enum_variants:
+            return (self.enum_variants[name], False)
         raise ForgeError(f"undefined variable '{name}'", line, col)
 
     def check_block(self, block):
@@ -183,11 +205,17 @@ class Checker:
             return
         if isinstance(stmt, A.IndexAssign):
             base = stmt.base.base
-            if not isinstance(base, A.Var):
-                raise ForgeError("index assignment target must be a plain variable",
+            if isinstance(base, A.Var):
+                vt, _mutable = self.lookup(base.name, stmt.line, stmt.col)
+                et = elem_type(vt)
+            elif isinstance(base, A.FieldAccess):
+                # e.g. m.vals[i] = v — array contents, not a rebinding,
+                # so mutability of the struct variable is not required.
+                vt = self.check_expr(base)
+                et = elem_type(vt)
+            else:
+                raise ForgeError("index assignment target must be a variable or a field",
                                  stmt.line, stmt.col)
-            vt, _mutable = self.lookup(base.name, stmt.line, stmt.col)
-            et = elem_type(vt)
             if et is None:
                 raise ForgeError(f"cannot index a non-array value of type {vt}",
                                  stmt.line, stmt.col)
@@ -197,6 +225,50 @@ class Checker:
             vt2 = self.check_expr(stmt.expr)
             if vt2 != et:
                 raise ForgeError(f"cannot assign {vt2} to element of type {et}",
+                                 stmt.line, stmt.col)
+            return
+        if isinstance(stmt, A.Match):
+            et = self.check_expr(stmt.expr)
+            if et not in self.enums:
+                raise ForgeError(f"match needs an enum value, got {et}",
+                                 stmt.line, stmt.col)
+            variants = set(self.enums[et])
+            seen = set()
+            has_wildcard = False
+            for idx, (pat, body) in enumerate(stmt.arms):
+                if pat == "_":
+                    has_wildcard = True
+                    if idx != len(stmt.arms) - 1:
+                        raise ForgeError("match wildcard '_' must be the last arm",
+                                         stmt.line, stmt.col)
+                elif pat not in variants:
+                    raise ForgeError(f"'{pat}' is not a variant of enum '{et}'",
+                                     stmt.line, stmt.col)
+                elif pat in seen:
+                    raise ForgeError(f"duplicate match arm '{pat}'", stmt.line, stmt.col)
+                else:
+                    seen.add(pat)
+                self.check_block(body)
+            if not has_wildcard and seen != variants:
+                missing = sorted(variants - seen)
+                raise ForgeError(f"match is not exhaustive; missing: {', '.join(missing)}",
+                                 stmt.line, stmt.col)
+            return
+        if isinstance(stmt, A.Spawn):
+            call = stmt.call
+            fn = self.funcs.get(call.name)
+            if fn is None:
+                raise ForgeError(f"spawn: undefined function '{call.name}'",
+                                 stmt.line, stmt.col)
+            if fn.ret != "void":
+                raise ForgeError("spawn: function must return void", stmt.line, stmt.col)
+            if len(call.args) > 1:
+                raise ForgeError("spawn: function must take 0 or 1 int argument",
+                                 stmt.line, stmt.col)
+            if call.args and self.check_expr(call.args[0]) != "int":
+                raise ForgeError("spawn: argument must be int", stmt.line, stmt.col)
+            if len(fn.params) != len(call.args):
+                raise ForgeError("spawn: argument count does not match function",
                                  stmt.line, stmt.col)
             return
         if isinstance(stmt, A.If):
@@ -252,6 +324,15 @@ class Checker:
         raise ForgeError(f"unsupported statement {type(stmt).__name__}", stmt.line, stmt.col)
 
     def check_stmt_builtin(self, call):
+        if call.name == "assert":
+            if len(call.args) != 2:
+                raise ForgeError("assert() takes a bool condition and a str message",
+                                 call.line, call.col)
+            if self.check_expr(call.args[0]) != "bool":
+                raise ForgeError("assert() condition must be bool", call.line, call.col)
+            if self.check_expr(call.args[1]) != "str":
+                raise ForgeError("assert() message must be str", call.line, call.col)
+            return
         if call.name in ("print", "println"):
             for a in call.args:
                 self.check_expr(a)
@@ -261,9 +342,12 @@ class Checker:
                 raise ForgeError("fail() takes exactly one str argument", call.line, call.col)
             return
         if call.name == "push":
-            if len(call.args) != 2 or not isinstance(call.args[0], A.Var):
-                raise ForgeError("push() takes a variable and a value", call.line, call.col)
-            vt, _m = self.lookup(call.args[0].name, call.line, call.col)
+            if len(call.args) != 2 or not isinstance(call.args[0], (A.Var, A.FieldAccess)):
+                raise ForgeError("push() takes a variable or field and a value", call.line, call.col)
+            if isinstance(call.args[0], A.Var):
+                vt, _m = self.lookup(call.args[0].name, call.line, call.col)
+            else:
+                vt = self.check_expr(call.args[0])
             et = elem_type(vt)
             if et is None:
                 raise ForgeError(f"push() needs an array, got {vt}", call.line, call.col)
@@ -312,8 +396,12 @@ class Checker:
                                  f"{', '.join(missing)}", expr.line, expr.col)
             for fname, ftype in fields.items():
                 if provided[fname] != ftype:
-                    raise ForgeError(f"field '{fname}' of '{expr.name}' must be {ftype}, "
-                                     f"got {provided[fname]}", expr.line, expr.col)
+                    # Empty array literal, like in let, takes the field type.
+                    fexpr = dict(expr.fields)[fname]
+                    if not (isinstance(fexpr, A.ArrayLit) and not fexpr.elems
+                            and ftype.startswith("[")):
+                        raise ForgeError(f"field '{fname}' of '{expr.name}' must be {ftype}, "
+                                         f"got {provided[fname]}", expr.line, expr.col)
             return expr.name
         if isinstance(expr, A.FieldAccess):
             bt = self.check_expr(expr.base)
@@ -451,6 +539,11 @@ class Checker:
                     raise ForgeError(f"{call.name}() takes str arguments",
                                      call.line, call.col)
             return "bool"
+        if call.name == "http_get":
+            if len(call.args) != 1 or self.check_expr(call.args[0]) != "str":
+                raise ForgeError("http_get() takes exactly one str URL argument",
+                                 call.line, call.col)
+            return "str"
         fn = self.funcs.get(call.name)
         if fn is None:
             raise ForgeError(f"undefined function '{call.name}'", call.line, call.col)
@@ -484,9 +577,9 @@ class Checker:
             raise ForgeError(f"operator '{op}' needs matching int or float operands, "
                              f"got {lt} and {rt}", node.line, node.col)
         if op in ("==", "!="):
-            if lt == rt and lt in ("int", "float", "bool", "str"):
+            if lt == rt and (lt in ("int", "float", "bool", "str") or lt in self.enums):
                 return "bool"
-            raise ForgeError(f"operator '{op}' needs matching int, float, bool or str "
+            raise ForgeError(f"operator '{op}' needs matching int, float, bool, str or enum "
                              f"operands, got {lt} and {rt}", node.line, node.col)
         if op in ("&&", "||"):
             if lt == "bool" and rt == "bool":

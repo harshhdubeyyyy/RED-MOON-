@@ -1,0 +1,13 @@
+import "map.fg";
+import "json.fg";
+
+fn main() -> int {
+    let mut m: MapStrInt = map_new();
+    m = map_put(m, "apples", 5);
+    m = map_put(m, "apples", 7);
+    println("apples =", map_get(m, "apples", 0));
+    println("has pears =", map_has(m, "pears"));
+    let obj: str = "{\"city\": \"Gorakhpur\", \"lang\": \"Forge\"}";
+    println("city =", json_get(obj, "city"));
+    return 0;
+}

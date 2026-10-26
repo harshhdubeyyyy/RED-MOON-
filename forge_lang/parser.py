@@ -69,6 +69,7 @@ class Parser:
         imports = []
         funcs = []
         structs = []
+        enums = []
         while self.peek().kind != "EOF":
             if self.at_kw("import"):
                 self.next()
@@ -80,9 +81,58 @@ class Parser:
                 self.expect_op(";")
             elif self.at_kw("struct"):
                 structs.append(self.parse_struct())
+            elif self.at_kw("enum"):
+                enums.append(self.parse_enum())
+            elif self.at_kw("extern"):
+                funcs.append(self.parse_extern())
             else:
                 funcs.append(self.parse_func())
-        return A.Program(imports, funcs, structs)
+        return A.Program(imports, funcs, structs, enums)
+
+    def parse_enum(self):
+        kw = self.expect_kw("enum")
+        name = self.expect_ident()
+        self.expect_op("{")
+        variants = []
+        while not self.at_op("}"):
+            if self.peek().kind == "EOF":
+                raise ForgeError("unterminated enum", self.peek().line, self.peek().col)
+            v = self.expect_ident()
+            variants.append(v.value)
+            if self.at_op(",") or self.at_op(";"):
+                self.next()
+                continue
+            if self.at_op("}"):
+                break
+            raise ForgeError("expected ',' or ';' between enum variants",
+                             self.peek().line, self.peek().col)
+        self.expect_op("}")
+        return A.EnumDef(name.value, variants, kw.line, kw.col)
+
+    def parse_extern(self):
+        kw = self.expect_kw("extern")
+        self.expect_kw("fn")
+        name = self.expect_ident()
+        self.expect_op("(")
+        params = []
+        if not self.at_op(")"):
+            while True:
+                pname = self.expect_ident()
+                self.expect_op(":")
+                ptype = self.parse_type()
+                params.append((pname.value, ptype))
+                if self.at_op(","):
+                    self.next()
+                    continue
+                break
+        self.expect_op(")")
+        ret = "void"
+        if self.at_op("->"):
+            self.next()
+            ret = self.parse_type()
+        self.expect_op(";")
+        return A.FuncDef(name.value, params, ret, A.Block([]),
+                         kw.line, kw.col, is_extern=True)
 
     def parse_struct(self):
         kw = self.expect_kw("struct")
@@ -194,6 +244,29 @@ class Parser:
                 expr = self.parse_expr()
             self.expect_op(";")
             return A.Return(expr, tok.line, tok.col)
+        if self.at_kw("match"):
+            kw = self.next()
+            expr = self.parse_expr()
+            self.expect_op("{")
+            arms = []
+            while not self.at_op("}"):
+                if self.peek().kind == "EOF":
+                    raise ForgeError("unterminated match", self.peek().line, self.peek().col)
+                pat = self.expect_ident()
+                self.expect_op("=>")
+                body = self.parse_block()
+                arms.append((pat.value, body))
+                if self.at_op(","):
+                    self.next()
+            self.expect_op("}")
+            return A.Match(expr, arms, kw.line, kw.col)
+        if self.at_kw("spawn"):
+            kw = self.next()
+            expr = self.parse_expr()
+            self.expect_op(";")
+            if not isinstance(expr, A.Call):
+                raise ForgeError("spawn needs a function call", kw.line, kw.col)
+            return A.Spawn(expr, kw.line, kw.col)
         if self.at_op("{"):
             return self.parse_block()
         # General case: parse an expression, then either '=' (assignment)

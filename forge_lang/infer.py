@@ -8,12 +8,19 @@ class Infer:
         self.funcs = {fn.name: fn for fn in program.funcs}
         structs = getattr(program, "structs", None) or []
         self.structs = {sd.name: dict(sd.fields) for sd in structs}
+        enums = getattr(program, "enums", None) or []
+        self.enum_variants = {}
+        for ed in enums:
+            for v in ed.variants:
+                self.enum_variants[v] = ed.name
         self.types = {}
         self.scopes = []
         self.current_ret = "void"
 
     def run(self, program):
         for fn in program.funcs:
+            if getattr(fn, "is_extern", False):
+                continue
             self.current_ret = fn.ret
             self.scopes = [{n: t for n, t in fn.params}]
             self.walk_block(fn.body)
@@ -24,6 +31,8 @@ class Infer:
         for scope in reversed(self.scopes):
             if name in scope:
                 return scope[name]
+        if name in self.enum_variants:
+            return self.enum_variants[name]
         return "int"
 
     def set(self, expr, t):
@@ -52,6 +61,12 @@ class Infer:
             self.scopes[-1][stmt.name] = t
         elif isinstance(stmt, A.Assign):
             self.walk_expr(stmt.expr)
+        elif isinstance(stmt, A.Match):
+            self.walk_expr(stmt.expr)
+            for _pat, body in stmt.arms:
+                self.walk_block(body)
+        elif isinstance(stmt, A.Spawn):
+            self.walk_expr(stmt.call)
         elif isinstance(stmt, A.FieldAssign):
             self.walk_expr(stmt.target)
             self.walk_expr(stmt.expr)
@@ -103,8 +118,12 @@ class Infer:
                 return self.set(expr, f"[{t0}]")
             return self.set(expr, "[?]")
         if isinstance(expr, A.StructLit):
-            for _fname, fexpr in expr.fields:
-                self.walk_expr(fexpr)
+            fields = self.structs.get(expr.name, {})
+            for fname, fexpr in expr.fields:
+                if isinstance(fexpr, A.ArrayLit) and not fexpr.elems and fields.get(fname):
+                    self.set(fexpr, fields[fname])
+                else:
+                    self.walk_expr(fexpr)
             return self.set(expr, expr.name)
         if isinstance(expr, A.FieldAccess):
             bt = self.walk_expr(expr.base)
@@ -158,6 +177,8 @@ class Infer:
                 return self.set(expr, "bool")
             if expr.name in ("starts_with", "ends_with"):
                 return self.set(expr, "bool")
+            if expr.name == "http_get":
+                return self.set(expr, "str")
             return self.set(expr, "void")
         return self.set(expr, "int")
 

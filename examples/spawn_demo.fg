@@ -1,0 +1,10 @@
+fn worker(n: int) {
+    println("worker done", n);
+}
+
+fn main() -> int {
+    spawn worker(1);
+    spawn worker(2);
+    println("main done, waiting for workers");
+    return 0;
+}

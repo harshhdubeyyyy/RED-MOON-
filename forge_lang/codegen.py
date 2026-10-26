@@ -28,6 +28,10 @@ HEADER = r"""#include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
 #include <math.h>
+#include <pthread.h>
+#include <sys/socket.h>
+#include <netdb.h>
+#include <unistd.h>
 #include <time.h>
 
 typedef struct { long long *data; long long len; long long cap; } ForgeIntArray;
@@ -217,6 +221,59 @@ static char *forge_trim(const char *s) {
     return buf;
 }
 
+static pthread_t forge_threads[1024];
+static long long forge_thread_count = 0;
+
+static void forge_join_threads(void) {
+    for (long long i = 0; i < forge_thread_count; i++) pthread_join(forge_threads[i], NULL);
+    forge_thread_count = 0;
+}
+
+static char *forge_http_get(const char *url) {
+    // HTTP only (no TLS): http://host[:port]/path . HTTPS fails cleanly.
+    if (strncmp(url, "http://", 7) != 0) forge_fail("http_get: only http:// URLs are supported (no TLS yet)");
+    const char *rest = url + 7;
+    const char *slash = strchr(rest, '/');
+    char hostport[256];
+    const char *path = "/";
+    if (slash) {
+        size_t hl = (size_t)(slash - rest);
+        if (hl >= sizeof(hostport)) forge_fail("http_get: host too long");
+        memcpy(hostport, rest, hl); hostport[hl] = '\0';
+        path = slash;
+    } else {
+        if (strlen(rest) >= sizeof(hostport)) forge_fail("http_get: host too long");
+        strcpy(hostport, rest);
+    }
+    char host[256]; char portstr[16] = "80";
+    char *colon = strchr(hostport, ':');
+    if (colon) { size_t hl = (size_t)(colon - hostport); memcpy(host, hostport, hl); host[hl] = '\0'; strcpy(portstr, colon + 1); }
+    else strcpy(host, hostport);
+    struct addrinfo hints; memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC; hints.ai_socktype = SOCK_STREAM;
+    struct addrinfo *res = NULL;
+    if (getaddrinfo(host, portstr, &hints, &res) != 0) forge_fail("http_get: cannot resolve host");
+    int sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+    if (sock < 0) { freeaddrinfo(res); forge_fail("http_get: cannot create socket"); }
+    if (connect(sock, res->ai_addr, res->ai_addrlen) != 0) { close(sock); freeaddrinfo(res); forge_fail("http_get: cannot connect"); }
+    freeaddrinfo(res);
+    char req[1024];
+    snprintf(req, sizeof(req), "GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n", path, host);
+    if (send(sock, req, strlen(req), 0) < 0) { close(sock); forge_fail("http_get: send failed"); }
+    size_t cap = 8192, len = 0;
+    char *buf = (char *)malloc(cap);
+    ssize_t got;
+    while ((got = recv(sock, buf + len, cap - len - 1, 0)) > 0) {
+        len += (size_t)got;
+        if (len + 1024 >= cap) { cap *= 2; buf = (char *)realloc(buf, cap); }
+    }
+    close(sock);
+    buf[len] = '\0';
+    char *sep = strstr(buf, "\r\n\r\n");
+    if (!sep) forge_fail("http_get: bad HTTP response");
+    return forge_copy_str(sep + 4);
+}
+
 """
 
 
@@ -242,12 +299,33 @@ class Codegen:
         self.func_ret = {fn.name: fn.ret for fn in program.funcs}
         self.structs = {sd.name: dict(sd.fields)
                         for sd in (getattr(program, "structs", None) or [])}
+        self.enums = {ed.name: list(ed.variants)
+                      for ed in (getattr(program, "enums", None) or [])}
         self.lines = []
         self.indent = 0
         self.arr_counter = 0
         self.loop_counter = 0
+        self.spawn_counter = 0
         self.current_fn = None
         self._types = {}
+
+    def collect_spawns(self, block, out):
+        for stmt in block.stmts:
+            if isinstance(stmt, A.Spawn):
+                out.append(stmt.call)
+            elif isinstance(stmt, A.Block):
+                self.collect_spawns(stmt, out)
+            elif isinstance(stmt, A.If):
+                self.collect_spawns(stmt.then, out)
+                if stmt.els is not None:
+                    self.collect_spawns(stmt.els, out)
+            elif isinstance(stmt, A.While):
+                self.collect_spawns(stmt.body, out)
+            elif isinstance(stmt, A.For):
+                self.collect_spawns(stmt.body, out)
+            elif isinstance(stmt, A.Match):
+                for _pat, body in stmt.arms:
+                    self.collect_spawns(body, out)
 
     def generate(self):
         self.lines.append(HEADER)
@@ -260,13 +338,53 @@ class Codegen:
             self.emit("};")
         if self.structs:
             self.lines.append("")
+        for name, variants in self.enums.items():
+            self.emit(f"typedef enum {{ {', '.join(variants)} }} {name};")
+        if self.enums:
+            self.lines.append("")
         for fn in self.program.funcs:
             if fn.name != "main":
-                self.emit(f"{self.c_sig(fn)};")
+                sig = self.c_sig_extern(fn) if getattr(fn, "is_extern", False) else self.c_sig(fn)
+                self.emit(f"{sig};")
         self.lines.append("")
+        # Thread wrappers for every spawned function (collected once).
+        spawns = []
         for fn in self.program.funcs:
+            if not getattr(fn, "is_extern", False):
+                self.collect_spawns(fn.body, spawns)
+        seen_wrappers = set()
+        for call in spawns:
+            if call.name in seen_wrappers:
+                continue
+            seen_wrappers.add(call.name)
+            if call.args:
+                self.emit(f"static void *forge_thread_{call.name}(void *arg) {{")
+                self.emit(f"    long long v = *(long long *)arg; free(arg); {call.name}(v); return NULL;")
+                self.emit("}")
+            else:
+                self.emit(f"static void *forge_thread_{call.name}(void *arg) {{")
+                self.emit(f"    (void)arg; {call.name}(); return NULL;")
+                self.emit("}")
+        if seen_wrappers:
+            self.lines.append("")
+        for fn in self.program.funcs:
+            if getattr(fn, "is_extern", False):
+                continue
             self.gen_func(fn)
         return "\n".join(self.lines)
+
+    def c_sig_extern(self, fn):
+        # C ABI types: Forge int is long long internally, but a real
+        # C function like puts/system returns int, and its str param
+        # is const char * in the standard library.
+        def ct(t):
+            if t == "int":
+                return "int"
+            if t == "str":
+                return "const char *"
+            return c_type(t)
+        params = ", ".join(f"{ct(pt)} {pn}" for pn, pt in fn.params)
+        return f"{ct(fn.ret)} {fn.name}({params if params else 'void'})"
 
     def emit(self, text=""):
         self.lines.append(("    " * self.indent) + text if text else "")
@@ -305,6 +423,7 @@ class Codegen:
                       "forge_copy_str(__forge_argv[__forge_arg_i + 1]);")
         self.gen_block(fn.body, fn.ret)
         if fn.name == "main":
+            self.emit("forge_join_threads();")
             self.emit("return 0;")
         self.indent -= 1
         self.emit("}")
@@ -347,17 +466,57 @@ class Codegen:
             return
         if isinstance(stmt, A.IndexAssign):
             base = stmt.base.base
-            if not isinstance(base, A.Var):
-                raise ForgeError("index assignment target must be a variable")
+            if not isinstance(base, (A.Var, A.FieldAccess)):
+                raise ForgeError("index assignment target must be a variable or a field")
+            base_code = self.gen_expr(base)
             et = self.expr_type(stmt.base)
             idx = self.gen_expr(stmt.base.index)
             val = self.gen_expr(stmt.expr)
             if et == "str":
                 val = f"forge_copy_str({val})"
             if self.mode == "safe":
-                self.emit(f"{SET_FN[et]}(&{base.name}, {idx}, {val});")
+                self.emit(f"{SET_FN[et]}(&{base_code}, {idx}, {val});")
             else:
-                self.emit(f"{base.name}.data[{idx}] = {val};")
+                self.emit(f"({base_code}).data[{idx}] = {val};")
+            return
+        if isinstance(stmt, A.Match):
+            target = self.gen_expr(stmt.expr)
+            for idx, (pat, body) in enumerate(stmt.arms):
+                if pat == "_":
+                    if idx == 0:
+                        self.emit("{")
+                    else:
+                        self.emit("} else {")
+                    self.indent += 1
+                    self.gen_block(body, ret_type)
+                    self.indent -= 1
+                    self.emit("}")
+                else:
+                    kw = "if" if idx == 0 else "} else if"
+                    self.emit(f"{kw} ({target} == {pat}) {{")
+                    self.indent += 1
+                    self.gen_block(body, ret_type)
+                    self.indent -= 1
+                    if idx == len(stmt.arms) - 1:
+                        self.emit("}")
+            return
+        if isinstance(stmt, A.Spawn):
+            call = stmt.call
+            n = self.spawn_counter
+            self.spawn_counter += 1
+            self.emit("{")
+            self.indent += 1
+            if call.args:
+                self.emit(f"long long *__forge_spawn_arg{n} = (long long *)malloc(sizeof(long long));")
+                self.emit(f"*__forge_spawn_arg{n} = {self.gen_expr(call.args[0])};")
+                arg = f"__forge_spawn_arg{n}"
+            else:
+                arg = "NULL"
+            self.emit(f"pthread_t __forge_t{n};")
+            self.emit(f"pthread_create(&__forge_t{n}, NULL, forge_thread_{call.name}, {arg});")
+            self.emit(f"forge_threads[forge_thread_count++] = __forge_t{n};")
+            self.indent -= 1
+            self.emit("}")
             return
         if isinstance(stmt, A.If):
             self.emit(f"if ({self.gen_expr(stmt.cond)}) {{")
@@ -398,6 +557,8 @@ class Codegen:
             self.emit("}")
             return
         if isinstance(stmt, A.Return):
+            if self.current_fn == "main":
+                self.emit("forge_join_threads();")
             if stmt.expr is None:
                 self.emit("return 0;" if self.current_fn == "main" else "return;")
             elif ret_type == "str":
@@ -407,16 +568,21 @@ class Codegen:
             return
         if isinstance(stmt, A.ExprStmt):
             call = stmt.expr
+            if isinstance(call, A.Call) and call.name == "assert":
+                cond = self.gen_expr(call.args[0])
+                msg = self.gen_expr(call.args[1])
+                self.emit(f"if (!({cond})) {{ fprintf(stderr, \"forge: assertion failed: %s\\n\", {msg}); exit(1); }}")
+                return
             if isinstance(call, A.Call) and call.name in ("print", "println"):
                 self.gen_print(call)
                 return
             if isinstance(call, A.Call) and call.name == "push":
-                var = call.args[0]
+                var_code = self.gen_expr(call.args[0])
                 et = self.expr_type(call.args[1])
                 val = self.gen_expr(call.args[1])
                 if et == "str":
                     val = f"forge_copy_str({val})"
-                self.emit(f"{PUSH_FN[et]}(&{var.name}, {val});")
+                self.emit(f"{PUSH_FN[et]}(&{var_code}, {val});")
                 return
             if isinstance(call, A.Call) and call.name == "fail":
                 self.emit(f'fprintf(stderr, "forge: %s\\n", {self.gen_expr(call.args[0])});')
@@ -564,6 +730,8 @@ class Codegen:
             if expr.name == "ends_with":
                 return (f"forge_ends_with({self.gen_expr(expr.args[0])}, "
                         f"{self.gen_expr(expr.args[1])})")
+            if expr.name == "http_get":
+                return f"forge_http_get({self.gen_expr(expr.args[0])})"
             args = ", ".join(self.gen_expr(a) for a in expr.args)
             return f"{expr.name}({args})"
         raise ForgeError(f"unsupported expression {type(expr).__name__}")

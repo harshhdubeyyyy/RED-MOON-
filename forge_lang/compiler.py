@@ -27,6 +27,7 @@ def load_program(path, seen=None):
     base = os.path.dirname(real)
     all_funcs = list(prog.funcs)
     all_structs = list(prog.structs or [])
+    all_enums = list(prog.enums or [])
     for imp in prog.imports:
         candidates = [
             os.path.join(base, imp),
@@ -40,8 +41,9 @@ def load_program(path, seen=None):
         sub = load_program(found, seen)
         all_funcs.extend(sub.funcs)
         all_structs.extend(sub.structs or [])
+        all_enums.extend(sub.enums or [])
     seen.remove(real)
-    return A.Program([], all_funcs, all_structs)
+    return A.Program([], all_funcs, all_structs, all_enums)
 
 
 def compile_source(source, mode="safe"):
@@ -63,8 +65,8 @@ def _cc_flags(mode):
     # are expected, so silence that one warning (other -Wall warnings
     # still show).
     if mode == "fast":
-        return ["cc", "-O3", "-march=native", "-std=gnu11", "-Wall", "-Wno-unused-function"]
-    return ["cc", "-O2", "-std=gnu11", "-Wall", "-Wextra", "-Wno-unused-function"]
+        return ["cc", "-O3", "-march=native", "-std=gnu11", "-Wall", "-Wno-unused-function", "-pthread"]
+    return ["cc", "-O2", "-std=gnu11", "-Wall", "-Wextra", "-Wno-unused-function", "-pthread"]
 
 
 def build(source_path, output_path, mode="safe", keep_c=None):

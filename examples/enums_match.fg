@@ -1,0 +1,24 @@
+enum Color { Red, Green, Blue }
+
+fn describe(c: Color) -> int {
+    match c {
+        Red => {
+            println("red");
+        }
+        Green => {
+            println("green");
+        }
+        _ => {
+            println("other");
+        }
+    }
+    return 0;
+}
+
+fn main() -> int {
+    let c: Color = Green;
+    assert(c == Green, "color should be green");
+    describe(c);
+    describe(Blue);
+    return 0;
+}
