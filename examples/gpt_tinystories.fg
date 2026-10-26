@@ -1,0 +1,240 @@
+// TinyStories word-level GPT (0.4.0): 2 blocks, 2 heads,
+// d=16, hidden=32, seq=8 WORDS, vocab loaded from
+// data/tinystories_vocab.txt (500 words + <unk> from the
+// first 200 TinyStories train stories; see
+// data/tinystories_README.md and tools/prepare_tinystories.py).
+// Training: Adam lr 0.02, clip 1.0, 500 strided windows
+// (stride 4, covering the first ~2000 words) x 3 epochs,
+// run as THREE one-epoch processes, not one three-epoch
+// process. Reason, found by running it: the native backend
+// retains each training tape's arrays, so a single process
+// doing 1500 steps x ~221k nodes grows until the VM's OOM
+// killer ends it (killed during epoch 1, after epoch 0 had
+// already averaged 4.98). One epoch per process stays well
+// under the limit, and the checkpoint between epochs is
+// exactly the resume mechanism this program exercises:
+//   forge run examples/gpt_tinystories.fg
+//   forge run examples/gpt_tinystories.fg resume
+//   forge run examples/gpt_tinystories.fg resume final
+// Checkpoint: /tmp/tinystories_ckpt.txt (6-decimal floats,
+// so a resumed run loses ~1e-6 per parameter — negligible
+// at this scale, and the printed ckpt diff shows it).
+// Tape-memory freeing is the open compiler fix (0.5.0).
+// Evaluation: held-out windows from word offset 20000
+// (later stories the model never trained on), loss and
+// perplexity before and after. Checkpoint: saved to /tmp
+// (not the repo) and loaded back, difference printed.
+// Generation: 30 words, greedy and temperature-sampled,
+// from the prompt "once upon a time there was a little".
+// This is a word model, not a character model: its outputs
+// are real words (or <unk>), which is why it can read as
+// more fluent than the character models before it — and
+// why its failures read as word salad, not letter salad.
+import "gpt2.fg";
+import "nn.fg";
+import "tokenizer.fg";
+
+fn build_tape(params: [float]) -> Ag {
+    let mut s: Ag = ag_input(tape_new(), params[0]);
+    let mut i: int = 1;
+    while i < len(params) {
+        s = ag_input(s.tape, params[i]);
+        i = i + 1;
+    }
+    return s;
+}
+
+fn load_vocab() -> [str] {
+    let text: str = read_file("data/tinystories_vocab.txt");
+    let lines: [str] = split(text, "\n");
+    let mut out: [str] = [];
+    for line in lines {
+        if len(line) > 0 {
+            push(out, line);
+        }
+    }
+    return out;
+}
+
+fn load_ids() -> [int] {
+    let text: str = read_file("data/tinystories_ids.txt");
+    let parts: [str] = split(text, " ");
+    let mut out: [int] = [];
+    for piece in parts {
+        if len(piece) > 0 {
+            push(out, parse_int(piece));
+        }
+    }
+    return out;
+}
+
+fn word_id(vocab: [str], word: str) -> int {
+    let mut i: int = 0;
+    while i < len(vocab) {
+        if vocab[i] == word {
+            return i;
+        }
+        i = i + 1;
+    }
+    return len(vocab) - 1;
+}
+
+fn window_loss(params: [float], ids: [int], start: int, vocab_len: int) -> float {
+    let mut x: [int] = [];
+    let mut y: [int] = [];
+    let mut i: int = 0;
+    while i < 8 {
+        push(x, ids[start + i]);
+        push(y, ids[start + i + 1]);
+        i = i + 1;
+    }
+    let tape: Ag = build_tape(params);
+    let logits: NodeVec = g2_logits(tape, x, 8, 16, 2, 32, vocab_len, 2);
+    let loss: Ag = g2_loss(logits.ag, logits.ids, y, 8, vocab_len);
+    return loss.tape.vals[loss.last];
+}
+
+fn eval_loss(params: [float], ids: [int], first: int, count: int, vocab_len: int) -> float {
+    let mut total: float = 0.0;
+    let mut w: int = 0;
+    while w < count {
+        total = total + window_loss(params, ids, first + w, vocab_len);
+        w = w + 1;
+    }
+    return total / count as float;
+}
+
+fn gen_words(params: [float], ctx0: [int], vocab: [str], steps: int, sampled: bool) -> str {
+    let vlen: int = len(vocab);
+    let mut ctx: [int] = ctx0;
+    let mut gen: str = vocab[ctx0[0]];
+    let mut i: int = 1;
+    while i < 8 {
+        gen = gen + " " + vocab[ctx0[i]];
+        i = i + 1;
+    }
+    let mut seed: int = 123;
+    let mut step: int = 0;
+    while step < steps {
+        let tape: Ag = build_tape(params);
+        let logits: NodeVec = g2_logits(tape, ctx, 8, 16, 2, 32, vlen, 2);
+        let base: int = 7 * vlen;
+        let mut best: int = 0;
+        if sampled {
+            let mut last_logits: [float] = [];
+            let mut v: int = 0;
+            while v < vlen {
+                push(last_logits, logits.ag.tape.vals[base + v]);
+                v = v + 1;
+            }
+            seed = rand_next(seed);
+            best = sample_temperature(last_logits, 0.8, rand_float(seed));
+        } else {
+            let mut v: int = 1;
+            while v < vlen {
+                if logits.ag.tape.vals[base + v] > logits.ag.tape.vals[base + best] {
+                    best = v;
+                }
+                v = v + 1;
+            }
+        }
+        gen = gen + " " + vocab[best];
+        let mut next: [int] = [];
+        let mut j: int = 1;
+        while j < 8 {
+            push(next, ctx[j]);
+            j = j + 1;
+        }
+        push(next, best);
+        ctx = next;
+        step = step + 1;
+    }
+    return gen;
+}
+
+fn main() -> int {
+    let vocab: [str] = load_vocab();
+    let ids: [int] = load_ids();
+    let vlen: int = len(vocab);
+    println("words =", len(ids), "vocab =", vlen);
+    println("params =", g2_param_count(vlen, 16, 8, 32, 2));
+    let mut unk: int = 0;
+    for id in ids {
+        if id == vlen - 1 {
+            unk = unk + 1;
+        }
+    }
+    println("unk rate =", unk as float / len(ids) as float);
+    let mut resume: bool = false;
+    let mut final_run: bool = false;
+    for arg in args() {
+        if arg == "resume" {
+            resume = true;
+        }
+        if arg == "final" {
+            final_run = true;
+        }
+    }
+    let mut init: [float] = [];
+    if resume {
+        init = checkpoint_load("/tmp/tinystories_ckpt.txt");
+        println("resumed from checkpoint, len =", len(init));
+    } else {
+        init = g2_init_params(vlen, 16, 8, 32, 2, 42);
+        let test_before: float = eval_loss(init, ids, 20000, 20, vlen);
+        println("test loss before =", test_before, "ppl =", exp(test_before));
+    }
+    let mut st: OptimState = optim_new(init);
+    let mut total: float = 0.0;
+    let mut w: int = 0;
+    while w < 500 {
+        let start: int = w * 4;
+        let mut x: [int] = [];
+        let mut y: [int] = [];
+        let mut i: int = 0;
+        while i < 8 {
+            push(x, ids[start + i]);
+            push(y, ids[start + i + 1]);
+            i = i + 1;
+        }
+        let tape: Ag = build_tape(st.params);
+        let logits: NodeVec = g2_logits(tape, x, 8, 16, 2, 32, vlen, 2);
+        let loss: Ag = g2_loss(logits.ag, logits.ids, y, 8, vlen);
+        let back: Ag = ag_backward(loss, loss.last);
+        total = total + back.tape.vals[loss.last];
+        let mut grads: [float] = [];
+        i = 0;
+        while i < len(st.params) {
+            push(grads, back.tape.grads[i]);
+            i = i + 1;
+        }
+        let clipped: [float] = grad_clip(grads, 1.0);
+        st = adam_step(st, clipped, 0.02, 0.9, 0.999, 0.00000001);
+        w = w + 1;
+    }
+    println("epoch avg loss =", total / 500.0);
+    let ok: bool = checkpoint_save("/tmp/tinystories_ckpt.txt", st.params);
+    println("ckpt saved =", ok);
+    if final_run {
+        let test_after: float = eval_loss(st.params, ids, 20000, 20, vlen);
+        println("test loss after =", test_after, "ppl =", exp(test_after));
+        let back_params: [float] = checkpoint_load("/tmp/tinystories_ckpt.txt");
+        let mut diff: float = st.params[0] - back_params[0];
+        if diff < 0.0 {
+            diff = -diff;
+        }
+        println("ckpt diff =", diff, "ckpt len =", len(back_params));
+        let mut ctx: [int] = [];
+        push(ctx, word_id(vocab, "once"));
+        push(ctx, word_id(vocab, "upon"));
+        push(ctx, word_id(vocab, "a"));
+        push(ctx, word_id(vocab, "time"));
+        push(ctx, word_id(vocab, "there"));
+        push(ctx, word_id(vocab, "was"));
+        push(ctx, word_id(vocab, "a"));
+        push(ctx, word_id(vocab, "little"));
+        println("greedy =", gen_words(st.params, ctx, vocab, 30, false));
+        println("sampled =", gen_words(st.params, ctx, vocab, 30, true));
+    }
+    return 0;
+}

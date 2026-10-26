@@ -1,0 +1,39 @@
+// TinyStories data-load demo (0.4.0): loads the vocab and word
+// ids prepared by tools/prepare_tinystories.py and prints the
+// counts. No training — this is the suite check that the data
+// files are present and parse.
+import "gpt2.fg";
+import "nn.fg";
+
+fn load_vocab() -> [str] {
+    let text: str = read_file("data/tinystories_vocab.txt");
+    let lines: [str] = split(text, "\n");
+    let mut out: [str] = [];
+    for line in lines {
+        if len(line) > 0 {
+            push(out, line);
+        }
+    }
+    return out;
+}
+
+fn load_ids() -> [int] {
+    let text: str = read_file("data/tinystories_ids.txt");
+    let parts: [str] = split(text, " ");
+    let mut out: [int] = [];
+    for piece in parts {
+        if len(piece) > 0 {
+            push(out, parse_int(piece));
+        }
+    }
+    return out;
+}
+
+fn main() -> int {
+    let vocab: [str] = load_vocab();
+    let ids: [int] = load_ids();
+    println("words =", len(ids), "vocab =", len(vocab));
+    println("first word =", vocab[0], "last word =", vocab[len(vocab) - 1]);
+    println("first id =", ids[0], "id 100 =", ids[100]);
+    return 0;
+}

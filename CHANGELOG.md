@@ -4,6 +4,61 @@ All notable changes are listed here. Version numbers follow
 semantic versioning in spirit: 0.x means the language is usable
 but breaking changes are still possible.
 
+## 0.4.0 — 26 Oct 2026 — TinyStories word GPT
+
+Added:
+- `tools/prepare_tinystories.py` — downloads the first 200
+  stories of roneneldan/TinyStories (train split) via the HF
+  datasets-server rows API, cleans them (lowercase, apostrophes
+  removed, other non-letters become spaces), and writes
+  `data/tinystories_vocab.txt` (500 words + <unk>), `data/`
+  `tinystories_ids.txt` (24,000 word ids) and a provenance
+  README. UNK rate in the kept words: 14.8% (28.5% at 200
+  words — the reason vocab went to 500).
+- `examples/gpt_tinystories.fg` — word-level GPT on that data,
+  reusing stdlib/gpt2.fg: 2 blocks, 2 heads, d=16, hidden=32,
+  seq=8 words, 500-word vocab, 12,608 params. Adam lr 0.02,
+  clip 1.0, 500 strided windows (stride 4, first ~2000 words)
+  x 3 epochs. Held-out test (20 windows from word offset
+  20000, later stories never trained on): loss 6.98368 ->
+  5.51097, perplexity 1078.88 -> 247.39 (a real 4.4x
+  generalisation gain, not a training-set fit). Epoch
+  training losses: 4.98375, 4.64674 (the third epoch's
+  average was lost when its process was OOM-killed during
+  the eval phase — see below — but its checkpoint is the
+  one evaluated here).
+- `examples/gpt_tinystories_eval.fg` — eval-only companion:
+  loads the checkpoint and reports test loss + generation
+  in its own process.
+- `examples/tinystories_load_demo.fg` — suite check that the
+  data files load and parse (words = 24000, vocab = 500).
+
+Generation (from "once upon a time there was a little",
+30 words): greedy still loops ("cake cake cake ...");
+sampled (temp 0.8, seed 123) gives real TinyStories words
+in salad order ("some needed smiled kept lot herself toys
+lot careful feel idea ..."). Honest verdict: upgraded from
+letter salad to word salad — the perplexity gain is the
+solid result; fluent sentences are NOT claimed.
+
+Found by running (the important limitation of this batch):
+- The native backend retains each training tape's arrays,
+  so one process running 1500 steps x ~221k nodes grows
+  until the VM's OOM killer ends it (killed during epoch
+  1 of the original single-process run, and again during
+  the eval phase of the 3-epoch run). Training is therefore
+  split into one-epoch processes with checkpoint resume
+  (`forge run examples/gpt_tinystories.fg`,
+  `... resume`, `... resume final`), and eval runs as its
+  own process. Tape-memory freeing is the open compiler
+  fix for 0.5.0, alongside tensor-level autograd.
+
+Not yet done: fluent generation (needs far more data,
+params and steps — OpenMythos 44M on the same dataset took
+4,850 steps to reach fluent samples), GPU training loop,
+tensor-level autograd, KV-cache for the gpt2 layout, public
+registry host, CI upload, repo rename.
+
 ## 0.3.0 — 26 Oct 2026 — Scaled GPT + GPU-verified kernels
 
 Added:

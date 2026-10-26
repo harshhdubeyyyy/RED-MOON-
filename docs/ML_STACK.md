@@ -159,3 +159,20 @@ Each needs its own pass; none is half-claimed here.
   a 1e-9 epsilon in g2_loss) and `__half2double` not existing
   in CUDA (fixed to `(double)__half2float`); notebook v3
   failed to build, v4 is the verified run.
+
+## 0.4.0 addendum — TinyStories word GPT
+- Real data replaces the hand-written story: first 200
+  TinyStories train stories (24,000 kept words, 500-word
+  vocab + <unk>, 14.8% UNK) via tools/prepare_tinystories.py.
+- `examples/gpt_tinystories.fg`: word-level GPT (gpt2.fg,
+  2 blocks, 2 heads, d=16, hidden=32, seq=8 words, 12,608
+  params), 500 strided windows x 3 epochs, Adam lr 0.02.
+  Held-out (later stories, offset 20000): loss 6.98368 ->
+  5.51097, perplexity 1078.88 -> 247.39. Training losses
+  4.98375, 4.64674 for epochs 1-2. Sampled generation is
+  real words in salad order; greedy loops on "cake".
+  Not fluent sentences — do not claim them.
+- Engineering lesson: the native backend retains training
+  tapes, so long runs must checkpoint-and-restart (one
+  epoch per process; eval in its own process). Tape
+  freeing + tensor-level autograd are the 0.5.0 unlocks.

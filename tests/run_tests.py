@@ -92,6 +92,9 @@ def main():
            "windows = 19\ntrain + test = 19\nbatch = 3\nshuffled = 19\n")
     expect("examples/gpt_scaled_forward_demo.fg",
            "params = 5200\nlogits = 464\nloss = 4.1355\ngraph nodes = 183940\n")
+    expect("examples/tinystories_load_demo.fg",
+           "words = 24000 vocab = 500\nfirst word = the last word = <unk>\n"
+           "first id = 22 id 100 = 196\n")
     expect("examples/gpt_forward_demo.fg",
            "params = 776\nlogits = 96\nloss = 2.89085\ngraph nodes = 13886\n")
     expect("examples/imported_demo.fg",

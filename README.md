@@ -135,6 +135,10 @@ Not a promise of LLMs — a small-model stack that actually trains:
   verified on Kaggle Tesla T4 (dot 70, attention 0.330/0.670).
 - **Scaled GPT** (`examples/gpt_scaled.fg`): 2 blocks, 2 heads,
   5,200 params, held-out perplexity 58.1 → 53.9.
+- **TinyStories word GPT** (`examples/gpt_tinystories.fg`): real
+  TinyStories data (200 stories, 24,000 words, 500-word vocab),
+  12,608 params, held-out perplexity 1078.88 → 247.39. Sampled
+  output is real words in salad order — not fluent sentences.
 
 ```sh
 python3 forge.py run examples/tiny_gpt.fg      # trains + generates

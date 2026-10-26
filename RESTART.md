@@ -276,3 +276,17 @@ Forge docs.
   nvcc 12.8.93): all transformer kernels match simulation.
 - Gotchas: log(0) -> NaN at scale (eps fix in g2_loss);
   __half2double does not exist (use __half2float cast).
+
+## TinyStories word GPT — 26 Oct 2026 (0.4.0)
+- tools/prepare_tinystories.py + data/tinystories_vocab.txt
+  (500 words + <unk>) + data/tinystories_ids.txt (24,000
+  words, first 200 TinyStories train stories, UNK 14.8%).
+- gpt_tinystories.fg (word GPT, gpt2.fg, 12,608 params,
+  seq 8 words): train 4.98375, 4.64674 (epochs 1-2);
+  held-out ppl 1078.88 -> 247.39 (eval-only companion
+  gpt_tinystories_eval.fg, from the epoch-3 checkpoint).
+  Greedy loops on "cake"; sampled = real words, salad order.
+- Gotchas: native backend retains training tapes — one
+  process OOM-killed at 1500 steps x ~221k nodes. Train
+  one epoch per process with checkpoint resume; eval in
+  its own process. Tape freeing is the 0.5.0 compiler fix.
