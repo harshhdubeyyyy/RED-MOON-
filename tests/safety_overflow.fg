@@ -1,0 +1,6 @@
+fn main() -> int {
+    let mut x: int = 9223372036854775807;
+    x = x + 1;
+    println(x);
+    return 0;
+}

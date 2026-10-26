@@ -1,0 +1,90 @@
+"""Forge v2 compiler driver: source -> imports -> checked AST -> C -> binary."""
+
+import os
+import subprocess
+import sys
+import tempfile
+
+from .errors import ForgeError
+from .parser import parse
+from .checker import check
+from .infer import infer_types
+from .codegen import generate
+from . import ast_nodes as A
+
+
+def load_program(path, seen=None):
+    """Parse a file and recursively resolve its imports into one Program."""
+    if seen is None:
+        seen = set()
+    real = os.path.realpath(path)
+    if real in seen:
+        raise ForgeError(f"circular import: {path}")
+    seen.add(real)
+    with open(path, "r", encoding="utf-8") as f:
+        source = f.read()
+    prog = parse(source)
+    base = os.path.dirname(real)
+    all_funcs = list(prog.funcs)
+    for imp in prog.imports:
+        candidates = [
+            os.path.join(base, imp),
+            os.path.join(os.getcwd(), imp),
+            os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                         "stdlib", os.path.basename(imp)),
+        ]
+        found = next((c for c in candidates if os.path.exists(c)), None)
+        if found is None:
+            raise ForgeError(f"import not found: {imp} (looked in {base} and stdlib)")
+        sub = load_program(found, seen)
+        all_funcs.extend(sub.funcs)
+    seen.remove(real)
+    return A.Program([], all_funcs)
+
+
+def compile_source(source, mode="safe"):
+    program = parse(source)
+    check(program)
+    types = infer_types(program)
+    return generate(program, types, mode=mode), program
+
+
+def compile_file(path, mode="safe"):
+    program = load_program(path)
+    check(program)
+    types = infer_types(program)
+    return generate(program, types, mode=mode), program
+
+
+def _cc_flags(mode):
+    if mode == "fast":
+        return ["cc", "-O3", "-march=native", "-std=gnu11", "-Wall"]
+    return ["cc", "-O2", "-std=gnu11", "-Wall", "-Wextra"]
+
+
+def build(source_path, output_path, mode="safe", keep_c=None):
+    c_source, _ = compile_file(source_path, mode=mode)
+    if keep_c:
+        with open(keep_c, "w", encoding="utf-8") as f:
+            f.write(c_source)
+        c_path = keep_c
+        cleanup = False
+    else:
+        fd, c_path = tempfile.mkstemp(suffix=".c", prefix="forge2_")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(c_source)
+        cleanup = True
+    try:
+        result = subprocess.run(_cc_flags(mode) + ["-o", output_path, c_path, "-lm"],
+                                capture_output=True, text=True)
+        if result.returncode != 0:
+            raise ForgeError(f"C compiler failed:\n{result.stderr}")
+        if result.stderr.strip():
+            print(result.stderr, file=sys.stderr)
+    finally:
+        if cleanup:
+            try:
+                os.unlink(c_path)
+            except OSError:
+                pass
+    return output_path

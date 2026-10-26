@@ -1,0 +1,32 @@
+// Dot-product scaling: time the same dot 100 times and report the
+// average, so small sizes are still measurable with clock_micros().
+import "ml.fg";
+
+fn timed_dot(n: int) -> float {
+    let mut a: [float] = [];
+    let mut b: [float] = [];
+    let mut i: int = 0;
+    while i < n {
+        push(a, i as float * 0.001);
+        push(b, i as float * 0.002);
+        i = i + 1;
+    }
+    let t0: int = clock_micros();
+    let mut rep: int = 0;
+    let mut s: float = 0.0;
+    while rep < 100 {
+        s = dot(a, b);
+        rep = rep + 1;
+    }
+    let t1: int = clock_micros();
+    println("size =", n, "dot =", s, "avg_micros =", (t1 - t0) as float / 100.0);
+    return s;
+}
+
+fn main() -> int {
+    timed_dot(1000);
+    timed_dot(5000);
+    timed_dot(10000);
+    timed_dot(20000);
+    return 0;
+}

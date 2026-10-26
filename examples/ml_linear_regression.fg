@@ -1,0 +1,29 @@
+// Python-style ML, natively compiled: linear regression by gradient
+// descent. Data follows y = 2x + 1, so w should head toward 2 and b toward 1.
+fn main() -> int {
+    let xs: [float] = [1.0, 2.0, 3.0, 4.0, 5.0];
+    let ys: [float] = [3.0, 5.0, 7.0, 9.0, 11.0];
+    let mut w: float = 0.0;
+    let mut b: float = 0.0;
+    let lr: float = 0.01;
+    let mut iter: int = 0;
+    while iter < 500 {
+        let mut gw: float = 0.0;
+        let mut gb: float = 0.0;
+        let mut i: int = 0;
+        while i < len(xs) {
+            let pred: float = w * xs[i] + b;
+            let err: float = pred - ys[i];
+            gw = gw + err * xs[i];
+            gb = gb + err;
+            i = i + 1;
+        }
+        let n: float = len(xs) as float;
+        w = w - lr * (2.0 / n) * gw;
+        b = b - lr * (2.0 / n) * gb;
+        iter = iter + 1;
+    }
+    println("w =", w, "b =", b);
+    println("prediction for x=6:", w * 6.0 + b);
+    return 0;
+}

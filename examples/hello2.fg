@@ -1,0 +1,14 @@
+// Forge v2: floats, arrays, for loops, range.
+fn main() -> int {
+    let xs: [float] = [1.5, 2.5, 3.5];
+    let mut total: float = 0.0;
+    for v in xs {
+        total = total + v;
+    }
+    println("sum =", total, "len =", len(xs));
+    for i in range(3) {
+        println("i =", i, "xs[i] =", xs[i]);
+    }
+    println("sqrt(2) =", sqrt(2.0), "exp(1) =", exp(1.0));
+    return 0;
+}

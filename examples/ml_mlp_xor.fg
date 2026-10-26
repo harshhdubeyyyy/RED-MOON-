@@ -1,0 +1,20 @@
+// A tiny MLP doing XOR, Mojo-style: hand-set sigmoid weights, no
+// Python runtime, compiled to a native binary.
+import "ml.fg";
+
+fn main() -> int {
+    let xs: [float] = [0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0];
+    for i in range(4) {
+        let x1: float = xs[i * 2];
+        let x2: float = xs[i * 2 + 1];
+        let h1: float = sigmoid(20.0 * x1 + 20.0 * x2 - 10.0);
+        let h2: float = sigmoid(20.0 * x1 + 20.0 * x2 - 30.0);
+        let out: float = sigmoid(20.0 * h1 - 20.0 * h2 - 10.0);
+        if out > 0.5 {
+            println("xor", x1, x2, "= 1 (raw", out, ")");
+        } else {
+            println("xor", x1, x2, "= 0 (raw", out, ")");
+        }
+    }
+    return 0;
+}

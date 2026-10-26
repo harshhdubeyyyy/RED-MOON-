@@ -1,0 +1,145 @@
+"""Type inference for codegen (program already checked)."""
+
+from . import ast_nodes as A
+
+
+class Infer:
+    def __init__(self, program):
+        self.funcs = {fn.name: fn for fn in program.funcs}
+        self.types = {}
+        self.scopes = []
+        self.current_ret = "void"
+
+    def run(self, program):
+        for fn in program.funcs:
+            self.current_ret = fn.ret
+            self.scopes = [{n: t for n, t in fn.params}]
+            self.walk_block(fn.body)
+            self.scopes = []
+        return self.types
+
+    def lookup(self, name):
+        for scope in reversed(self.scopes):
+            if name in scope:
+                return scope[name]
+        return "int"
+
+    def set(self, expr, t):
+        self.types[id(expr)] = t
+        return t
+
+    def walk_block(self, block):
+        self.scopes.append({})
+        for stmt in block.stmts:
+            self.walk_stmt(stmt)
+        self.scopes.pop()
+
+    def walk_stmt(self, stmt):
+        if isinstance(stmt, A.Block):
+            self.walk_block(stmt)
+        elif isinstance(stmt, A.Let):
+            if isinstance(stmt.expr, A.ArrayLit) and stmt.ann:
+                t = stmt.ann
+                self.set(stmt.expr, t)
+                for e in stmt.expr.elems:
+                    self.walk_expr(e)
+            else:
+                t = self.walk_expr(stmt.expr)
+                if stmt.ann:
+                    t = stmt.ann
+            self.scopes[-1][stmt.name] = t
+        elif isinstance(stmt, A.Assign):
+            self.walk_expr(stmt.expr)
+        elif isinstance(stmt, A.IndexAssign):
+            self.walk_expr(stmt.base)
+            self.walk_expr(stmt.expr)
+        elif isinstance(stmt, A.If):
+            self.walk_expr(stmt.cond)
+            self.walk_block(stmt.then)
+            if stmt.els is not None:
+                self.walk_block(stmt.els)
+        elif isinstance(stmt, A.While):
+            self.walk_expr(stmt.cond)
+            self.walk_block(stmt.body)
+        elif isinstance(stmt, A.For):
+            at = self.walk_expr(stmt.expr)
+            et = at[1:-1] if at.startswith("[") else "int"
+            self.scopes.append({stmt.name: et})
+            for s in stmt.body.stmts:
+                self.walk_stmt(s)
+            self.scopes.pop()
+        elif isinstance(stmt, A.Return):
+            if stmt.expr is not None:
+                if isinstance(stmt.expr, A.ArrayLit) and self.current_ret.startswith("["):
+                    self.set(stmt.expr, self.current_ret)
+                    for e in stmt.expr.elems:
+                        self.walk_expr(e)
+                else:
+                    self.walk_expr(stmt.expr)
+        elif isinstance(stmt, A.ExprStmt):
+            self.walk_expr(stmt.expr)
+
+    def walk_expr(self, expr):
+        if isinstance(expr, A.IntLit):
+            return self.set(expr, "int")
+        if isinstance(expr, A.FloatLit):
+            return self.set(expr, "float")
+        if isinstance(expr, A.StrLit):
+            return self.set(expr, "str")
+        if isinstance(expr, A.BoolLit):
+            return self.set(expr, "bool")
+        if isinstance(expr, A.Var):
+            return self.set(expr, self.lookup(expr.name))
+        if isinstance(expr, A.ArrayLit):
+            if expr.elems:
+                t0 = self.walk_expr(expr.elems[0])
+                for e in expr.elems[1:]:
+                    self.walk_expr(e)
+                return self.set(expr, f"[{t0}]")
+            return self.set(expr, "[?]")
+        if isinstance(expr, A.Index):
+            bt = self.walk_expr(expr.base)
+            self.walk_expr(expr.index)
+            et = bt[1:-1] if bt.startswith("[") else "int"
+            return self.set(expr, et)
+        if isinstance(expr, A.Cast):
+            self.walk_expr(expr.expr)
+            return self.set(expr, expr.target)
+        if isinstance(expr, A.UnaryOp):
+            t = self.walk_expr(expr.expr)
+            return self.set(expr, "bool" if expr.op == "!" else t)
+        if isinstance(expr, A.BinOp):
+            lt = self.walk_expr(expr.left)
+            rt = self.walk_expr(expr.right)
+            if expr.op in ("<", "<=", ">", ">=", "==", "!=", "&&", "||"):
+                return self.set(expr, "bool")
+            if expr.op == "+" and lt == "str":
+                return self.set(expr, "str")
+            return self.set(expr, lt)
+        if isinstance(expr, A.Call):
+            # Array literals in arguments take the parameter type.
+            if expr.name not in ("print", "println", "push", "fail"):
+                fn = self.funcs.get(expr.name)
+                if fn:
+                    for arg, (_pn, pt) in zip(expr.args, fn.params):
+                        if isinstance(arg, A.ArrayLit) and pt.startswith("["):
+                            self.set(arg, pt)
+                            for e in arg.elems:
+                                self.walk_expr(e)
+                        else:
+                            self.walk_expr(arg)
+                    return self.set(expr, fn.ret)
+            for a in expr.args:
+                self.walk_expr(a)
+            if expr.name == "len" or expr.name == "clock_micros" or expr.name == "abs":
+                return self.set(expr, "int")
+            if expr.name == "range":
+                return self.set(expr, "[int]")
+            if expr.name in ("sqrt", "exp", "log", "pow"):
+                return self.set(expr, "float")
+            return self.set(expr, "void")
+        return self.set(expr, "int")
+
+
+def infer_types(program):
+    return Infer(program).run(program)

@@ -1,0 +1,69 @@
+#!/usr/bin/env python3
+"""Forge v2 test suite. Run from ~/workspace/forge-v2: python3 tests/run_tests.py"""
+import os
+import subprocess
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FORGE = os.path.join(ROOT, "forge.py")
+
+
+def run_forge(*args):
+    return subprocess.run([sys.executable, FORGE, *args],
+                          capture_output=True, text=True, cwd=ROOT)
+
+
+def main():
+    failures = []
+
+    def expect(path, expected, mode="safe"):
+        r = run_forge("run", path, "--mode", mode) if mode != "safe" else run_forge("run", path)
+        if r.returncode != 0 or r.stdout != expected:
+            failures.append(f"{path} ({mode}): expected {expected!r}, got rc={r.returncode} "
+                            f"out={r.stdout!r} err={r.stderr!r}")
+
+    expect("examples/hello2.fg",
+           "sum = 7.5 len = 3\ni = 0 xs[i] = 1.5\ni = 1 xs[i] = 2.5\ni = 2 xs[i] = 3.5\n"
+           "sqrt(2) = 1.41421 exp(1) = 2.71828\n")
+    expect("examples/matrix.fg", "58 64 139 154 \ndot = 217\n")
+    # MLP: check the four XOR verdicts, not the raw sigmoid digits.
+    r = run_forge("run", "examples/ml_mlp_xor.fg")
+    for needle in ("xor 0 0 = 0", "xor 0 1 = 1", "xor 1 0 = 1", "xor 1 1 = 0"):
+        if r.returncode != 0 or needle not in r.stdout:
+            failures.append(f"ml_mlp_xor: missing {needle!r} in {r.stdout!r} err={r.stderr!r}")
+    # Regression: w/b must head toward 2/1 and prediction toward 13.
+    r = run_forge("run", "examples/ml_linear_regression.fg")
+    if r.returncode != 0 or "prediction for x=6:" not in r.stdout:
+        failures.append(f"regression failed: {r.stdout!r} {r.stderr!r}")
+    # Benchmark must run in both modes and report micros.
+    for mode in ("safe", "fast"):
+        r = run_forge("run", "examples/benchmark.fg", "--mode", mode)
+        if r.returncode != 0 or "micros =" not in r.stdout or "acc = 2997000" not in r.stdout:
+            failures.append(f"benchmark ({mode}) failed: {r.stdout!r} {r.stderr!r}")
+    # Safety: div by zero and overflow must abort cleanly in safe mode.
+    for path, needle in (("tests/safety_div_zero.fg", "division by zero"),
+                         ("tests/safety_overflow.fg", "integer overflow"),
+                         ("tests/safety_oob.fg", "index out of bounds")):
+        r = run_forge("run", path)
+        if r.returncode == 0 or needle not in r.stderr:
+            failures.append(f"{path}: expected abort {needle!r}, got rc={r.returncode} "
+                            f"out={r.stdout!r} err={r.stderr!r}")
+    # Compile rejections.
+    for path, needle in (("tests/bad_type.fg", "declared str"),
+                         ("tests/bad_immutable.fg", "immutable")):
+        r = run_forge("check", path)
+        if r.returncode == 0 or needle not in r.stderr:
+            failures.append(f"{path}: expected error {needle!r}, got rc={r.returncode} "
+                            f"out={r.stdout!r} err={r.stderr!r}")
+
+    if failures:
+        print(f"FAIL: {len(failures)} failure(s)")
+        for f in failures:
+            print(" -", f)
+        return 1
+    print("PASS: all Forge v2 tests passed")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

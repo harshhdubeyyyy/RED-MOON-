@@ -1,0 +1,40 @@
+// Microsecond-latency benchmark: clock_micros() measures real work.
+// Run in safe mode, then in fast mode, and compare the numbers.
+fn main() -> int {
+    let mut a: [float] = [];
+    let mut b: [float] = [];
+    let mut i: int = 0;
+    while i < 5000 {
+        push(a, i as float * 0.001);
+        push(b, i as float * 0.002);
+        i = i + 1;
+    }
+    let t0: int = clock_micros();
+    let mut s: float = 0.0;
+    let mut j: int = 0;
+    while j < len(a) {
+        s = s + a[j] * b[j];
+        j = j + 1;
+    }
+    let t1: int = clock_micros();
+    println("dot(5000) =", s, "micros =", t1 - t0);
+
+    // A data-dependent loop (array reads) so the compiler cannot replace
+    // it with a closed-form sum; this is the honest latency number.
+    let mut d: [int] = [];
+    let mut di: int = 0;
+    while di < 1000 {
+        push(d, di % 7);
+        di = di + 1;
+    }
+    let t2: int = clock_micros();
+    let mut k: int = 0;
+    let mut acc: int = 0;
+    while k < 1000000 {
+        acc = acc + d[k % 1000];
+        k = k + 1;
+    }
+    let t3: int = clock_micros();
+    println("loop(1000000) acc =", acc, "micros =", t3 - t2);
+    return 0;
+}
