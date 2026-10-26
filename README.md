@@ -307,12 +307,13 @@ enums+match, spawn threads, C FFI, HTTP, Map/JSON stdlib, assert,
 backend, `?`, generic enums with payloads, a table DB, a SQL
 parser, a self-hosted HTTP registry, a WASM backend, string
 GC v1, CPU-thread parallel kernels, Python interop via a
-shared library, public registry discovery, and array GC v2
-are done (26 Oct 2026). It still has no real GPU hardware
-backend, GC for struct variables themselves, Python interop
-for arrays/structs, or a centrally hosted registry yet.
-Those are the next phases in `SPEC_V2.md`, not hidden
-features.
+shared library, public registry discovery, array GC v2,
+struct GC, Python arrays/structs, CUDA codegen, and a static
+GitHub-Pages registry are done (26 Oct 2026). It still has
+no CUDA execution on real GPU hardware, Python interop for
+[float]/[str] arrays or nested structs, or a dynamic
+centrally hosted registry yet. Those are the next phases in
+`SPEC_V2.md`, not hidden features.
 
 ## 🔁 Regenerate the figures
 

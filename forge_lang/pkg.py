@@ -308,6 +308,55 @@ def dispatch(argv, forge_path, cwd):
             for pkg in json.loads(body).get("packages", []):
                 print(f"{pkg['name']} {', '.join(pkg['versions'])}")
             return 0
+        if cmd == "list-static":
+            if not rest:
+                print("usage: forge pkg list-static <base_url>", file=sys.stderr)
+                return 1
+            status, body = _http_json(rest[0].rstrip("/") + "/packages.json")
+            if status != 200:
+                print(f"forge pkg: static registry unreachable ({status})", file=sys.stderr)
+                return 1
+            for pkg in json.loads(body).get("packages", []):
+                print(f"{pkg['name']} {', '.join(pkg['versions'])}")
+            return 0
+        if cmd == "add-static":
+            if len(rest) < 2:
+                print("usage: forge pkg add-static <base_url> name@version", file=sys.stderr)
+                return 1
+            base, spec = rest[0].rstrip("/"), rest[1]
+            if "@" not in spec:
+                print("usage: forge pkg add-static <base_url> name@version", file=sys.stderr)
+                return 1
+            name, version = spec.split("@", 1)
+            status, body = _http_json(f"{base}/packages.json")
+            if status != 200:
+                print(f"forge pkg: static registry unreachable ({status})", file=sys.stderr)
+                return 1
+            files = None
+            for pkg in json.loads(body).get("packages", []):
+                if pkg["name"] == name:
+                    files = pkg.get("files", {}).get(version)
+            if files is None:
+                print(f"forge pkg: {spec} not in static registry", file=sys.stderr)
+                return 1
+            # Vendor via the same path as a local package.
+            import tempfile
+            tmp = tempfile.mkdtemp(prefix="forge_static_")
+            try:
+                pkg_dir = os.path.join(tmp, name)
+                os.makedirs(os.path.join(pkg_dir, "src"))
+                with open(os.path.join(pkg_dir, "forge.toml"), "w", encoding="utf-8") as f:
+                    f.write(f"[package]\nname = \"{name}\"\nversion = \"{version}\"\n")
+                for fname in files:
+                    status, body = _http_json(f"{base}/packages/{name}/{version}/{fname}")
+                    if status != 200:
+                        print(f"forge pkg: could not fetch {fname} ({status})", file=sys.stderr)
+                        return 1
+                    with open(os.path.join(pkg_dir, "src", fname), "w", encoding="utf-8") as f:
+                        f.write(body)
+                return cmd_add(cwd, pkg_dir)
+            finally:
+                shutil.rmtree(tmp, ignore_errors=True)
         if cmd == "build":
             mode = "safe"
             if "--mode" in rest:

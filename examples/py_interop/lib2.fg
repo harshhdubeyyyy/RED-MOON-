@@ -1,0 +1,32 @@
+struct Point {
+    x: int;
+    y: int;
+}
+
+fn sum_arr(a: [int]) -> int {
+    let mut s: int = 0;
+    let mut i: int = 0;
+    while i < len(a) {
+        s = s + a[i];
+        i = i + 1;
+    }
+    return s;
+}
+
+fn double_arr(a: [int]) -> [int] {
+    let mut out: [int] = [];
+    let mut i: int = 0;
+    while i < len(a) {
+        push(out, a[i] * 2);
+        i = i + 1;
+    }
+    return out;
+}
+
+fn make_point(x: int, y: int) -> Point {
+    return Point { x: x, y: y };
+}
+
+fn point_sum(p: Point) -> int {
+    return p.x + p.y;
+}

@@ -1,0 +1,24 @@
+// GC v3 for structs: str fields are deep-copied, array fields
+// gain a reference, so a struct variable owns its fields and
+// can be freed on reassign/return without freeing another
+// owner's data.
+struct Person {
+    name: str;
+    scores: [int];
+}
+
+fn main() -> int {
+    let mut p: Person = Person { name: "a", scores: [1] };
+    let mut i: int = 0;
+    while i < 100 {
+        p = Person { name: "b", scores: [2, 3] };
+        i = i + 1;
+    }
+    println("person =", p.name, p.scores[0], p.scores[1]);
+    println("str allocs =", alloc_count(), "str frees =", free_count());
+    println("arr allocs =", arr_alloc_count(), "arr frees =", arr_free_count());
+    let mut q: Person = p;
+    p = Person { name: "c", scores: [9] };
+    println("shared q =", q.name, q.scores[0], q.scores[1]);
+    return 0;
+}

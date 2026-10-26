@@ -163,6 +163,17 @@ from scratch, and do not silently drop a phase.
   survive). Full suite passes. Push this pass next;
   still NOT done: real GPU backend, struct-variable GC,
   Python arrays/structs, centrally hosted registry.
+- "Do it then" pass (26 Oct 2026): struct GC DONE
+  (deep-copy str, refcount array, recurse nested, loop
+  allocs 101 frees 100 for both, shared q survives);
+  Python arrays/structs DONE (sum 10, double [2,4,6],
+  point_sum 42); CUDA codegen DONE (emit-cuda, .cu with
+  __global__ kernels, NOT run — no GPU/nvcc here);
+  static registry DONE (make_static_registry + list/add-static,
+  hostlib vendored via local Pages simulation). Full suite
+  passes. Push this pass next; still NOT done: CUDA
+  execution on hardware, Python float/str arrays, dynamic
+  centrally hosted registry.
 
 ## Research findings that now lock v2's design (26 Oct 2026)
 

@@ -520,9 +520,75 @@ class Codegen:
                            "bool": "forge_bool_array_free", "str": "forge_str_array_free"}.get(elem)
                 if free_fn:
                     self.emit(f"{free_fn}({name});")
+            elif self.is_struct_type(typ):
+                self.emit_struct_free(name, typ)
 
     def is_array_type(self, t):
         return t.startswith("[") and t.endswith("]") and t[1:-1] in ("int", "float", "bool", "str")
+
+    def struct_type_name(self, t):
+        if "<" in t:
+            from .generics import mangle_type
+            return mangle_type(t)
+        return t
+
+    def is_struct_type(self, t):
+        if not t or t in ("int", "float", "bool", "str", "void"):
+            return False
+        if self.is_array_type(t):
+            return False
+        return self.struct_type_name(t) in self.structs
+
+    def struct_own_code(self, var_code, t):
+        """C statements making a struct value independently owned:
+        deep-copy str fields, gain array references, recurse into nested structs."""
+        fields = self.structs.get(self.struct_type_name(t), {})
+        parts = []
+        for fname, ftype in fields.items():
+            code = f"{var_code}.{fname}"
+            if ftype == "str":
+                parts.append(f"{code} = forge_copy_str({code});")
+            elif self.is_array_type(ftype):
+                parts.append(f"forge_arr_inc({code}.ref);")
+            elif self.is_struct_type(ftype):
+                parts.append(self.struct_own_code(code, ftype))
+        return " ".join(parts)
+
+    def emit_struct_own(self, var_code, t):
+        code = self.struct_own_code(var_code, t)
+        if code:
+            self.emit(code)
+
+    def struct_free_code(self, var_code, t):
+        fields = self.structs.get(self.struct_type_name(t), {})
+        parts = []
+        for fname, ftype in fields.items():
+            code = f"{var_code}.{fname}"
+            if ftype == "str":
+                parts.append(f"forge_free_str({code});")
+            elif self.is_array_type(ftype):
+                elem = ftype[1:-1]
+                free_fn = {"int": "forge_int_array_free", "float": "forge_float_array_free",
+                           "bool": "forge_bool_array_free", "str": "forge_str_array_free"}[elem]
+                parts.append(f"{free_fn}({code});")
+            elif self.is_struct_type(ftype):
+                parts.append(self.struct_free_code(code, ftype))
+        return " ".join(parts)
+
+    def emit_struct_free(self, var_code, t):
+        code = self.struct_free_code(var_code, t)
+        if code:
+            self.emit(code)
+
+    def is_fresh_struct(self, expr):
+        if isinstance(expr, A.StructLit):
+            return True
+        if isinstance(expr, A.Call):
+            rt = self.func_ret.get(expr.name)
+            if rt and self.is_struct_type(rt):
+                return True
+            return False
+        return False
 
     def is_fresh_array(self, expr):
         """True if the expression creates a fresh array (ref=1, sole owner)."""
@@ -749,8 +815,9 @@ class Codegen:
         self.owned_stack = [{}]
         # String parameters own their copy after copy-on-call (see gen_expr Call).
         # Array parameters own a reference after refcount-on-call (see gen_expr Call).
+        # Struct parameters own their fields after own-on-call (see gen_expr Call).
         for pn, pt in fn.params:
-            if pt == "str" or self.is_array_type(pt):
+            if pt == "str" or self.is_array_type(pt) or self.is_struct_type(pt):
                 self.owned_stack[0][pn] = pt
         sig = ("int main(int __forge_argc, char **__forge_argv)"
                if fn.name == "main" else self.c_sig(fn))
@@ -807,6 +874,14 @@ class Codegen:
                 if not self.is_fresh_array(stmt.expr):
                     self.emit(f"forge_arr_inc({stmt.name}.ref);")
                 return
+            elif self.is_struct_type(t):
+                # Fresh structs (literal/call) are already owned;
+                # shared structs gain independent fields for this owner.
+                self.owned_add(stmt.name, t)
+                self.emit(f"{c_type(t)} {stmt.name} = {expr};")
+                if not self.is_fresh_struct(stmt.expr):
+                    self.emit_struct_own(stmt.name, t)
+                return
             self.emit(f"{c_type(t)} {stmt.name} = {expr};")
             return
         if isinstance(stmt, A.Assign):
@@ -838,6 +913,19 @@ class Codegen:
                 self.emit(f"{stmt.name} = __forge_assign{n};")
                 if not self.is_fresh_array(stmt.expr):
                     self.emit(f"forge_arr_inc({stmt.name}.ref);")
+                self.owned_add(stmt.name, et)
+            elif self.is_struct_type(et):
+                # Evaluate into a temp, make it independently owned
+                # (so freeing the old value cannot free the new one),
+                # then free the old struct and take the new one.
+                n = self.assign_counter
+                self.assign_counter += 1
+                self.emit(f"{c_type(et)} __forge_assign{n} = {expr};")
+                if not self.is_fresh_struct(stmt.expr):
+                    self.emit_struct_own(f"__forge_assign{n}", et)
+                if self.owned_contains(stmt.name):
+                    self.emit_struct_free(stmt.name, et)
+                self.emit(f"{stmt.name} = __forge_assign{n};")
                 self.owned_add(stmt.name, et)
             else:
                 self.emit(f"{stmt.name} = {expr};")
@@ -1007,6 +1095,10 @@ class Codegen:
                     # Shared array return: gain a reference before
                     # freeing owned locals, so the returned array survives.
                     self.emit("forge_arr_inc(__forge_ret.ref);")
+                if self.is_struct_type(ret_type) and not self.is_fresh_struct(stmt.expr):
+                    # Shared struct return: gain independent fields before
+                    # freeing owned locals, so the returned struct survives.
+                    self.emit_struct_own("__forge_ret", ret_type)
                 self.emit_free_owned()
                 self.emit("return __forge_ret;")
             return
@@ -1091,6 +1183,13 @@ class Codegen:
                     n = self.assign_counter
                     code = (f"({{{c_type(ft)} __forge_arg{n} = {code}; "
                             f"forge_arr_inc(__forge_arg{n}.ref); __forge_arg{n};}})")
+                elif ft and self.is_struct_type(ft) and not self.is_fresh_struct(fexpr):
+                    # Shared nested struct stored in a struct: gain independent fields.
+                    self.assign_counter += 1
+                    n = self.assign_counter
+                    own = self.struct_own_code(f"__forge_arg{n}", ft)
+                    code = (f"({{{c_type(ft)} __forge_arg{n} = {code}; "
+                            f"{own} __forge_arg{n};}})")
                 parts.append(f".{fname} = {code}")
             return f"({cname}){{ {', '.join(parts)} }}"
         if isinstance(expr, A.FieldAccess):
@@ -1270,6 +1369,13 @@ class Codegen:
                     n = self.assign_counter
                     code = (f"({{{c_type(pt)} __forge_arg{n} = {code}; "
                             f"forge_arr_inc(__forge_arg{n}.ref); __forge_arg{n};}})")
+                elif self.is_struct_type(pt) and not self.is_fresh_struct(a):
+                    # Shared struct argument: callee gains independent fields.
+                    self.assign_counter += 1
+                    n = self.assign_counter
+                    own = self.struct_own_code(f"__forge_arg{n}", pt)
+                    code = (f"({{{c_type(pt)} __forge_arg{n} = {code}; "
+                            f"{own} __forge_arg{n};}})")
                 arg_codes.append(code)
             # Arguments beyond the known signature (should not happen
             # for checked code) are passed through unchanged.

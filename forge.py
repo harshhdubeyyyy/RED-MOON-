@@ -58,6 +58,9 @@ def main(argv=None):
                    help="build a shared library (.so) for Python ctypes, no main required")
     p = sub.add_parser("emit-big32")
     p.add_argument("file")
+    p = sub.add_parser("emit-cuda")
+    p.add_argument("file")
+    p.add_argument("-o", "--output", default=None)
     p = sub.add_parser("emit-wasm")
     p.add_argument("file")
     p.add_argument("-o", "--output", default=None)
@@ -105,6 +108,16 @@ def main(argv=None):
             from forge_lang.compiler import compile_file_rv
             asm, _ = compile_file_rv(args.file)
             print(asm, end="")
+            return 0
+        if args.cmd == "emit-cuda":
+            from forge_lang.codegen_cuda import generate_cuda
+            with open(args.file, encoding="utf-8") as f:
+                src = f.read()
+            cuda = generate_cuda(src)
+            out = args.output or (os.path.splitext(args.file)[0] + ".cu")
+            with open(out, "w", encoding="utf-8") as f:
+                f.write(cuda)
+            print(f"built cuda: {out} ({len(cuda)} bytes) — needs a CUDA GPU + nvcc to run")
             return 0
         if args.cmd == "emit-wasm":
             from forge_lang.compiler import compile_file_wasm

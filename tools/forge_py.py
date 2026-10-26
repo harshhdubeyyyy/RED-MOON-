@@ -12,7 +12,14 @@ Then:
 Types: Forge int -> c_longlong, bool -> c_bool, float -> c_double,
 str -> c_char_p on the way in, and a malloc'd char* on the way out
 (which this helper reads and frees with libc free, so it does not leak).
-Arrays/structs are not passed through this helper in v1.
+Arrays: [int] / [float] are passed as a C struct {data, len, cap, ref}
+with data and ref malloc'd — Forge frees them on return (its array
+GC), so Python must NOT free an input array after the call. A
+returned array is read into a Python list, then its data/ref are
+freed here with libc free.
+Structs: only simple structs whose fields are int/str in declaration
+order are supported here, via a ctypes Structure with the same layout
+(str fields must be malloc'd, as for plain str arguments).
 """
 
 import ctypes
@@ -32,6 +39,44 @@ def _c_str(s):
     ptr = _libc.malloc(len(b) + 1)
     ctypes.memmove(ptr, b, len(b) + 1)
     return ptr
+
+
+class ForgeIntArray(ctypes.Structure):
+    _fields_ = [("data", ctypes.POINTER(ctypes.c_longlong)),
+                ("len", ctypes.c_longlong),
+                ("cap", ctypes.c_longlong),
+                ("ref", ctypes.POINTER(ctypes.c_longlong))]
+
+
+class ForgeFloatArray(ctypes.Structure):
+    _fields_ = [("data", ctypes.POINTER(ctypes.c_double)),
+                ("len", ctypes.c_longlong),
+                ("cap", ctypes.c_longlong),
+                ("ref", ctypes.POINTER(ctypes.c_longlong))]
+
+
+def _c_int_array(values):
+    """Malloc a Forge [int] array. Forge frees it on return, so do
+    NOT free it in Python after the call."""
+    n = len(values)
+    data = _libc.malloc(ctypes.sizeof(ctypes.c_longlong) * max(n, 1))
+    arr = (ctypes.c_longlong * n).from_address(data) if n else None
+    for i, v in enumerate(values):
+        arr[i] = v
+    ref = _libc.malloc(ctypes.sizeof(ctypes.c_longlong))
+    ctypes.cast(ref, ctypes.POINTER(ctypes.c_longlong))[0] = 1
+    return ForgeIntArray(ctypes.cast(data, ctypes.POINTER(ctypes.c_longlong)),
+                         n, n, ctypes.cast(ref, ctypes.POINTER(ctypes.c_longlong)))
+
+
+def _read_int_array(struct):
+    out = [struct.data[i] for i in range(struct.len)]
+    # Returned array is owned by Python now: free its data and ref.
+    if struct.data:
+        _libc.free(ctypes.cast(struct.data, ctypes.c_void_p))
+    if struct.ref:
+        _libc.free(ctypes.cast(struct.ref, ctypes.c_void_p))
+    return out
 
 
 class ForgeLib:
@@ -78,6 +123,29 @@ class ForgeLib:
         fn.argtypes = types
         fn.restype = ctypes.c_bool
         return fn(*vals)
+
+    def call_int_array(self, name, values):
+        """Call a Forge fn([int]) -> int, e.g. sum_arr([1,2,3]) -> 6."""
+        fn = getattr(self.lib, name)
+        fn.argtypes = [ForgeIntArray]
+        fn.restype = ctypes.c_longlong
+        return fn(_c_int_array(values))
+
+    def call_int_array_out(self, name, values):
+        """Call a Forge fn([int]) -> [int], returning a Python list."""
+        fn = getattr(self.lib, name)
+        fn.argtypes = [ForgeIntArray]
+        fn.restype = ForgeIntArray
+        return _read_int_array(fn(_c_int_array(values)))
+
+    def call_struct(self, name, struct_type, struct_value, restype=ctypes.c_longlong):
+        """Call a Forge fn(Struct) -> int, with a ctypes Structure value.
+        Struct str fields must be malloc'd (see _c_str); Forge frees
+        the struct's fields on return, so do not free them in Python."""
+        fn = getattr(self.lib, name)
+        fn.argtypes = [struct_type]
+        fn.restype = restype
+        return fn(struct_value)
 
     def call_str(self, name, *args):
         fn = getattr(self.lib, name)

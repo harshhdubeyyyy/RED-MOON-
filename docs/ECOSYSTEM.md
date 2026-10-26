@@ -272,10 +272,47 @@ and pull request.
   and array elements inside structs are not counted
   separately. Full suite still passes.
 
+## New in the "do it then" pass (26 Oct 2026)
+
+- **Struct GC:** struct variables now own their fields —
+  str fields are deep-copied, array fields gain a reference,
+  nested structs recurse — on Let, Assign, Call arguments,
+  and Return, and are freed on reassign/return. Verified:
+  a 100-iteration struct reassign loop gives str allocs =
+  101, str frees = 100, arr allocs = 101, arr frees = 100;
+  a shared struct survives its original's reassign
+  (q = b 2 3 after p = c). Full suite still passes.
+- **Python arrays/structs:** `tools/forge_py.py` now passes
+  [int] arrays (as a C struct with malloc'd data/ref, which
+  Forge frees on return) and simple structs (ctypes Structure,
+  same field layout) to Forge shared libraries. Verified:
+  sum_arr([1,2,3,4]) = 10, double_arr([1,2,3]) = [2,4,6],
+  point_sum(Point(10,32)) = 42, make_point(3,4) = (3,4).
+  Str fields in structs must be malloc'd, as for plain str
+  arguments, because Forge frees them on return.
+- **CUDA codegen:** `forge emit-cuda` emits a .cu file with
+  __global__ dot and matmul kernels, grid/block launches,
+  and host code. Verified structurally (kernel signatures,
+  <<<grid, block>>> launches, cudaMalloc calls) — NOT run,
+  because this VM has no GPU and no nvcc. To run it, copy
+  the .cu file to a CUDA GPU machine and compile with nvcc.
+- **Centrally hosted static registry:** `tools/make_static_registry.py`
+  converts a local registry into a static dir (packages.json
+  + packages/<name>/<version>/<file>.fg) that can be pushed
+  to GitHub and served by Pages, and `forge pkg list-static`
+  / `add-static <base_url>` discover and pull from it with
+  no server code running. Verified end to end via a local
+  HTTP server simulating Pages: static registry listed
+  "hostlib 0.1.0", add-static vendored it into
+  vendor/hostlib/. This is centrally hosted by GitHub
+  Pages, but read-only for clients — publishing is via git
+  push, not via POST, unlike the dynamic server above.
+
 ## What is still not in the ecosystem
 
-No real GPU hardware backend (kernels above run on CPU
-threads), no GC for struct variables themselves, no Python
-interop for arrays/structs, and no centrally hosted public
-registry (the server above is self-hosted). Those are the
-next phases, in that order.
+No execution of CUDA kernels on real GPU hardware (the .cu
+file above is generated, not run, because no GPU/nvcc here),
+no Python interop for [float]/[str] arrays or nested
+structs, and no dynamic centrally hosted registry with POST
+publishing (the static registry above is read-only). Those
+are the next phases, in that order.
