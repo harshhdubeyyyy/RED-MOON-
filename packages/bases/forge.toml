@@ -1,0 +1,6 @@
+[package]
+name = "bases"
+version = "0.1.0"
+description = "Integer base conversions: binary, octal, hex — both directions."
+
+[dependencies]

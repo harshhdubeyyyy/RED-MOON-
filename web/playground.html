@@ -1,30 +1,109 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>The Jal Pari Language — Web Playground</title>
-<style>body{font-family:system-ui;max-width:720px;margin:40px auto;padding:0 20px}button{padding:10px 16px;margin:4px}pre{background:#f4f4f4;padding:12px}</style></head>
-<body>
-<h1>🧜‍♀️ The Jal Pari Language — Web Playground</h1>
-<p>Dedicated to Teju — Jal Pari. These programs were compiled with the Jal Pari WASM backend
-(<code>forge.py emit-wasm</code>) and run <b>in your browser</b>, no server, no install.
-WASM functions here return a number; there is no print in WASM yet, so the result is shown below.</p>
-<button onclick="run('sum')">sum 1..10</button>
-<button onclick="run('fib')">fib(10)</button>
-<button onclick="run('float')">circle area (r=2) × 1000</button>
-<pre id="out">Click a program to run it.</pre>
+<html lang="en"><head><meta charset="utf-8">
+<title>The Jal Pari Language — Live Playground</title>
+<script src="https://cdn.jsdelivr.net/pyodide/v0.27.1/full/pyodide.js"></script>
+<style>body{font-family:system-ui;max-width:780px;margin:40px auto;padding:0 20px;line-height:1.55}textarea{width:100%;height:280px;font-family:ui-monospace,monospace;font-size:14px}button{padding:10px 18px;margin:4px 4px 4px 0}pre{background:#f4f4f4;padding:14px;overflow:auto;white-space:pre-wrap}#status{color:#555}select{padding:8px}</style>
+</head><body>
+<h1>🧜‍♀️ The Jal Pari Language — Live Playground</h1>
+<p>Dedicated to Teju — Jal Pari. Type Jal Pari code, hit Run, and it compiles
+<b>in your browser</b> — the real compiler runs under Pyodide, the program runs
+as WebAssembly, no server, no install, and your code never leaves this machine.</p>
+<p id="status">Loading Pyodide (first visit downloads ~10 MB, cached after that)…</p>
+<p><select id="example">
+<option value="hello">hello — strings + arrays</option>
+<option value="fib">fib(10) — recursion</option>
+<option value="sum">sum — loop + push</option>
+<option value="dice">dice — stdlib import (rand)</option>
+</select>
+<button id="run" disabled>Run</button></p>
+<textarea id="editor" spellcheck="false"></textarea>
+<pre id="out">Pick an example, then Run.</pre>
+<h2>What works here, honestly</h2>
+<ul>
+<li>Full Jal Pari programs that fit the <b>WASM subset</b>: int, float, bool, str,
+flat arrays, functions, if/while/for, <code>print</code>/<code>println</code> of str/int/bool.
+The compiler's own errors are shown verbatim when code doesn't fit.</li>
+<li><code>import</code> works only for stdlib files that fit the subset too
+(<code>rand.fg</code>, <code>dates.fg</code> verified). Files using <code>split</code>,
+structs, enums, or float printing fail the whole program — the WASM backend
+compiles every imported function, used or not. That limitation is in the
+backend, not this page.</li>
+<li>Output lives in an 8192-byte buffer: longer output is truncated, by design.</li>
+<li>There is no free/GC in the WASM backend: allocations inside a loop grow memory.</li>
+<li>The compiler is fetched from the repo's <code>main</code> branch via jsDelivr, so it
+may lag the newest push by a few minutes. The page itself needs internet for
+the first load; after that, runs are fully local.</li>
+</ul>
+<p><a href="landing/index.html">Back to the landing page</a> ·
+<a href="https://github.com/jayantt1dubeyy/RED-MOON-">Repo</a></p>
 <script>
-const programs = {
-  sum: "AGFzbQEAAAABBQFgAAF+AwIBAAcIAQRtYWluAAAKLwEtAQJ+QgAhAEIBIQECQANAIAFCCldFDQEgACABfCEAIAFCAXwhAQwACwsgAA8L",
-  fib: "AGFzbQEAAAABCgJgAX4BfmAAAX4DAwIAAQcOAgNmaWIAAARtYWluAAEKJwIdACAAQgJTBEAgAA8LIABCAX0QACAAQgJ9EAB8DwsHAEIKEAAPCw==",
-  float: "AGFzbQEAAAABCgJgAXwBfGAAAX4DAwIAAQcPAgRhcmVhAAAEbWFpbgABCjgCEgBEboYb8PkhCUAgAKIgAKIPCyMBAnxEAAAAAAAAAEAQACEAIABEAAAAAABAj0CiIQEgAbAPCw=="
-};
-const expected = {sum: "55", fib: "55", float: "12566 (12.566 × 1000)"};
-async function run(name) {
-  const bytes = Uint8Array.from(atob(programs[name]), c => c.charCodeAt(0));
-  const {instance} = await WebAssembly.instantiate(bytes, {});
-  const result = instance.exports.main();
-  document.getElementById('out').textContent = name + '() = ' + result.toString() + '\nExpected: ' + expected[name];
+const COMPILER_FILES = ["forge_lang/__init__.py", "forge_lang/ast_nodes.py", "forge_lang/checker.py", "forge_lang/codegen.py", "forge_lang/codegen_cuda.py", "forge_lang/codegen_rv.py", "forge_lang/codegen_wasm.py", "forge_lang/compiler.py", "forge_lang/docgen.py", "forge_lang/errors.py", "forge_lang/generics.py", "forge_lang/infer.py", "forge_lang/lexer.py", "forge_lang/lsp.py", "forge_lang/parser.py", "forge_lang/pkg.py", "forge_lang/pretty.py", "forge_lang/registry_server.py", "forge_lang/repl.py", "stdlib/autograd.fg", "stdlib/cli.fg", "stdlib/cnn.fg", "stdlib/collections.fg", "stdlib/csv.fg", "stdlib/dataset.fg", "stdlib/dates.fg", "stdlib/db.fg", "stdlib/gpt.fg", "stdlib/gpt2.fg", "stdlib/image.fg", "stdlib/inference.fg", "stdlib/inference_gpt2.fg", "stdlib/json.fg", "stdlib/log.fg", "stdlib/map.fg", "stdlib/metrics.fg", "stdlib/ml.fg", "stdlib/ml_classical.fg", "stdlib/nn.fg", "stdlib/option.fg", "stdlib/preprocess.fg", "stdlib/rand.fg", "stdlib/result.fg", "stdlib/rnn.fg", "stdlib/sql.fg", "stdlib/stats.fg", "stdlib/strings.fg", "stdlib/table.fg", "stdlib/tensor.fg", "stdlib/tensor_autograd.fg", "stdlib/test.fg", "stdlib/tgt.fg", "stdlib/tokenizer.fg"];
+const EXAMPLES = {"hello": "fn main() -> int {\n    let greeting: str = \"hello\";\n    let name: str = \"jal pari\";\n    let full: str = greeting + \" \" + name;\n    println(full);\n    println(\"len =\", len(full));\n    let mut xs: [int] = [3, 1, 4, 1, 5];\n    push(xs, 9);\n    println(\"after push len =\", len(xs));\n    println(\"xs[5] =\", xs[5]);\n    return 0;\n}\n", "fib": "fn fib(n: int) -> int {\n    if n < 2 { return n; }\n    return fib(n - 1) + fib(n - 2);\n}\nfn main() -> int {\n    let f: int = fib(10);\n    println(\"fib(10) =\", f);\n    return f;\n}\n", "sum": "fn main() -> int {\n    let mut xs: [int] = [3, 1, 4, 1, 5, 9, 2, 6];\n    let mut total: int = 0;\n    let mut i: int = 0;\n    while i < len(xs) {\n        total = total + xs[i];\n        i = i + 1;\n    }\n    println(\"sum =\", total);\n    println(\"len =\", len(xs));\n    return total;\n}\n", "dice": "import \"rand.fg\";\nfn main() -> int {\n    let mut seed: int = 42;\n    let mut i: int = 0;\n    while i < 5 {\n        seed = rand_next(seed);\n        println(\"rand =\", seed);\n        i = i + 1;\n    }\n    return 0;\n}\n"};
+const editor = document.getElementById("editor");
+const out = document.getElementById("out");
+const status = document.getElementById("status");
+const runBtn = document.getElementById("run");
+const exampleSel = document.getElementById("example");
+editor.value = EXAMPLES.hello;
+exampleSel.addEventListener("change", () => { editor.value = EXAMPLES[exampleSel.value]; });
+let pyodide = null;
+const SHIM = [
+  "import io, sys, json, traceback, contextlib",
+  "from forge_lang.compiler import compile_file_wasm",
+  "out, err = io.StringIO(), io.StringIO()",
+  "try:",
+  "    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):",
+  "        wasm, _ = compile_file_wasm('/user.fg')",
+  "    open('/user.wasm', 'wb').write(wasm)",
+  "    result = {'ok': True, 'bytes': len(wasm), 'stdout': out.getvalue(), 'stderr': err.getvalue()}",
+  "except Exception:",
+  "    result = {'ok': False, 'error': traceback.format_exc(), 'stdout': out.getvalue(), 'stderr': err.getvalue()}",
+  "json.dumps(result)"
+].join("\n");
+async function init() {
+  try {
+    pyodide = await loadPyodide();
+    status.textContent = "Fetching the Jal Pari compiler (" + COMPILER_FILES.length + " files)…";
+    pyodide.runPython("import os; os.makedirs('/jalpari/forge_lang', exist_ok=True); os.makedirs('/jalpari/stdlib', exist_ok=True); import sys; sys.path.insert(0, '/jalpari')");
+    await Promise.all(COMPILER_FILES.map(async (p) => {
+      const r = await fetch("https://cdn.jsdelivr.net/gh/jayantt1dubeyy/RED-MOON-@main/" + p);
+      if (!r.ok) throw new Error("fetch failed for " + p + " (" + r.status + ")");
+      pyodide.FS.writeFile("/jalpari/" + p, await r.text());
+    }));
+    status.textContent = "Ready — the compiler is loaded. Hit Run.";
+    runBtn.disabled = false;
+  } catch (e) {
+    status.textContent = "Failed to load: " + e + " — check your connection and reload.";
+  }
 }
+async function run() {
+  runBtn.disabled = true;
+  out.textContent = "Compiling…";
+  try {
+    pyodide.FS.writeFile("/user.fg", editor.value);
+    const res = JSON.parse(pyodide.runPython(SHIM));
+    if (!res.ok) { out.textContent = "Compile error:\n" + res.error; return; }
+    const bytes = pyodide.FS.readFile("/user.wasm");
+    const { instance } = await WebAssembly.instantiate(bytes, {});
+    if (typeof instance.exports.main !== "function") { out.textContent = "Compiled " + res.bytes + " bytes, but the program has no main() to run."; return; }
+    let ret;
+    try {
+      ret = instance.exports.main();
+    } catch (e) {
+      out.textContent = "Compiled " + res.bytes + " bytes, then trapped during run:\n" + e + "\n(Traps come from fail/assert, an out-of-bounds index, or division by zero.)";
+      return;
+    }
+    const mem = new Uint8Array(instance.exports.memory.buffer);
+    const len = new DataView(mem.buffer).getUint32(0, true);
+    const text = new TextDecoder().decode(mem.subarray(8, 8 + len));
+    out.textContent = text + "\nreturned: " + (typeof ret === "bigint" ? ret.toString() : String(ret)) + "  (" + res.bytes + " bytes of wasm)";
+  } catch (e) {
+    out.textContent = "Playground error:\n" + e;
+  } finally {
+    runBtn.disabled = false;
+  }
+}
+runBtn.addEventListener("click", run);
+init();
 </script>
-<p>To compile your own program: <code>python3 forge.py emit-wasm yourfile.fg -o out.wasm</code>,
-then load it in a page like this one and call <code>instance.exports.main()</code>.
-WASM v2 supports int, float, bool — strings and arrays are not yet supported there, honestly.</p>
 </body></html>

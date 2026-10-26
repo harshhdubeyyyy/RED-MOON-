@@ -1,0 +1,6 @@
+[package]
+name = "units"
+version = "0.1.0"
+description = "Everyday unit conversions (length, mass, temperature, time, volume)."
+
+[dependencies]

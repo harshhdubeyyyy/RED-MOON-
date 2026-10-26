@@ -1,6 +1,6 @@
-# Forge for VS Code
+# The Jal Pari Language for VS Code
 
-Syntax highlighting for `.fg` files (this folder), plus diagnostics
+Syntax highlighting for `.fg` files (this folder). Diagnostics
 and completion from the Forge language server.
 
 ## Language server

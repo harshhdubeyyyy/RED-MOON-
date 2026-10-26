@@ -1,0 +1,14 @@
+import "dice.fg";
+fn main() -> int {
+    let mut bad: int = 0;
+    let r: int = roll(42, 6);
+    if r < 1 { println("FAIL roll low"); bad = 1; }
+    if r > 6 { println("FAIL roll high"); bad = 1; }
+    let t: int = roll_n(1, 6, 10);
+    if t < 10 { println("FAIL roll_n low"); bad = 1; }
+    if t > 60 { println("FAIL roll_n high"); bad = 1; }
+    if coin_flip(42) != true { println("FAIL coin 42"); bad = 1; }
+    println("dice demo: roll(42, 6) =", r, "; roll_n(1, 6, 10) =", t, "; coin(42) =", coin_flip(42));
+    if bad == 0 { println("dice demo ok"); }
+    return bad;
+}

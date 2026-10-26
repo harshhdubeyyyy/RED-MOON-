@@ -1,0 +1,13 @@
+import "money.fg";
+fn main() -> int {
+    let mut bad: int = 0;
+    if format_paise(12345) != "123.45" { println("FAIL format 12345"); bad = 1; }
+    if format_paise(1005) != "10.05" { println("FAIL format 1005"); bad = 1; }
+    if format_paise(-50) != "-0.50" { println("FAIL format -50"); bad = 1; }
+    if format_paise(0) != "0.00" { println("FAIL format 0"); bad = 1; }
+    if percent_of(10000, 15) != 1500 { println("FAIL percent"); bad = 1; }
+    if split_bill(10000, 3) != 3333 { println("FAIL split"); bad = 1; }
+    println("money demo: 12345 paise =", format_paise(12345), "; 15% of 100.00 =", format_paise(percent_of(10000, 15)));
+    if bad == 0 { println("money demo ok"); }
+    return bad;
+}

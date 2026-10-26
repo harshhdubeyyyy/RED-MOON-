@@ -1,0 +1,5 @@
+import "../src/geometry.fg";
+fn main() -> int {
+    println("smoke: 3-4-5 triangle hypotenuse =", hypotenuse(3.0, 4.0));
+    return 0;
+}

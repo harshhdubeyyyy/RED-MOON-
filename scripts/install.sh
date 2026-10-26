@@ -1,5 +1,5 @@
 #!/bin/sh
-# Install The Jal Pari Language (0.1.0) for the current user.
+# Install The Jal Pari Language (1.0.0) for the current user.
 # Usage, from a checkout of RED-MOON-:
 #   sh scripts/install.sh
 # Usage, without cloning first (needs git):

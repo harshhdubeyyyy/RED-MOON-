@@ -1,0 +1,6 @@
+[package]
+name = "dice"
+version = "0.1.0"
+description = "Dice rolls and coin flips on the stdlib LCG (rand.fg). Seeds thread by hand."
+
+[dependencies]

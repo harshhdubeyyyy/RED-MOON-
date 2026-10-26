@@ -1,0 +1,15 @@
+import "bases.fg";
+fn main() -> int {
+    let mut bad: int = 0;
+    if int_to_hex(255) != "ff" { println("FAIL hex 255"); bad = 1; }
+    if int_to_binary(13) != "1101" { println("FAIL bin 13"); bad = 1; }
+    if int_to_octal(64) != "100" { println("FAIL oct 64"); bad = 1; }
+    if int_to_binary(0) != "0" { println("FAIL bin 0"); bad = 1; }
+    if int_to_hex(-255) != "-ff" { println("FAIL hex -255"); bad = 1; }
+    if binary_to_int("1101") != 13 { println("FAIL parse bin"); bad = 1; }
+    if hex_to_int("ff") != 255 { println("FAIL parse hex ff"); bad = 1; }
+    if hex_to_int("FF") != 255 { println("FAIL parse hex FF"); bad = 1; }
+    println("bases demo: 2026 =", int_to_hex(2026), "hex,", int_to_binary(2026), "binary");
+    if bad == 0 { println("bases demo ok"); }
+    return bad;
+}

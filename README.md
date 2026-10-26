@@ -359,6 +359,7 @@ The full tooling is documented in `docs/ECOSYSTEM.md`:
 - **Stdlib:** `ml.fg`, `strings.fg`, `stats.fg` — plus string builtins `split/join/substr/trim/starts_with/ends_with`
 - **AI/ML libraries (0.6.0):** `tensor_autograd.fg` (21 ops), `rnn.fg` (LSTM/GRU), `cnn.fg` (conv+pool), `ml_classical.fg` (logreg/k-NN/k-means), `preprocess.fg`, `metrics.fg`, `csv.fg` — plus `test.fg`, `log.fg`, `cli.fg`, `collections.fg` for general development. Import dedup means libraries now combine freely (nn + tensor training in one program).
 - **0.7.0 additions:** source-level debugger (`build --debug` emits `#line`), binary I/O + image loading (`image.fg`: PPM P3 + BMP), tape-native im2col + stacked convs, curriculum RNN (len-8 wall cracked), big32 structs + soft-float v1 (+ - *, 60/60 fuzz vs Python float32 on model + Verilog), WASM strings + arrays, and a fuzzer (`tools/fuzz.py`). Big TinyStories run: 153,744 params, held-out ppl 2128.55 → 651.44 — better, still not fluent.
+- **1.0.0 additions (market-ready release):** a stability promise (`docs/STABILITY.md` — semver for real), a live browser playground (`web/playground.html` — the real compiler under Pyodide, programs run as WebAssembly, no install), an HTTP server (`http_listen/accept/read_request/respond/respond_status/close` builtins + `stdlib/http_server.fg` + routing demo, verified live with curl), a regex engine (`stdlib/regex.fg` — literals, `.`, `*` `+` `?`, classes with ranges, `\d \w \s`, `^` `$`; no groups/alternation — those are literal), seven real registry packages (`packages/`: units, money, geometry, interest, roman, bases, dice — remote publish/list/add verified against a local registry), a packaged VS Code extension (`editors/vscode/forge/forge-1.0.0.vsix`), honest benchmarks vs Python/Go/Rust/C (`docs/BENCHMARKS_VS.md`, reproducible script), and the MIT LICENSE in the repo root. Install re-verified on a clean HOME and a clean pip venv.
 - **CI:** `.github/workflows/ci.yml` runs the test suite, formatter check, and ecosystem example
 
 ## ⚠️ Honest gaps
@@ -380,16 +381,23 @@ with auth and a Dockerfile, and now CUDA execution verified
 on a real Kaggle Tesla T4 GPU (26 Oct 2026). It still has
 no registry actually running on a public host yet. That is
 the next phase in `SPEC_V2.md`, not a hidden feature.
-As of 0.7.0 (26 Oct 2026), also done: a source-level
-debugger, binary I/O + image loading, stacked convs,
-curriculum RNN training, big32 structs + soft-float,
-WASM strings/arrays, and a fuzzer. Still not done:
-fluent generation, a GPU *training* run, a full
-self-hosting compiler, big32 float division/ordered
-comparisons/printing/casts, PNG/JPEG loading, and a
-public registry host / CI upload / repo rename / PyPI
-publish (blocked on the user's accounts and token
-scope, as before).
+As of 1.0.0 (26 Oct 2026), also done: a stability
+promise, a live browser playground, an HTTP server,
+a regex engine, seven registry packages, a packaged
+VS Code extension, and benchmarks vs Python/Go/Rust/C.
+GPU training on a real T4 is verified (26 Oct 2026,
+XOR MLP learns, loss 0.001529). Still not done:
+fluent generation, a full self-hosting compiler,
+big32 float division/ordered comparisons/printing/casts,
+PNG/JPEG loading, nested arrays, arrays of structs,
+`break`, string indexing, and float printing past 6
+significant digits. Still blocked on the user's
+accounts and token scope, as before: a public registry
+host, CI upload, repo rename, PyPI publish, and VS Code
+Marketplace publish. The playground's end-to-end run in
+a real browser is not yet verified here (it needs a
+browser to open it); its compiler pipeline and JS are
+verified, and every example program is verified.
 
 ## 🔁 Regenerate the figures
 

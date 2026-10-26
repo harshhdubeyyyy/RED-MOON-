@@ -1,0 +1,36 @@
+// http_server_demo: a routing server in Jal Pari.
+// Usage: ./http_server_demo [port] [count]
+//   port: default 18765. count: requests to serve before exiting, default 100.
+// Routes: / -> greeting, /health -> ok, anything else -> 404.
+// Try it: curl http://localhost:18765/ ; curl http://localhost:18765/health
+import "http_server.fg";
+
+fn main() -> int {
+    let mut port: int = 18765;
+    let mut count: int = 100;
+    // args() holds the user's arguments only (no program name).
+    let a: [str] = args();
+    if len(a) > 0 { port = parse_int(a[0]); }
+    if len(a) > 1 { count = parse_int(a[1]); }
+    println("serving on port", port, "for", count, "requests");
+    let fd: int = http_listen(port);
+    let mut served: int = 0;
+    let mut bytes: int = 0;
+    while served < count {
+        let client: int = http_accept(fd);
+        let req: str = http_read_request(client);
+        let path: str = http_get_path(req);
+        println("request:", path);
+        if path == "/" {
+            bytes = bytes + http_respond(client, "hello from the Jal Pari language");
+        } else if path == "/health" {
+            bytes = bytes + http_respond(client, "ok");
+        } else {
+            bytes = bytes + http_respond_status(client, 404, "not found");
+        }
+        served = served + 1;
+    }
+    let closed: int = http_close(fd);
+    println("served", served, "requests,", bytes, "bytes, listener close =", closed, "- shutting down");
+    return 0;
+}

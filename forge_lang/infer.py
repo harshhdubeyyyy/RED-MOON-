@@ -237,6 +237,10 @@ class Infer:
                 return self.set(expr, "bool")
             if expr.name == "http_get":
                 return self.set(expr, "str")
+            if expr.name == "http_read_request":
+                return self.set(expr, "str")
+            if expr.name in ("http_listen", "http_accept", "http_respond", "http_respond_status", "http_close"):
+                return self.set(expr, "int")
             return self.set(expr, "void")
         return self.set(expr, "int")
 

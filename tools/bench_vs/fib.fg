@@ -1,0 +1,11 @@
+fn fib(n: int) -> int {
+    if n < 2 { return n; }
+    return fib(n - 1) + fib(n - 2);
+}
+fn main() -> int {
+    let start: int = clock_micros();
+    let r: int = fib(35);
+    let elapsed: int = clock_micros() - start;
+    println("fib(35) =", r, "us =", elapsed);
+    return 0;
+}

@@ -1,0 +1,6 @@
+[package]
+name = "roman"
+version = "0.1.0"
+description = "Integer to Roman numerals and back, 1 to 3999."
+
+[dependencies]

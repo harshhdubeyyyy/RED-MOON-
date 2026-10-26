@@ -31,6 +31,8 @@ HEADER = r"""#include <stdio.h>
 #include <pthread.h>
 #include <sys/socket.h>
 #include <netdb.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 #include <unistd.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
@@ -421,6 +423,60 @@ static char *forge_http_get(const char *url) {
     return forge_copy_str(sep + 4);
 }
 
+/* Minimal HTTP server (native backend only). One request per
+   connection, single read up to 8191 bytes, no TLS, no chunked
+   bodies, IPv4 0.0.0.0. Enough for small services, CLIs with a
+   status page, and webhooks; not a production web server. */
+static long long forge_http_listen(long long port) {
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) forge_fail("http_listen: socket failed");
+    int one = 1;
+    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    addr.sin_port = htons((unsigned short)port);
+    if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) != 0) { close(fd); forge_fail("http_listen: bind failed (port in use?)"); }
+    if (listen(fd, 16) != 0) { close(fd); forge_fail("http_listen: listen failed"); }
+    return fd;
+}
+static long long forge_http_accept(long long fd) {
+    int client = accept((int)fd, NULL, NULL);
+    if (client < 0) forge_fail("http_accept: accept failed");
+    return client;
+}
+static char *forge_http_read_request(long long client) {
+    char *buf = (char *)malloc(8192);
+    ssize_t n = recv((int)client, buf, 8191, 0);
+    if (n < 0) { free(buf); forge_fail("http_read_request: recv failed"); }
+    buf[n] = '\0';
+    return buf;
+}
+static long long forge_http_send_response(long long client, long long status, const char *reason, const char *body) {
+    char head[256];
+    int hl = snprintf(head, sizeof(head), "HTTP/1.1 %lld %s\r\nContent-Type: text/plain\r\nContent-Length: %zu\r\nConnection: close\r\n\r\n", status, reason, strlen(body));
+    if (hl < 0 || hl >= (int)sizeof(head)) { close((int)client); forge_fail("http_respond: header failed"); }
+    if (send((int)client, head, (size_t)hl, 0) < 0) { close((int)client); forge_fail("http_respond: send failed"); }
+    if (send((int)client, body, strlen(body), 0) < 0) { close((int)client); forge_fail("http_respond: send failed"); }
+    close((int)client);
+    return (long long)hl + (long long)strlen(body);
+}
+static long long forge_http_respond(long long client, const char *body) {
+    return forge_http_send_response(client, 200, "OK", body);
+}
+static long long forge_http_respond_status(long long client, long long status, const char *body) {
+    const char *reason = "OK";
+    if (status == 404) reason = "Not Found";
+    else if (status == 500) reason = "Internal Server Error";
+    else if (status == 400) reason = "Bad Request";
+    else if (status == 201) reason = "Created";
+    return forge_http_send_response(client, status, reason, body);
+}
+static long long forge_http_close(long long fd) {
+    return close((int)fd);
+}
+
 /* GPU-style parallel kernels, run on CPU threads here (no GPU in
    this VM, no CUDA/OpenCL). Each kernel splits its work into
    blocks, one pthread per block, like a GPU grid. Results are
@@ -684,7 +740,7 @@ class Codegen:
         (a user-function return, a str helper, or string concat),
         so taking it as-is does not leak or double-own."""
         if isinstance(expr, A.Call):
-            if expr.name in ("read_file", "join", "substr", "trim", "http_get"):
+            if expr.name in ("read_file", "join", "substr", "trim", "http_get", "http_read_request"):
                 return True
             if self.func_ret.get(expr.name) == "str" and not self.func_is_extern.get(expr.name):
                 return True
@@ -1427,6 +1483,18 @@ class Codegen:
                         f"{self.gen_expr(expr.args[1])})")
             if expr.name == "http_get":
                 return f"forge_http_get({self.gen_expr(expr.args[0])})"
+            if expr.name == "http_listen":
+                return f"forge_http_listen({self.gen_expr(expr.args[0])})"
+            if expr.name == "http_accept":
+                return f"forge_http_accept({self.gen_expr(expr.args[0])})"
+            if expr.name == "http_read_request":
+                return f"forge_http_read_request({self.gen_expr(expr.args[0])})"
+            if expr.name == "http_respond":
+                return f"forge_http_respond({self.gen_expr(expr.args[0])}, {self.gen_expr(expr.args[1])})"
+            if expr.name == "http_respond_status":
+                return f"forge_http_respond_status({self.gen_expr(expr.args[0])}, {self.gen_expr(expr.args[1])}, {self.gen_expr(expr.args[2])})"
+            if expr.name == "http_close":
+                return f"forge_http_close({self.gen_expr(expr.args[0])})"
             if expr.name in ("alloc_count", "free_count"):
                 return "forge_str_allocs" if expr.name == "alloc_count" else "forge_str_frees"
             if expr.name in ("arr_alloc_count", "arr_free_count"):

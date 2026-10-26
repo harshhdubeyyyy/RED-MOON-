@@ -1,0 +1,13 @@
+import "roman.fg";
+fn main() -> int {
+    let mut bad: int = 0;
+    if int_to_roman(1994) != "MCMXCIV" { println("FAIL 1994"); bad = 1; }
+    if int_to_roman(58) != "LVIII" { println("FAIL 58"); bad = 1; }
+    if int_to_roman(3999) != "MMMCMXCIX" { println("FAIL 3999"); bad = 1; }
+    if int_to_roman(0) != "" { println("FAIL 0"); bad = 1; }
+    if roman_to_int("MCMXCIV") != 1994 { println("FAIL parse MCMXCIV"); bad = 1; }
+    if roman_to_int("XLII") != 42 { println("FAIL parse XLII"); bad = 1; }
+    println("roman demo: 2026 =", int_to_roman(2026));
+    if bad == 0 { println("roman demo ok"); }
+    return bad;
+}

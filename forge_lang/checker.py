@@ -22,7 +22,9 @@ EXPR_BUILTINS = {"len", "range", "clock_micros", "sqrt", "exp", "log", "pow", "a
                  "read_file", "write_file", "read_bytes", "write_bytes",
                  "file_exists", "args", "parse_int", "parse_float",
                  "split", "join", "substr", "trim", "starts_with", "ends_with",
-                 "http_get", "alloc_count", "free_count",
+                 "http_get", "http_listen", "http_accept", "http_read_request",
+                 "http_respond", "http_respond_status", "http_close",
+                 "alloc_count", "free_count",
                  "parallel_dot", "parallel_matmul",
                  "arr_alloc_count", "arr_free_count"}
 BUILTINS = STMT_BUILTINS | EXPR_BUILTINS
@@ -865,6 +867,31 @@ class Checker:
                 raise ForgeError("http_get() takes exactly one str URL argument",
                                  call.line, call.col)
             return "str"
+        if call.name == "http_listen":
+            if len(call.args) != 1 or self.check_expr(call.args[0]) != "int":
+                raise ForgeError("http_listen() takes exactly one int port argument",
+                                 call.line, call.col)
+            return "int"
+        if call.name in ("http_accept", "http_close"):
+            if len(call.args) != 1 or self.check_expr(call.args[0]) != "int":
+                raise ForgeError(f"{call.name}() takes exactly one int fd argument",
+                                 call.line, call.col)
+            return "int"
+        if call.name == "http_read_request":
+            if len(call.args) != 1 or self.check_expr(call.args[0]) != "int":
+                raise ForgeError("http_read_request() takes exactly one int client fd argument",
+                                 call.line, call.col)
+            return "str"
+        if call.name == "http_respond":
+            if len(call.args) != 2 or self.check_expr(call.args[0]) != "int" or self.check_expr(call.args[1]) != "str":
+                raise ForgeError("http_respond() takes (int client fd, str body)",
+                                 call.line, call.col)
+            return "int"
+        if call.name == "http_respond_status":
+            if len(call.args) != 3 or self.check_expr(call.args[0]) != "int" or self.check_expr(call.args[1]) != "int" or self.check_expr(call.args[2]) != "str":
+                raise ForgeError("http_respond_status() takes (int client fd, int status, str body)",
+                                 call.line, call.col)
+            return "int"
         fn = self.funcs.get(call.name)
         if fn is None:
             raise ForgeError(f"undefined function '{call.name}'", call.line, call.col)

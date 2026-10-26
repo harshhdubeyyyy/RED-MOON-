@@ -1,0 +1,6 @@
+[package]
+name = "money"
+version = "0.1.0"
+description = "Integer-paise money math: no float rounding, exact formatting."
+
+[dependencies]

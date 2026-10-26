@@ -1,0 +1,5 @@
+import "../src/roman.fg";
+fn main() -> int {
+    println("smoke: 42 =", int_to_roman(42));
+    return 0;
+}

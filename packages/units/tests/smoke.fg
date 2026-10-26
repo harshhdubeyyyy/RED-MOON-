@@ -1,0 +1,5 @@
+import "../src/units.fg";
+fn main() -> int {
+    println("smoke: 0 C =", celsius_to_fahrenheit(0.0), "F");
+    return 0;
+}

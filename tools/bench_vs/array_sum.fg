@@ -1,0 +1,20 @@
+fn main() -> int {
+    let mut xs: [int] = [];
+    let mut x: int = 42;
+    let mut i: int = 0;
+    while i < 1000000 {
+        x = (x * 1103515245 + 12345) % 2147483647;
+        push(xs, x);
+        i = i + 1;
+    }
+    let start: int = clock_micros();
+    let mut total: int = 0;
+    i = 0;
+    while i < 1000000 {
+        total = total + xs[i] * 3 + xs[i] % 7;
+        i = i + 1;
+    }
+    let elapsed: int = clock_micros() - start;
+    println("sum =", total, "us =", elapsed);
+    return 0;
+}

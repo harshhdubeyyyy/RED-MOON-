@@ -1,0 +1,5 @@
+import "../src/dice.fg";
+fn main() -> int {
+    println("smoke: roll =", roll(7, 20));
+    return 0;
+}

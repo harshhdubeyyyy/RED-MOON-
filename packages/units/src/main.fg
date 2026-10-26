@@ -1,0 +1,22 @@
+// NOTE: helper is named approx, not close: a Jal Pari fn named close
+// collides with libc close() (unistd.h) in the generated C build.
+import "units.fg";
+fn approx(a: float, b: float, tol: float) -> bool {
+    let mut d: float = a - b;
+    if d < 0.0 { d = 0.0 - d; }
+    return d < tol;
+}
+fn main() -> int {
+    let mut bad: int = 0;
+    if !approx(km_to_miles(1.0), 0.621371, 0.000001) { println("FAIL km_to_miles"); bad = 1; }
+    if !approx(miles_to_km(1.0), 1.609344, 0.000001) { println("FAIL miles_to_km"); bad = 1; }
+    if !approx(cm_to_inches(2.54), 1.0, 0.000001) { println("FAIL cm_to_inches"); bad = 1; }
+    if !approx(kg_to_lb(1.0), 2.20462, 0.00001) { println("FAIL kg_to_lb"); bad = 1; }
+    if !approx(celsius_to_fahrenheit(0.0), 32.0, 0.000001) { println("FAIL c_to_f"); bad = 1; }
+    if !approx(fahrenheit_to_celsius(32.0), 0.0, 0.000001) { println("FAIL f_to_c"); bad = 1; }
+    if !approx(hours_to_minutes(2.5), 150.0, 0.000001) { println("FAIL h_to_m"); bad = 1; }
+    if !approx(litres_to_gallons(1.0), 0.264172, 0.000001) { println("FAIL l_to_g"); bad = 1; }
+    println("units demo: 1 km =", km_to_miles(1.0), "miles; 100 C =", celsius_to_fahrenheit(100.0), "F");
+    if bad == 0 { println("units demo ok"); }
+    return bad;
+}

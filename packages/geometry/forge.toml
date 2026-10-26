@@ -1,0 +1,6 @@
+[package]
+name = "geometry"
+version = "0.1.0"
+description = "Areas, perimeters, and volumes for everyday shapes."
+
+[dependencies]

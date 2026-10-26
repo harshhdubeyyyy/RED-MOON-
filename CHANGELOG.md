@@ -1,8 +1,102 @@
 # Changelog — The Jal Pari Language
 
 All notable changes are listed here. Version numbers follow
-semantic versioning in spirit: 0.x means the language is usable
-but breaking changes are still possible.
+semantic versioning: 1.0.0 (26 Oct 2026) is the first stable
+release — the documented language surface will not break
+without a major version bump (see docs/STABILITY.md).
+0.x releases were pre-stable; breaking changes were possible then.
+
+## 1.0.0 — 26 Oct 2026 — "Market-ready": stability promise, live playground, HTTP server, regex, real packages, packaged extension, honest benchmarks
+
+- Stability promise: docs/STABILITY.md — semver for real. 1.x adds,
+  never breaks; breaking changes require a major version; deprecations
+  get at least one minor release of warning. The promise covers the
+  documented language surface, stdlib APIs, the jalpari CLI, and the
+  package format. It does NOT cover missing features (gaps, not breaks),
+  experimental backends (CUDA emit, big32 soft-float internals, the
+  self-host prototype), performance characteristics, or error wording.
+- Front door: the MIT LICENSE now lives in the repo root (it was only
+  preserved on GitHub's side before). Landing page updated to 1.0.0
+  numbers. Repo rename + hosting + GitHub Pages enable remain the
+  maintainer's own clicks.
+- Install: re-verified on a clean HOME (install.sh -> jalpari 1.0.0,
+  demo runs) and a clean pip venv (jalpari-pip 1.0.0). PyPI publish
+  itself still needs the maintainer's account.
+- Live playground v2: web/playground.html is now a real editor. The
+  actual compiler runs under Pyodide (fetched from the repo's main
+  branch via jsDelivr), the user's program compiles to WebAssembly
+  in-browser, and output comes from the WASM stdout buffer. Four
+  examples (hello, fib, sum, dice-with-stdlib-import), each verified
+  end to end through the same pipeline the page uses. JS syntax-checked
+  with node --check. End-to-end run in a real browser is NOT verified
+  here (no browser run was available); the page needs one open to
+  confirm Pyodide loading. WASM-subset limits are stated on the page:
+  imports work only for subset-safe stdlib files (rand/dates verified;
+  files using split/structs/float-printing fail the whole program
+  because the backend compiles every imported function).
+- HTTP server: six new builtins (native only) — http_listen,
+  http_accept, http_read_request, http_respond, http_respond_status,
+  http_close — plus stdlib/http_server.fg (path parsing, serve_n)
+  and examples/http_server_demo.fg (routes / -> greeting,
+  /health -> ok, else 404). Verified live: curl returned 200/200/404
+  with correct bodies and Content-Lengths, server log showed all
+  three routes, clean shutdown after 3 requests, 300 bytes total
+  (recomputed by hand: 116 + 85 + 99). Limits, stated: one request per
+  connection, single read up to 8191 bytes, no TLS, no chunked bodies,
+  IPv4 0.0.0.0. Adding a builtin touches FOUR places, not one:
+  checker types, infer types, codegen call mapping, and (for str
+  results) the fresh-string list — the first build failed on exactly
+  this (emitted `void fd`) until infer was updated.
+- Regex: stdlib/regex.fg, a backtracking engine in pure Jal Pari —
+  literals, `.`, `*` `+` `?` with backtracking, classes with ranges
+  (a-z/A-Z/0-9 via alphabet-position lookup, since the language has
+  no char-to-int conversion), negation, \d \w \s, literal escapes,
+  ^ $ anchors; regex_match / regex_find / regex_full_match.
+  examples/regex_demo.fg: 36 checks, all pass, including backtracking
+  (a+a on "aaa", a*ab on "aab"). NOT supported, matched literally
+  instead: groups (...) and alternation | (no closures/function
+  values to represent them). Ranges outside the three alphabets never
+  match. Worst case is exponential (classic backtracking).
+- Registry packages: packages/ ships seven real packages, each with a
+  demo main that checks its own values and a smoke test — units,
+  money (integer-paise math, hand-built int-to-string), geometry,
+  interest (simple/compound/EMI), roman (1..3999, both directions),
+  bases (binary/octal/hex, both directions), dice (on stdlib rand).
+  Remote flow verified end to end against a local registry server:
+  all seven published, list-remote showed all seven, a fresh consumer
+  package add-remote'd units@0.1.0 and ran it (5 km = 3.10685 miles,
+  100 F = 37.7778 C). Public hosting still needs the maintainer's
+  VPS/Render/Fly account + domain + HTTPS.
+- VS Code extension: packaged as editors/vscode/forge/forge-1.0.0.vsix
+  (verified contents: displayName "The Jal Pari Language", 1.0.0,
+  publisher jalpari, updated grammar). Grammar gained the missing
+  keywords (enum, extern, spawn, match) and the new builtins. The
+  extension is intentionally client-free (grammar + config); the LSP
+  server (forge.py lsp) works with any LSP client. Marketplace publish
+  needs the maintainer's publisher account.
+- Benchmarks: docs/BENCHMARKS_VS.md + tools/bench_vs/run_bench.py —
+  same algorithm in Jal Pari, Python, Go, Rust, C; medians of 3;
+  results verified equal across languages. Jal Pari is ~31x Python
+  on fib(35), ~49x on array_sum, ~259x on matmul 128; in the compiled
+  cluster with Go/Rust/C (within ~2-4x of C, trading places with Go
+  and Rust run to run on this noisy VM). Two findings kept: (1) the
+  first loop task was deleted by Rust/C compilers (closed form),
+  which is why the task is now runtime-array data; Jal Pari safe
+  mode does NOT fold it (checks block it), fast mode DOES (0us) —
+  mechanism verified both ways. (2) Jal Pari prints floats at 6
+  significant digits, so its matmul checksum displays rounded.
+- CI: .github/workflows/ci.yml verified current (suite + formatter
+  + ecosystem example; node is preinstalled on ubuntu-latest, big32
+  checks are compile-only). Upload still blocked: token lacks
+  workflow scope (403, as before) — needs a token fix or a web-UI
+  upload.
+- Gotchas found by this batch (all fixed, all verified after fixing):
+  a Jal Pari fn named `close` collides with libc close() in the
+  generated C; the INT_MIN literal overflows (9223372036854775808 >
+  i64 max — compute it as 0 - 9223372036854775807 - 1); args()
+  excludes the program name; the WASM backend compiles every
+  imported function, so one unsupported construct fails the import;
+  a demo file named rand.fg shadowed its own stdlib import.
 
 ## 0.7.0 — 26 Oct 2026 — "Build everything open": debugger, binary I/O + images, stacked convs, curriculum RNN, big32 structs + soft-float, WASM strings/arrays, fuzzer, big TinyStories run
 

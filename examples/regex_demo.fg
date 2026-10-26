@@ -1,0 +1,52 @@
+// regex_demo: checks for the stdlib regex engine. Prints FAIL lines
+// and returns 1 if anything mismatches; prints "regex demo ok" + 0 if all pass.
+import "regex.fg";
+
+fn check(name: str, got: bool, want: bool) -> int {
+    if got != want {
+        println("FAIL:", name, "got =", got, "want =", want);
+        return 1;
+    }
+    return 0;
+}
+
+fn main() -> int {
+    let mut bad: int = 0;
+    bad = bad + check("literal search", regex_match("hello", "hello world"), true);
+    bad = bad + check("literal miss", regex_match("bye", "hello world"), false);
+    bad = bad + check("full vs search", regex_full_match("hello", "hello world"), false);
+    bad = bad + check("full exact", regex_full_match("hello", "hello"), true);
+    bad = bad + check("anchor start ok", regex_match("^hello", "hello world"), true);
+    bad = bad + check("anchor start miss", regex_match("^hello", "say hello"), false);
+    bad = bad + check("anchor end ok", regex_match("world$", "hello world"), true);
+    bad = bad + check("anchor end miss", regex_match("world$", "world peace"), false);
+    bad = bad + check("dot", regex_match("h.llo", "hello"), true);
+    bad = bad + check("dot miss", regex_match("h.llo", "hllo"), false);
+    bad = bad + check("opt color", regex_match("colou?r", "color"), true);
+    bad = bad + check("opt colour", regex_match("colou?r", "colour"), true);
+    bad = bad + check("opt miss", regex_match("colou?r", "colouur"), false);
+    bad = bad + check("star empty", regex_match("ab*c", "ac"), true);
+    bad = bad + check("star many", regex_match("ab*c", "abbbc"), true);
+    bad = bad + check("star miss", regex_match("ab*c", "ab"), false);
+    bad = bad + check("plus ok", regex_match("a+", "aaa"), true);
+    bad = bad + check("plus miss", regex_match("a+", "b"), false);
+    bad = bad + check("class digits search", regex_match("[0-9]+", "abc123"), true);
+    bad = bad + check("class digits full", regex_full_match("[0-9]+", "123"), true);
+    bad = bad + check("class digits full miss", regex_full_match("[0-9]+", "12a"), false);
+    bad = bad + check("class neg ok", regex_match("[^0-9]+", "abc"), true);
+    bad = bad + check("class neg miss", regex_match("[^0-9]+", "123"), false);
+    bad = bad + check("class range", regex_match("[a-c]+", "abc"), true);
+    bad = bad + check("class range miss", regex_match("[a-c]+", "xyz"), false);
+    bad = bad + check("digit escape", regex_match("\\d+", "a42b"), true);
+    bad = bad + check("word escape", regex_match("\\w+", "hi!"), true);
+    bad = bad + check("dot escape", regex_match("a\\.b", "a.b"), true);
+    bad = bad + check("dot escape miss", regex_match("a\\.b", "axb"), false);
+    bad = bad + check("find index", regex_find("world", "hello world") == 6, true);
+    bad = bad + check("find miss", regex_find("bye", "hello") == -1, true);
+    bad = bad + check("parens are literal", regex_match("(ab)", "(ab)"), true);
+    bad = bad + check("pipe is literal", regex_match("a|b", "a|b"), true);
+    bad = bad + check("backtrack", regex_match("a+a", "aaa"), true);
+    bad = bad + check("backtrack star", regex_match("a*ab", "aab"), true);
+    if bad == 0 { println("regex demo ok"); }
+    return bad;
+}

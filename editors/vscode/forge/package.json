@@ -1,1 +1,40 @@
-{"categories":["Programming Languages"],"contributes":{"grammars":[{"language":"forge","path":"./syntaxes/forge.tmLanguage.json","scopeName":"source.forge"}],"languages":[{"aliases":["Forge","forge"],"configuration":"./language-configuration.json","extensions":[".fg"],"id":"forge"}]},"description":"Forge language support: syntax highlighting and LSP diagnostics.","displayName":"Forge","engines":{"vscode":"^1.85.0"},"name":"forge","version":"0.1.0"}
+{
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "grammars": [
+      {
+        "language": "forge",
+        "path": "./syntaxes/forge.tmLanguage.json",
+        "scopeName": "source.forge"
+      }
+    ],
+    "languages": [
+      {
+        "aliases": [
+          "Forge",
+          "forge"
+        ],
+        "configuration": "./language-configuration.json",
+        "extensions": [
+          ".fg"
+        ],
+        "id": "forge"
+      }
+    ]
+  },
+  "description": "Syntax highlighting for Jal Pari (.fg) files. The language server (forge.py lsp) works with any LSP client.",
+  "displayName": "The Jal Pari Language",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "name": "forge",
+  "version": "1.0.0",
+  "publisher": "jalpari",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jayantt1dubeyy/RED-MOON-"
+  }
+}

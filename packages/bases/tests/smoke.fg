@@ -1,0 +1,5 @@
+import "../src/bases.fg";
+fn main() -> int {
+    println("smoke: 255 =", int_to_hex(255));
+    return 0;
+}

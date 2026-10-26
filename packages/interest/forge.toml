@@ -1,0 +1,6 @@
+[package]
+name = "interest"
+version = "0.1.0"
+description = "Simple interest, compound interest, and EMI — float math, checked by runs."
+
+[dependencies]

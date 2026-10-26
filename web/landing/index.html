@@ -12,21 +12,24 @@ real machine-learning stack: tensors, autograd, transformers, GPU kernels.</p>
 cd RED-MOON-
 ./scripts/install.sh
 jalpari run examples/jal_pari_demo.fg</pre>
-<p>Or try the <a href="../playground.html">browser playground</a> (WASM demos, no install).</p>
+<p>Or try the <a href="../playground.html">browser playground</a> (live editor — real compiler + WebAssembly in your browser, no install).</p>
 <h2>Verified numbers <span class="num">(measured 26 Oct 2026, not projections)</span></h2>
 <ul>
+<li><b>Version 1.0.0 (market-ready):</b> stability promise, live browser playground, HTTP server, regex engine, seven registry packages, packaged VS Code extension, benchmarks vs Python/Go/Rust/C.</li>
 <li><b>TinyStories word GPT, 49,664 params:</b> held-out perplexity 1119 → 189.</li>
+<li><b>Bigger TinyStories run, 153,744 params:</b> held-out perplexity 2129 → 651 — better, still not fluent.</li>
 <li><b>Tensor autograd:</b> one forward is 136 tape nodes, where the scalar tape needed 221,844.</li>
 <li><b>Training step:</b> 26 ms at the scaled size, 4.35 ms at the small size.</li>
 <li><b>dot(5000):</b> 8 µs (NumPy 29 µs, pure Python 788 µs, same machine).</li>
 <li><b>matmul 64×64:</b> 615 µs (NumPy 343 µs with BLAS, pure Python 476,501 µs).</li>
 <li><b>GPU kernels:</b> verified on Kaggle Tesla T4 — dot 70, matmul 19 22 43 50, attention exact to 6 decimals.</li>
+<li><b>GPU training:</b> verified on Tesla T4 — XOR MLP learns (loss 0.001529, predictions ~0, 1, 1, 0).</li>
+<li><b>big32 soft-float:</b> 60/60 randomized cases vs Python float32, model and Verilog.</li>
 </ul>
 <h2>Honest limits</h2>
 <ul>
 <li>Generation is word salad, not fluent prose — perplexity is the solid result.</li>
-<li>GPU training is code, not a run yet; it needs a Kaggle GPU session.</li>
-<li>NumPy still wins matmul (BLAS). WASM has no print yet; big32 has no floats yet.</li>
+<li>NumPy still wins matmul (BLAS).</li>
 <li>CI, repo rename, and the public registry host need the maintainer's own clicks/accounts.</li>
 </ul>
 <p>Full numbers, limits, and gotchas: <code>docs/BENCHMARKS.md</code>, <code>docs/ML_STACK.md</code>, <code>CHANGELOG.md</code> in the repo.</p>
