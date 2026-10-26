@@ -159,6 +159,64 @@ static long long forge_parse_int(const char *s) {
     return v;
 }
 
+static ForgeStrArray forge_split(const char *s, const char *sep) {
+    ForgeStrArray out; out.len = 0; out.cap = 8;
+    out.data = (char **)malloc(sizeof(char *) * 8);
+    size_t sl = strlen(sep);
+    if (sl == 0) { forge_str_push(&out, forge_copy_str(s)); return out; }
+    const char *start = s;
+    const char *hit;
+    while ((hit = strstr(start, sep)) != NULL) {
+        size_t n = (size_t)(hit - start);
+        char *piece = (char *)malloc(n + 1);
+        memcpy(piece, start, n); piece[n] = '\0';
+        forge_str_push(&out, piece);
+        start = hit + sl;
+    }
+    forge_str_push(&out, forge_copy_str(start));
+    return out;
+}
+
+static char *forge_join(ForgeStrArray arr, const char *sep) {
+    size_t sl = strlen(sep), total = 1;
+    for (long long i = 0; i < arr.len; i++) total += strlen(arr.data[i]) + sl;
+    char *buf = (char *)malloc(total);
+    buf[0] = '\0';
+    for (long long i = 0; i < arr.len; i++) {
+        if (i) strcat(buf, sep);
+        strcat(buf, arr.data[i]);
+    }
+    return buf;
+}
+
+static char *forge_substr(const char *s, long long start, long long len) {
+    long long sl = (long long)strlen(s);
+    if (start < 0 || start > sl) forge_fail("substr: start out of range");
+    if (len < 0) forge_fail("substr: negative length");
+    if (start + len > sl) len = sl - start;
+    char *buf = (char *)malloc((size_t)len + 1);
+    memcpy(buf, s + start, (size_t)len); buf[len] = '\0';
+    return buf;
+}
+
+static bool forge_starts_with(const char *s, const char *prefix) {
+    return strncmp(s, prefix, strlen(prefix)) == 0;
+}
+
+static bool forge_ends_with(const char *s, const char *suffix) {
+    size_t sl = strlen(s), fl = strlen(suffix);
+    return sl >= fl && strcmp(s + sl - fl, suffix) == 0;
+}
+
+static char *forge_trim(const char *s) {
+    while (*s == ' ' || *s == '\t' || *s == '\n' || *s == '\r') s++;
+    size_t n = strlen(s);
+    while (n > 0 && (s[n-1] == ' ' || s[n-1] == '\t' || s[n-1] == '\n' || s[n-1] == '\r')) n--;
+    char *buf = (char *)malloc(n + 1);
+    memcpy(buf, s, n); buf[n] = '\0';
+    return buf;
+}
+
 """
 
 
@@ -489,6 +547,23 @@ class Codegen:
                 return "forge_args_global"
             if expr.name == "parse_int":
                 return f"forge_parse_int({self.gen_expr(expr.args[0])})"
+            if expr.name == "split":
+                return (f"forge_split({self.gen_expr(expr.args[0])}, "
+                        f"{self.gen_expr(expr.args[1])})")
+            if expr.name == "join":
+                return (f"forge_join({self.gen_expr(expr.args[0])}, "
+                        f"{self.gen_expr(expr.args[1])})")
+            if expr.name == "substr":
+                return (f"forge_substr({self.gen_expr(expr.args[0])}, "
+                        f"{self.gen_expr(expr.args[1])}, {self.gen_expr(expr.args[2])})")
+            if expr.name == "trim":
+                return f"forge_trim({self.gen_expr(expr.args[0])})"
+            if expr.name == "starts_with":
+                return (f"forge_starts_with({self.gen_expr(expr.args[0])}, "
+                        f"{self.gen_expr(expr.args[1])})")
+            if expr.name == "ends_with":
+                return (f"forge_ends_with({self.gen_expr(expr.args[0])}, "
+                        f"{self.gen_expr(expr.args[1])})")
             args = ", ".join(self.gen_expr(a) for a in expr.args)
             return f"{expr.name}({args})"
         raise ForgeError(f"unsupported expression {type(expr).__name__}")

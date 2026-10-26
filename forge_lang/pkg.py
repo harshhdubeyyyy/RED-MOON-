@@ -1,0 +1,209 @@
+"""Forge package manager (forge pkg).
+
+A package is a directory with:
+  forge.toml        [package] name/version, [dependencies] name = "path"
+  src/main.fg       the program (entry point)
+  tests/*.fg        programs that must exit 0 (run by `forge pkg test`)
+  vendor/<name>/    vendored dependencies (copied by `forge pkg add`)
+
+Commands (run from the package directory):
+  forge pkg init [name]     create a new package skeleton
+  forge pkg add <path>      vendor another package's src/*.fg into vendor/
+  forge pkg build [--mode safe|fast]   build src/main.fg to build/<name>
+  forge pkg run [-- args...]           build, then run the binary
+  forge pkg test            run every tests/*.fg, each must exit 0
+  forge pkg list            show name, version, dependencies
+
+Dependencies are vendored, Go-style, not downloaded: `forge pkg add`
+copies files, so a build never needs the network or a registry.
+Import a vendored package from src/main.fg with a path relative
+to the package root, e.g. `import "vendor/stats/stats.fg";` — the
+compiler resolves imports relative to the file, then the current
+directory (the package root when you run `forge pkg build`).
+"""
+import os
+import re
+import shutil
+import subprocess
+import sys
+
+from .errors import ForgeError
+from .compiler import build as forge_build
+
+
+def read_manifest(cwd):
+    path = os.path.join(cwd, "forge.toml")
+    if not os.path.exists(path):
+        raise ForgeError("no forge.toml in this directory (run 'forge pkg init' first)")
+    with open(path, encoding="utf-8") as f:
+        text = f.read()
+    section = None
+    pkg = {}
+    deps = {}
+    for raw in text.splitlines():
+        line = raw.strip()
+        if line.startswith("[") and line.endswith("]"):
+            section = line[1:-1].strip()
+            continue
+        m = re.match(r'(\w[\w-]*)\s*=\s*"([^"]*)"', line)
+        if not m:
+            continue
+        if section == "package":
+            pkg[m.group(1)] = m.group(2)
+        elif section == "dependencies":
+            deps[m.group(1)] = m.group(2)
+    return path, text, pkg, deps
+
+
+def cmd_init(cwd, name):
+    if os.path.exists(os.path.join(cwd, "forge.toml")):
+        print("forge pkg: forge.toml already exists here", file=sys.stderr)
+        return 1
+    if not name:
+        name = os.path.basename(os.path.abspath(cwd)) or "mytool"
+    name = re.sub(r"[^A-Za-z0-9_-]", "-", name)
+    os.makedirs(os.path.join(cwd, "src"), exist_ok=True)
+    os.makedirs(os.path.join(cwd, "tests"), exist_ok=True)
+    os.makedirs(os.path.join(cwd, "build"), exist_ok=True)
+    with open(os.path.join(cwd, "forge.toml"), "w", encoding="utf-8") as f:
+        f.write(f'[package]\nname = "{name}"\nversion = "0.1.0"\n'
+                f'description = ""\n\n[dependencies]\n')
+    with open(os.path.join(cwd, "src", "main.fg"), "w", encoding="utf-8") as f:
+        f.write(f'// {name}: a Forge package.\nfn main() -> int {{\n'
+                f'    println("hello from {name}");\n    return 0;\n}}\n')
+    with open(os.path.join(cwd, "tests", "smoke.fg"), "w", encoding="utf-8") as f:
+        f.write('fn main() -> int {\n    println("smoke ok");\n    return 0;\n}\n')
+    with open(os.path.join(cwd, "README.md"), "w", encoding="utf-8") as f:
+        f.write(f"# {name}\n\nA Forge package. Build with `forge pkg build`, "
+                f"test with `forge pkg test`.\n")
+    with open(os.path.join(cwd, ".gitignore"), "w", encoding="utf-8") as f:
+        f.write("build/\n")
+    print(f"created package '{name}' in {cwd}")
+    return 0
+
+
+def cmd_add(cwd, src_path):
+    _mp, text, _pkg, deps = read_manifest(cwd)
+    src_abs = os.path.abspath(os.path.join(cwd, src_path))
+    src_manifest = os.path.join(src_abs, "forge.toml")
+    if not os.path.exists(src_manifest):
+        print(f"forge pkg: {src_path} is not a Forge package (no forge.toml)",
+              file=sys.stderr)
+        return 1
+    # Reuse read_manifest on the source package directory.
+    _sp, _st, src_pkg, _sd = read_manifest(src_abs)
+    dep_name = src_pkg.get("name")
+    if not dep_name:
+        print("forge pkg: source package has no name in forge.toml", file=sys.stderr)
+        return 1
+    src_dir = os.path.join(src_abs, "src")
+    if not os.path.isdir(src_dir):
+        print("forge pkg: source package has no src/ directory", file=sys.stderr)
+        return 1
+    dest = os.path.join(cwd, "vendor", dep_name)
+    os.makedirs(dest, exist_ok=True)
+    copied = []
+    for fn in sorted(os.listdir(src_dir)):
+        # main.fg is the package's own entry point, not a library:
+        # vendoring it would duplicate fn main if anyone imported it.
+        if fn.endswith(".fg") and fn != "main.fg":
+            shutil.copy2(os.path.join(src_dir, fn), os.path.join(dest, fn))
+            copied.append(fn)
+    if dep_name not in deps:
+        if "[dependencies]" not in text:
+            text = text.rstrip() + "\n\n[dependencies]\n"
+        text = text.rstrip() + f'\n{dep_name} = "{src_path}"\n'
+        with open(os.path.join(cwd, "forge.toml"), "w", encoding="utf-8") as f:
+            f.write(text)
+    print(f"vendored '{dep_name}' into vendor/{dep_name}/ ({', '.join(copied)})")
+    print(f'import it with: import "vendor/{dep_name}/{copied[0]}";'
+          if copied else "")
+    return 0
+
+
+def _build(cwd, mode):
+    _mp, _text, pkg, _deps = read_manifest(cwd)
+    name = pkg.get("name", "app")
+    main = os.path.join(cwd, "src", "main.fg")
+    if not os.path.exists(main):
+        print("forge pkg: src/main.fg not found", file=sys.stderr)
+        return 1, None
+    out_dir = os.path.join(cwd, "build")
+    os.makedirs(out_dir, exist_ok=True)
+    out = os.path.join(out_dir, name)
+    try:
+        forge_build(main, out, mode=mode)
+    except ForgeError as e:
+        print(f"forge: error: {e}", file=sys.stderr)
+        return 1, None
+    print(f"built: {out} (mode={mode})")
+    return 0, out
+
+
+def dispatch(argv, forge_path, cwd):
+    if not argv:
+        print("usage: forge pkg <init|add|build|run|test|list> ...", file=sys.stderr)
+        return 1
+    cmd = argv[0]
+    rest = argv[1:]
+    try:
+        if cmd == "init":
+            return cmd_init(cwd, rest[0] if rest else None)
+        if cmd == "add":
+            if not rest:
+                print("usage: forge pkg add <path-to-package>", file=sys.stderr)
+                return 1
+            return cmd_add(cwd, rest[0])
+        if cmd == "build":
+            mode = "safe"
+            if "--mode" in rest:
+                mode = rest[rest.index("--mode") + 1]
+            rc, _out = _build(cwd, mode)
+            return rc
+        if cmd == "run":
+            mode = "safe"
+            prog_args = rest
+            if "--" in rest:
+                idx = rest.index("--")
+                prog_args = rest[idx + 1:]
+                before = rest[:idx]
+                if "--mode" in before:
+                    mode = before[before.index("--mode") + 1]
+            rc, out = _build(cwd, mode)
+            if rc != 0:
+                return rc
+            proc = subprocess.run([out] + prog_args)
+            return proc.returncode
+        if cmd == "test":
+            test_dir = os.path.join(cwd, "tests")
+            files = sorted(f for f in os.listdir(test_dir)
+                           if f.endswith(".fg")) if os.path.isdir(test_dir) else []
+            if not files:
+                print("no tests")
+                return 0
+            failures = []
+            for fn in files:
+                path = os.path.join(test_dir, fn)
+                proc = subprocess.run([sys.executable, forge_path, "run", path],
+                                      capture_output=True, text=True, cwd=cwd)
+                if proc.returncode != 0:
+                    failures.append(fn)
+                    print(f"FAIL {fn}\n{proc.stdout}{proc.stderr}")
+                else:
+                    print(f"PASS {fn}")
+            if failures:
+                print(f"forge pkg test: {len(failures)} failure(s)")
+                return 1
+            print(f"forge pkg test: all {len(files)} test(s) passed")
+            return 0
+        if cmd == "list":
+            _mp, _text, pkg, deps = read_manifest(cwd)
+            print(f"{pkg.get('name', '?')} {pkg.get('version', '?')}")
+            for k, v in deps.items():
+                print(f"  {k} = {v}")
+            return 0
+        print(f"forge pkg: unknown subcommand '{cmd}'", file=sys.stderr)
+        return 1
+    except ForgeError as e:
+        print(f"forge: error: {e}", file=sys.stderr)
+        return 1

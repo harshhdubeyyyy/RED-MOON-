@@ -15,7 +15,8 @@ from . import ast_nodes as A
 SCALARS = {"int", "float", "bool", "str"}
 STMT_BUILTINS = {"print", "println", "push", "fail"}
 EXPR_BUILTINS = {"len", "range", "clock_micros", "sqrt", "exp", "log", "pow", "abs",
-                 "read_file", "write_file", "args", "parse_int"}
+                 "read_file", "write_file", "args", "parse_int",
+                 "split", "join", "substr", "trim", "starts_with", "ends_with"}
 BUILTINS = STMT_BUILTINS | EXPR_BUILTINS
 
 
@@ -409,6 +410,47 @@ class Checker:
                 raise ForgeError("parse_int() takes exactly one str argument",
                                  call.line, call.col)
             return "int"
+        if call.name == "split":
+            if len(call.args) != 2:
+                raise ForgeError("split() takes exactly two arguments", call.line, call.col)
+            for a in call.args:
+                if self.check_expr(a) != "str":
+                    raise ForgeError("split() takes str arguments", call.line, call.col)
+            return "[str]"
+        if call.name == "join":
+            if len(call.args) != 2:
+                raise ForgeError("join() takes exactly two arguments", call.line, call.col)
+            if self.check_expr(call.args[0]) != "[str]":
+                raise ForgeError("join() takes a [str] as its first argument",
+                                 call.line, call.col)
+            if self.check_expr(call.args[1]) != "str":
+                raise ForgeError("join() takes a str separator", call.line, call.col)
+            return "str"
+        if call.name == "substr":
+            if len(call.args) != 3:
+                raise ForgeError("substr() takes exactly three arguments", call.line, call.col)
+            if self.check_expr(call.args[0]) != "str":
+                raise ForgeError("substr() takes a str as its first argument",
+                                 call.line, call.col)
+            for a in call.args[1:]:
+                if self.check_expr(a) != "int":
+                    raise ForgeError("substr() takes int start and length",
+                                     call.line, call.col)
+            return "str"
+        if call.name == "trim":
+            if len(call.args) != 1 or self.check_expr(call.args[0]) != "str":
+                raise ForgeError("trim() takes exactly one str argument",
+                                 call.line, call.col)
+            return "str"
+        if call.name in ("starts_with", "ends_with"):
+            if len(call.args) != 2:
+                raise ForgeError(f"{call.name}() takes exactly two arguments",
+                                 call.line, call.col)
+            for a in call.args:
+                if self.check_expr(a) != "str":
+                    raise ForgeError(f"{call.name}() takes str arguments",
+                                     call.line, call.col)
+            return "bool"
         fn = self.funcs.get(call.name)
         if fn is None:
             raise ForgeError(f"undefined function '{call.name}'", call.line, call.col)

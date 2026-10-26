@@ -1,0 +1,22 @@
+import "strings.fg";
+import "stats.fg";
+import "ml.fg";
+
+fn main() -> int {
+    let argv: [str] = args();
+    let mut text: str = "hello forge world\nforge is fast\nhello again\n";
+    if len(argv) > 0 {
+        text = read_file(argv[0]);
+    }
+    let words: int = word_count(text);
+    let lines: [str] = lines_of(text);
+    let mut lengths: [float] = [];
+    for line in lines {
+        push(lengths, len(line) as float);
+    }
+    println("words =", words);
+    println("lines =", len(lines));
+    println("mean line length =", mean(lengths));
+    println("median line length =", median(lengths));
+    return 0;
+}

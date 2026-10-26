@@ -1,5 +1,3 @@
-// A tiny MLP doing XOR, Mojo-style: hand-set sigmoid weights, no
-// Python runtime, compiled to a native binary.
 import "ml.fg";
 
 fn main() -> int {

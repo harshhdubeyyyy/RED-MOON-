@@ -59,9 +59,12 @@ def compile_file(path, mode="safe"):
 
 
 def _cc_flags(mode):
+    # The generated header defines every builtin helper; unused ones
+    # are expected, so silence that one warning (other -Wall warnings
+    # still show).
     if mode == "fast":
-        return ["cc", "-O3", "-march=native", "-std=gnu11", "-Wall"]
-    return ["cc", "-O2", "-std=gnu11", "-Wall", "-Wextra"]
+        return ["cc", "-O3", "-march=native", "-std=gnu11", "-Wall", "-Wno-unused-function"]
+    return ["cc", "-O2", "-std=gnu11", "-Wall", "-Wextra", "-Wno-unused-function"]
 
 
 def build(source_path, output_path, mode="safe", keep_c=None):

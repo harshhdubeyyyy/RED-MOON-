@@ -1,5 +1,3 @@
-// Same regression as ml_linear_regression.fg, but prints w and b
-// every 100 iterations so the convergence curve can be plotted.
 fn main() -> int {
     let xs: [float] = [1.0, 2.0, 3.0, 4.0, 5.0];
     let ys: [float] = [3.0, 5.0, 7.0, 9.0, 11.0];

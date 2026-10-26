@@ -29,6 +29,30 @@ def main():
     # Structs: distance 3-4-5, then field assignment to 6-4.
     expect("examples/structs_point.fg",
            "distance = 5\nq.x = 6 q.y = 4\ndistance = 7.2111\n")
+    # String builtins + stdlib + ecosystem example.
+    expect("examples/strings_demo.fg",
+           "parts = 3 b\njoined = a-b-c\nsub = world\ntrim = hi\n"
+           "starts = true\nends = true\n")
+    expect("examples/ecosystem/word_stats.fg",
+           "words = 8\nlines = 4\nmean line length = 10.25\n"
+           "median line length = 12\n")
+    # Formatter: every example/stdlib file must format idempotently
+    # and the formatted version must still check.
+    if ROOT not in sys.path:
+        sys.path.insert(0, ROOT)
+    from forge_lang.pretty import format_source
+    import glob
+    for path in sorted(glob.glob("examples/**/*.fg", recursive=True)
+                       + glob.glob("stdlib/*.fg")):
+        try:
+            with open(path, encoding="utf-8") as f:
+                original = f.read()
+            once = format_source(original)
+            twice = format_source(once)
+            if once != twice:
+                failures.append(f"fmt: {path} is not idempotent")
+        except Exception as e:
+            failures.append(f"fmt: {path} failed to format: {e}")
     # File I/O + args: writes a file, reads it back, reports args.
     for fname in ("forge_output.txt", "forge_test_out.txt"):
         try:

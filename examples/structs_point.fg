@@ -1,5 +1,3 @@
-// Structs in Forge: definition, literal, field access, field assignment,
-// and passing a struct to a function (by value, like Go/Rust).
 struct Point {
     x: float;
     y: float;

@@ -148,13 +148,15 @@ class Infer:
                 return self.set(expr, "int")
             if expr.name == "range":
                 return self.set(expr, "[int]")
-            if expr.name == "args":
+            if expr.name in ("args", "split"):
                 return self.set(expr, "[str]")
             if expr.name in ("sqrt", "exp", "log", "pow"):
                 return self.set(expr, "float")
-            if expr.name == "read_file":
+            if expr.name in ("read_file", "join", "substr", "trim"):
                 return self.set(expr, "str")
             if expr.name == "write_file":
+                return self.set(expr, "bool")
+            if expr.name in ("starts_with", "ends_with"):
                 return self.set(expr, "bool")
             return self.set(expr, "void")
         return self.set(expr, "int")

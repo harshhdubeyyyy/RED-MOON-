@@ -1,5 +1,3 @@
-// Dot-product scaling: time the same dot 100 times and report the
-// average, so small sizes are still measurable with clock_micros().
 import "ml.fg";
 
 fn timed_dot(n: int) -> float {

@@ -7,6 +7,10 @@ Usage:
     python3 forge.py run   <file.fg> [--mode safe|fast] [-- program args...]
     python3 forge.py emit  <file.fg> [--mode safe|fast]
     python3 forge.py test
+    python3 forge.py fmt <file.fg> [--check]
+    python3 forge.py lsp
+    python3 forge.py repl
+    python3 forge.py pkg <init|add|build|run|test|list> ...
 Safe mode (default): checked int arithmetic + bounds-checked indexing.
 Fast mode: unchecked, -O3 -march=native, for microsecond-latency work.
 """
@@ -35,6 +39,13 @@ def main(argv=None):
     p.add_argument("--mode", choices=["safe", "fast"], default="safe")
     p.add_argument("program_args", nargs=argparse.REMAINDER, default=[])
     sub.add_parser("test")
+    p = sub.add_parser("fmt")
+    p.add_argument("file")
+    p.add_argument("--check", action="store_true")
+    sub.add_parser("lsp")
+    sub.add_parser("repl")
+    p = sub.add_parser("pkg")
+    p.add_argument("pkg_args", nargs=argparse.REMAINDER, default=[])
     p = sub.add_parser("build")
     p.add_argument("file")
     p.add_argument("--mode", choices=["safe", "fast"], default="safe")
@@ -43,6 +54,31 @@ def main(argv=None):
 
     args = parser.parse_args(argv)
     try:
+        if args.cmd == "fmt":
+            from forge_lang.pretty import format_file
+            formatted = format_file(args.file)
+            with open(args.file, encoding="utf-8") as f:
+                original = f.read()
+            if args.check:
+                if formatted == original:
+                    print(f"ok: {args.file} is formatted")
+                    return 0
+                print(f"would reformat: {args.file}")
+                return 1
+            with open(args.file, "w", encoding="utf-8") as f:
+                f.write(formatted)
+            print(f"formatted: {args.file}")
+            return 0
+        if args.cmd == "lsp":
+            from forge_lang.lsp import serve
+            return serve()
+        if args.cmd == "repl":
+            from forge_lang.repl import repl_loop
+            return repl_loop()
+        if args.cmd == "pkg":
+            from forge_lang.pkg import dispatch
+            root = os.path.dirname(os.path.abspath(__file__))
+            return dispatch(list(args.pkg_args), os.path.abspath(__file__), os.getcwd())
         if args.cmd == "check":
             compile_file(args.file, mode=args.mode)
             print("ok: no errors")

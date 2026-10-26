@@ -1,5 +1,3 @@
-// Matrix multiply via the stdlib: 2x3 times 3x2 = 2x2.
-// Expected: 58 64 139 154
 import "ml.fg";
 
 fn main() -> int {

@@ -95,6 +95,22 @@ from scratch, and do not silently drop a phase.
   including new struct/file/missing-field tests. Push Phase C
   next; do not claim generics/Option/Result/concurrency/GPU/
   package manager/LSP yet.
+- Ecosystem (26 Oct 2026, "build a complete ecosystem"): forge pkg
+  (init/add/build/run/test/list, vendored deps, forge.toml),
+  forge fmt (AST pretty-printer, idempotent, --check, right-operand
+  parens kept for int-division/float-rounding safety),
+  forge lsp (stdio JSON-RPC, checker diagnostics, keyword/builtin/
+  fn/struct completion), forge repl (kept let defs inside main,
+  rejected defs not kept), string builtins split/join/substr/trim/
+  starts_with/ends_with (C helpers, single evaluation),
+  stdlib/strings.fg + stats.fg (word_count fixed twice: first for
+  multiple spaces, then for newlines — now 8 for the sample text,
+  5 for the 5-word file), VS Code grammar + language config,
+  CI workflow, docs/ECOSYSTEM.md, examples/ecosystem/word_stats.fg
+  and examples/strings_demo.fg. Test suite now also checks fmt
+  idempotency over all examples/stdlib. Push ecosystem next;
+  still NOT done: registry, lockfile, HTTP/DB stdlib, generics,
+  Option/Result, concurrency, GPU, GC.
 
 ## Research findings that now lock v2's design (26 Oct 2026)
 

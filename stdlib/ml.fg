@@ -1,8 +1,3 @@
-// Forge standard library: ML helpers (pure Forge, no hidden magic).
-// Import with: import "ml.fg";
-// Matrices are flat row-major [float] arrays: matmul(a, b, n, m, p)
-// multiplies an n x m matrix by an m x p matrix.
-
 fn dot(a: [float], b: [float]) -> float {
     if len(a) != len(b) {
         fail("dot: length mismatch");

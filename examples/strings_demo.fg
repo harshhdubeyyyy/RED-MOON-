@@ -1,0 +1,10 @@
+fn main() -> int {
+    let parts: [str] = split("a,b,c", ",");
+    println("parts =", len(parts), parts[1]);
+    println("joined =", join(parts, "-"));
+    println("sub =", substr("hello world", 6, 5));
+    println("trim =", trim("  hi  "));
+    println("starts =", starts_with("hello", "he"));
+    println("ends =", ends_with("hello", "lo"));
+    return 0;
+}

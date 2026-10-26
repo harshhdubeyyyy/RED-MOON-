@@ -204,15 +204,26 @@ C++ interop as a goal, exceptions for expected errors, unstructured
 spawning, and leaving the package manager and editor support until
 later — the most common ways new languages stall.
 
+## 🧩 Ecosystem
+
+The full tooling is documented in `docs/ECOSYSTEM.md`:
+
+- **Package manager:** `forge pkg init/add/build/run/test/list` — vendored dependencies, no registry needed
+- **Formatter:** `forge fmt <file.fg> [--check]` — idempotent, canonical style
+- **Language server:** `forge lsp` — real-checker diagnostics + completion, with a VS Code grammar in `editors/vscode/forge/`
+- **REPL:** `forge repl` — keep `let` definitions, evaluate expressions
+- **Stdlib:** `ml.fg`, `strings.fg`, `stats.fg` — plus string builtins `split/join/substr/trim/starts_with/ends_with`
+- **CI:** `.github/workflows/ci.yml` runs the test suite, formatter check, and ecosystem example
+
 ## ⚠️ Honest gaps
 
 Forge v2 is production-*oriented*, not a finished Rust/Go/Mojo
-rival. Structs, file I/O, CLI args, and `forge test` are now done
-(Phase C, 26 Oct 2026). It still has no generics, `Option`/`Result`,
-concurrency, GPU kernels, Python interop, package manager,
-formatter, or LSP yet. Array and string values are not yet freed
-(a GC is the next memory-manager item). Those are the next phases
-in `SPEC_V2.md`, not hidden features.
+rival. Structs, file I/O, CLI args, `forge test`, and the ecosystem
+above are now done (Phase C + ecosystem, 26 Oct 2026). It still has
+no generics, `Option`/`Result`, concurrency, GPU kernels, Python
+interop, registry, or lockfile yet. Array and string values are not
+yet freed (a GC is the next memory-manager item). Those are the
+next phases in `SPEC_V2.md`, not hidden features.
 
 ## 🔁 Regenerate the figures
 

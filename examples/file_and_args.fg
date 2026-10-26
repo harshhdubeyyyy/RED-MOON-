@@ -1,5 +1,3 @@
-// File I/O + CLI args: the first program argument is a filename,
-// otherwise a default file is used. Writes, reads back, and prints.
 fn main() -> int {
     let argv: [str] = args();
     let mut filename: str = "forge_output.txt";
