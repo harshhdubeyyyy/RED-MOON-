@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """The Jal Pari Language compiler CLI (formerly Forge v2).
 
+Version: 0.1.0 — first Jal Pari market release (see CHANGELOG.md).
+
 Usage:
+    jalpari run examples/jal_pari_demo.fg
+    jalpari --version
     python3 forge.py check <file.fg> [--mode safe|fast]
     python3 forge.py build <file.fg> [-o out] [--mode safe|fast] [--keep-c out.c]
     python3 forge.py run   <file.fg> [--mode safe|fast] [-- program args...]
@@ -27,8 +31,17 @@ from forge_lang.errors import ForgeError  # noqa: E402
 from forge_lang.compiler import compile_file, build  # noqa: E402
 
 
+VERSION = "0.1.0"
+
+
 def main(argv=None):
-    parser = argparse.ArgumentParser(prog="forge", description="The Jal Pari Language compiler")
+    if argv is None:
+        argv = sys.argv[1:]
+    if argv in (["--version"], ["-V"], ["version"]):
+        print(f"The Jal Pari Language {VERSION}")
+        return 0
+    parser = argparse.ArgumentParser(prog="jalpari", description="The Jal Pari Language compiler")
+    parser.add_argument("--version", action="version", version=f"The Jal Pari Language {VERSION}")
     sub = parser.add_subparsers(dest="cmd", required=True)
     for name in ("check", "emit"):
         p = sub.add_parser(name)

@@ -136,15 +136,30 @@ Jal Pari, what each line means, and where it is used in real life.
 
 Requirements: Python 3 and a C compiler (`cc` / `gcc`).
 
+**Install (0.1.0):**
+
 ```sh
-python3 forge.py run examples/hello2.fg
-python3 forge.py run examples/matrix.fg
-python3 forge.py run examples/ml_linear_regression.fg
-python3 forge.py run examples/ml_mlp_xor.fg
-python3 forge.py run examples/benchmark_scaling.fg
-python3 forge.py build examples/benchmark.fg -o bench
+git clone https://github.com/jayantt1dubeyy/RED-MOON-
+cd RED-MOON-
+sh scripts/install.sh   # checks python3 + cc, installs jalpari to ~/.local/bin
+jalpari --version       # The Jal Pari Language 0.1.0
+```
+
+`jalpari` is the new command name; `python3 forge.py` still works
+exactly the same, for compatibility.
+
+```sh
+jalpari run examples/hello2.fg
+jalpari run examples/matrix.fg
+jalpari run examples/ml_linear_regression.fg
+jalpari run examples/ml_mlp_xor.fg
+jalpari run examples/benchmark_scaling.fg
+jalpari build examples/benchmark.fg -o bench
 python3 tests/run_tests.py   # all tests pass
 ```
+
+See [CHANGELOG.md](CHANGELOG.md) for what is in 0.1.0 and what
+is honestly not done yet.
 
 ## 🔴 Forge on big32 — your language, running on your own CPU
 
