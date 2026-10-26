@@ -103,6 +103,17 @@ def main():
         verilog_uart, verilog_tail = "", ""
         if "[verilog]" in rv.stdout:
             verilog_uart, verilog_tail = rv.stdout.split("[verilog]", 1)
+        # Icarus prints a harmless $readmemh warning for every program
+        # whose .hex is shorter than the 4096-word IMEM (all of them,
+        # including big32's own programs) -- drop it, and the blank
+        # line the $display adds, before comparing UART text.
+        verilog_uart = "".join(
+            l for l in verilog_uart.splitlines(keepends=True)
+            if not l.startswith("WARNING:")).rstrip("\n") + "\n"
+        # Verilog cycles are model steps + 1 for every program: this
+        # testbench counts the clock edge on which halted is sampled,
+        # the model counts executed instructions. Consistent, not a
+        # CPU disagreement; UART and a0 are the cross-check.
         model_line = [l for l in rm.stdout.splitlines() if l.startswith("halted=")]
         ok = (rx.stdout == expected and model_uart == expected
               and verilog_uart == expected and rm.returncode == 0)
