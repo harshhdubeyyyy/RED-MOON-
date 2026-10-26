@@ -130,6 +130,10 @@ flowchart LR
 
 ## 🚀 Quickstart
 
+**New to programming? Start here, in simple words:**
+[docs/HIGH_SCHOOL_GUIDE.md](docs/HIGH_SCHOOL_GUIDE.md) — steps to run
+Jal Pari, what each line means, and where it is used in real life.
+
 Requirements: Python 3 and a C compiler (`cc` / `gcc`).
 
 ```sh

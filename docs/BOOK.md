@@ -3,6 +3,10 @@
 Dedicated to Tejaswini — Jal Pari. See DEDICATION.md.
 Formerly Forge v2; commands are still `forge.py`, files are `.fg`.
 
+New to programming? Read [HIGH_SCHOOL_GUIDE.md](HIGH_SCHOOL_GUIDE.md)
+first — it is the same language, explained in simple school-level
+words, with steps to run it and real-life uses.
+
 ## Chapter 1 — Hello, Jal Pari
 
 ```forge
