@@ -465,7 +465,7 @@ fn fb_window(x: int, y: int, w: int, h: int, title: int) {
 // ---- pixel screen: pixels, font, windows ----
 
 fn pix_set(x: int, y: int, color: int) {
-  let idx = y * 320 + x;
+  let idx = y * 640 + x;
   let widx = idx / 4;
   let addr = 268566528 + widx * 4;
   let mut word = peek32(addr);
@@ -478,7 +478,7 @@ fn pix_set(x: int, y: int, color: int) {
 fn pix_clear(color: int) {
   let word = color | (color << 8) | (color << 16) | (color << 24);
   let mut i = 0;
-  while i < 16000 {
+  while i < 76800 {
     poke32(268566528 + i * 4, word);
     i = i + 1;
   }
@@ -720,7 +720,7 @@ fn pix_fill_rect(x: int, y: int, w: int, h: int, color: int) {
         xx = xx + 1;
       } else {
         if xx + 3 < x + w {
-          poke32(268566528 + ((r * 320 + xx) / 4) * 4, cword);
+          poke32(268566528 + ((r * 640 + xx) / 4) * 4, cword);
           xx = xx + 4;
         } else {
           pix_set(xx, r, color);

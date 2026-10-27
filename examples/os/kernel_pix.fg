@@ -1,4 +1,4 @@
-// Pixel framebuffer kernel (SOC2-only): 320x200, 8 bits per
+// Pixel framebuffer kernel (SOC2-only): 640x480, 8 bits per
 // pixel, at 0x10020000 (= 268566528, verified by round-trip).
 // Byte 0 of a word is the leftmost of its 4 pixels. Palette
 // indices only: 0 = black, 1 = white; a real palette is a
@@ -14,7 +14,7 @@ fn put(c: int) {
 }
 
 fn pix_set(x: int, y: int, color: int) {
-  let idx = y * 320 + x;
+  let idx = y * 640 + x;
   let widx = idx / 4;
   let addr = 268566528 + widx * 4;
   let mut word = peek32(addr);
@@ -27,8 +27,10 @@ fn pix_set(x: int, y: int, color: int) {
 fn pix_clear(color: int) {
   let word = color | (color << 8) | (color << 16) | (color << 24);
   let mut i = 0;
-  while i < 16000 {
-    poke32(268566528 + i * 4, word);
+  let mut addr = 268566528;
+  while i < 76800 {
+    poke32(addr, word);
+    addr = addr + 4;
     i = i + 1;
   }
 }
@@ -55,17 +57,20 @@ fn pix_fill_rect(x: int, y: int, w: int, h: int, color: int) {
   while r < y + h {
     let mut xx = x;
     while xx < x + w {
-      if xx % 4 != 0 {
-        pix_set(xx, r, color);
-        xx = xx + 1;
-      } else {
-        if xx + 3 < x + w {
-          poke32(268566528 + ((r * 320 + xx) / 4) * 4, cword);
+      if xx % 4 == 0 {
+        let mut addr = 268566528 + ((r * 640 + xx) / 4) * 4;
+        while xx + 3 < x + w {
+          poke32(addr, cword);
+          addr = addr + 4;
           xx = xx + 4;
-        } else {
+        }
+        if xx < x + w {
           pix_set(xx, r, color);
           xx = xx + 1;
         }
+      } else {
+        pix_set(xx, r, color);
+        xx = xx + 1;
       }
     }
     r = r + 1;
@@ -226,15 +231,15 @@ fn main() {
   put(78);
   put(10);
   pix_clear(0);
-  pix_hline(10, 309, 10, 1);
-  pix_hline(10, 309, 189, 1);
-  pix_vline(10, 10, 189, 1);
-  pix_vline(309, 10, 189, 1);
-  pix_fill_rect(60, 80, 200, 40, 1);
-  draw_char(144, 96, 75, 0, 1);
-  draw_char(152, 96, 69, 0, 1);
-  draw_char(160, 96, 82, 0, 1);
-  draw_char(168, 96, 78, 0, 1);
+  pix_hline(10, 629, 10, 1);
+  pix_hline(10, 629, 469, 1);
+  pix_vline(10, 10, 469, 1);
+  pix_vline(629, 10, 469, 1);
+  pix_fill_rect(100, 180, 440, 120, 1);
+  draw_char(304, 236, 75, 0, 1);
+  draw_char(312, 236, 69, 0, 1);
+  draw_char(320, 236, 82, 0, 1);
+  draw_char(328, 236, 78, 0, 1);
   put(68);
   put(79);
   put(78);

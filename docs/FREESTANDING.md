@@ -553,6 +553,57 @@ stays LOCAL (BIG-32 publication belongs to the
 Linux-boot track). What remains on the hardware
 frontier: a real framebuffer for the GUI.
 
+**MACOS LOOK — STAGE 1A + 1B + 2 (STATIC) DONE 27 Oct 2026 — the
+integrated OS gets a desktop picture:** Stage 1a grows the
+SOC2 pixel VRAM from 320x200 to 640x480 (307200 bytes as
+76800 words, still at 0x10020000) and adds a pointer device
+at 0x10006000 (X +0x00, Y +0x04, BTN +0x08, read-only,
+absolute position, TB-driven; pins guarded against
+unconnected testbenches reading x). Stage 1b is
+`tools/gen_font.py`, which emits one `glyph_<name>(row)`
+function per glyph plus a `mac_font_row(ch, row)` dispatch
+on ASCII code — 47 glyphs (14 capitals, 16 lowercase, 10
+digits, 7 symbols); the 6 proven glyphs (K, E, R, N, A, B)
+are reproduced byte-exact by the generator. Stage 2
+(static) is `examples/os/kernel_mac.fg` (font + body,
+1682 lines, SOC2-only, no RAM scratch): palette indices
+0 black, 1 white, 2 light gray, 3 dark gray, 4 red,
+5 yellow, 6 green, 7 deep blue, 8 mid blue, 9 light
+blue; wallpaper as three horizontal bands; a menu bar
+with Finder / File / Edit / View / Window / Help texts;
+a dock with 5 icons (Finder, Terminal, Notes, Code,
+Terminal-2); a Finder window and a Terminal window on
+top, each with red / yellow / green traffic-light
+circles and a title; the menu-bar clock reads "21:22"
+as a STATIC mock, labelled as such in the file header
+(a live clock comes with the event loop, where its
+value is time-dependent and cannot be exact-checked).
+Verified by `tests/test_kernel_mac.py`: MAC PASS —
+desktop structure matches, halted after 4,664,710
+cycles, UART MAC / DONE. Debugging, owned: the first
+run failed 32 pixels with an empty UART file — the
+kernel had not finished drawing inside the 5M-cycle
+cap, because the fill recomputed its address with a
+multiply and a divide on every word across ~120k word
+fills; the fix carries a running address (computed
+once per row segment, then +4 per word) and raises
+the cap to 20M, and the layout preview now prints '?'
+for unwritten pixels instead of letting them hide as
+wallpaper. The second run failed exactly 1 pixel —
+the test point, not the kernel: the Notes icon's
+centre is crossed by the N diagonal stroke (glyph
+row 4 = 137, that bit is ink), so the check moved
+to a true background pixel in the same icon. Honest
+scope: this is a static shot only — mock clock, no
+pointer interaction yet (the device exists, the
+static testbench ties it to 0), no apps. The SOC2
+VRAM + pointer edits stay LOCAL (BIG-32 publication
+belongs to the Linux-boot track). `kernel_pix.fg`
+and `kernel_full.fg` moved to the same 640x480
+geometry in the same tree state; their 640-wide
+re-runs are the next verification step, not yet
+claimed here.
+
 ## What does not change
 
 - Black Moon OS (the Linux distro) continues as the system people
