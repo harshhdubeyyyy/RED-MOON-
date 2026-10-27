@@ -361,6 +361,45 @@ jitter (~1900 steps here), so the demo uses 6 vs 1. Known
 limitation: no idle task yet, so sleep with no other ready
 task degrades to an immediate resume. Next: networking.
 
+**Checkpoint 9 DONE 27 Oct 2026 — networking:** loopback
+stack — SLIP framing (RFC 1055), UDP-inspired packets [dst,
+src, len, payload, checksum], echo service on port 7. No NIC
+exists in the model or the Verilog, so the wire is an
+in-memory loopback buffer (bytes stored as words, linear
+positions); everything else is a real stack. Kernel
+`examples/os/kernel_net.fg` verified by
+`tests/test_kernel_net.py`: exact transcript (KERN, PONG,
+S4R3D1, DONE), halted, all 29 framed bytes consumed, sent 4
+/ recv 3 / dropped 1 — the drop is a corrupted packet failing
+its checksum, and the ESC path is exercised by a payload of
+192. **Phase F is now complete:** memory management, tiny
+filesystem, processes, shell, GUI, drivers, networking —
+each as a standalone kernel. What remains is integration
+(one kernel with a unified memory map) and the hardware the
+model still fakes (timer CLINT in Verilog, a real NIC, a
+framebuffer).
+
+**Integration DONE 27 Oct 2026 — one unified kernel:**
+`examples/os/kernel_unified.fg` runs every Phase F
+subsystem in a single program: processes + preemptive timer,
+bump allocator, filesystem v2, shell REPL, ANSI GUI windows,
+loopback network stack. The map resolves every standalone
+kernel's collisions: proc table 0x8000, current/last/ticks
+0x8040/0x8044/0x8048, alloc bump 0x8050, FS bump/free
+0x8060/0x8064, FS table 0x8070, FS map 0x80F0, net
+positions/stats 0x82F0-0x830C, net packet area 0x8310, heap
+0x8400-0x8800, loopback 0x8800-0x8C00, FS data
+0x8C00-0x9C00, child stacks at 0xE000/0xC000 — all kernel
+data below 0xA000, clear of both stack regions. Verified by
+`tests/test_kernel_unified.py`: exact transcript over the
+shell tour h/p/s/w/m/f/g/n/q (help, procs, spawn with
+HI landing across a timer tick, wait W0, alloc M33792, FS
+F, GUI windows, net PONG + S4R3D1, BYE), halted, states
+[running, done, free, free], 25 timer ticks, heap bump
++16, net 4/3/1. Honest limits carried over: 2 child slots
+only (a third stack would grow down through the kernel
+regions), and the shell never sleeps (no idle task yet).
+
 ## What does not change
 
 - Black Moon OS (the Linux distro) continues as the system people
