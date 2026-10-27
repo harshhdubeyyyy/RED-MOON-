@@ -249,6 +249,19 @@ verified live) and the Phase E model timer was pushed to BIG-32
 (commit 9e7ef047, verified live) — the model change is no longer
 local-only.
 
+**Checkpoint 2 DONE 27 Oct 2026 — free-list allocator:**
+every block carries an 8-byte header [next, total_size] before
+its payload; freed blocks live in an address-ordered list.
+`alloc` first-fit searches, splits when the remainder is at
+least 16 bytes, else takes the block whole, and falls back to
+bump allocation; `free` inserts address-ordered and coalesces
+with the next physical neighbour first, then the previous one.
+Kernel `examples/os/kernel_freelist.fg` verified by
+`tests/test_kernel_freelist.py` 6/6: exact transcript
+`KERNKKKKDONE` (reuse of b's exact block, patterns, coalesced
+re-alloc), halted, and the predicted heap state (16-byte split
+remainder at 0xA038 as free-list head). Next: filesystem.
+
 ## What does not change
 
 - Black Moon OS (the Linux distro) continues as the system people
