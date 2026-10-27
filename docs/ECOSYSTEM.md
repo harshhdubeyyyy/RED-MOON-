@@ -56,9 +56,11 @@ python3 forge.py lsp
 A stdio LSP server: `initialize`, full-sync `didOpen`/`didChange`
 diagnostics from the real Forge checker, completion for keywords,
 builtins, and function/struct names in the open document,
-`shutdown`/`exit`. The VS Code grammar and language configuration
-are in `editors/vscode/forge/`; point any LSP client at the command
-above for diagnostics that can never drift from `forge check`.
+`shutdown`/`exit`. The full VS Code extension (grammar, snippets,
+language configuration, and a dependency-free LSP client) is in
+`editors/vscode/jalpari/`; the old grammar-only extension stays in
+`editors/vscode/forge/`. Point any LSP client at the command above
+for diagnostics that can never drift from `forge check`.
 
 ## REPL — `forge repl`
 

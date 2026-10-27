@@ -354,7 +354,7 @@ The full tooling is documented in `docs/ECOSYSTEM.md`:
 
 - **Package manager:** `forge pkg init/add/build/run/test/list` — vendored dependencies, no registry needed
 - **Formatter:** `forge fmt <file.fg> [--check]` — idempotent, canonical style
-- **Language server:** `forge lsp` — real-checker diagnostics + completion, with a VS Code grammar in `editors/vscode/forge/`
+- **Language server:** `forge lsp` — real-checker diagnostics + completion, with a full VS Code extension in `editors/vscode/jalpari/` (highlighting, snippets, diagnostics + completion via LSP, Run/Check/Format/Build commands; packaged as `jalpari-1.0.0.vsix`). The old grammar-only extension stays in `editors/vscode/forge/`.
 - **REPL:** `forge repl` — keep `let` definitions, evaluate expressions
 - **Stdlib:** `ml.fg`, `strings.fg`, `stats.fg` — plus string builtins `split/join/substr/trim/starts_with/ends_with`
 - **AI/ML libraries (0.6.0):** `tensor_autograd.fg` (21 ops), `rnn.fg` (LSTM/GRU), `cnn.fg` (conv+pool), `ml_classical.fg` (logreg/k-NN/k-means), `preprocess.fg`, `metrics.fg`, `csv.fg` — plus `test.fg`, `log.fg`, `cli.fg`, `collections.fg` for general development. Import dedup means libraries now combine freely (nn + tensor training in one program).
