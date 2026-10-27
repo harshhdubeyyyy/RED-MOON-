@@ -1,0 +1,233 @@
+// Moon Notes — a tiny notes app in The Jal Pari Language.
+//
+// Usage:
+//   jalpari run moon-notes.fg add TITLE BODY...
+//   jalpari run moon-notes.fg list
+//   jalpari run moon-notes.fg show TITLE
+//   jalpari run moon-notes.fg search WORD
+//   jalpari run moon-notes.fg remove TITLE
+//
+// Storage: one file, notes.txt, in the current directory. One note
+// per line: TITLE, one space, then BODY. Titles come from a single
+// program argument, so they never contain a space — that is what
+// makes the first space a safe separator, and lets bodies contain
+// any spaces. A note added with no body is stored as a bare title
+// line. Adding a title that already exists replaces its body.
+//
+// LIMITS (honest): no directories (no mkdir builtin), so notes.txt
+// lives in the current directory; search is a case-sensitive
+// substring match; titles cannot contain spaces (one argument each).
+
+fn find_space(s: str) -> int {
+    let mut i: int = 0;
+    while i < len(s) {
+        if s[i] == " " {
+            return i;
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+fn contains(hay: str, needle: str) -> bool {
+    if len(needle) == 0 {
+        return true;
+    }
+    if len(needle) > len(hay) {
+        return false;
+    }
+    let mut i: int = 0;
+    while i + len(needle) <= len(hay) {
+        if substr(hay, i, len(needle)) == needle {
+            return true;
+        }
+        i = i + 1;
+    }
+    return false;
+}
+
+fn index_of(titles: [str], title: str) -> int {
+    let mut i: int = 0;
+    while i < len(titles) {
+        if titles[i] == title {
+            return i;
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+fn join_from(argv: [str], start: int) -> str {
+    let mut parts: [str] = [];
+    let mut i: int = start;
+    while i < len(argv) {
+        push(parts, argv[i]);
+        i = i + 1;
+    }
+    return join(parts, " ");
+}
+
+fn save_notes(titles: [str], bodies: [str]) -> bool {
+    let mut lines: [str] = [];
+    let mut i: int = 0;
+    while i < len(titles) {
+        if len(bodies[i]) == 0 {
+            push(lines, titles[i]);
+        } else {
+            push(lines, titles[i] + " " + bodies[i]);
+        }
+        i = i + 1;
+    }
+    return write_file("notes.txt", join(lines, "\n"));
+}
+
+fn print_usage() {
+    println("usage: moon-notes add TITLE BODY...");
+    println("       moon-notes list");
+    println("       moon-notes show TITLE");
+    println("       moon-notes search WORD");
+    println("       moon-notes remove TITLE");
+}
+
+fn main() -> int {
+    let argv: [str] = args();
+    if len(argv) == 0 {
+        print_usage();
+        return 1;
+    }
+    let cmd: str = argv[0];
+
+    // Load notes.txt. A missing file means no notes, not a crash.
+    let mut titles: [str] = [];
+    let mut bodies: [str] = [];
+    if file_exists("notes.txt") {
+        let content: str = read_file("notes.txt");
+        let lines: [str] = split(content, "\n");
+        let mut i: int = 0;
+        while i < len(lines) {
+            let line: str = lines[i];
+            if len(line) > 0 {
+                let sp: int = find_space(line);
+                if sp == -1 {
+                    push(titles, line);
+                    push(bodies, "");
+                } else {
+                    push(titles, substr(line, 0, sp));
+                    push(bodies, substr(line, sp + 1, len(line) - sp - 1));
+                }
+            }
+            i = i + 1;
+        }
+    }
+
+    if cmd == "list" {
+        if len(titles) == 0 {
+            println("no notes yet");
+        } else {
+            let mut i: int = 0;
+            while i < len(titles) {
+                println(titles[i]);
+                i = i + 1;
+            }
+        }
+        return 0;
+    }
+
+    if cmd == "add" {
+        if len(argv) < 2 {
+            print_usage();
+            return 1;
+        }
+        let title: str = argv[1];
+        let body: str = join_from(argv, 2);
+        let idx: int = index_of(titles, title);
+        if idx == -1 {
+            push(titles, title);
+            push(bodies, body);
+        } else {
+            bodies[idx] = body;
+        }
+        let saved: bool = save_notes(titles, bodies);
+        if !saved {
+            println("error: could not write notes.txt");
+            return 1;
+        }
+        println("saved", title);
+        return 0;
+    }
+
+    if cmd == "show" {
+        if len(argv) < 2 {
+            print_usage();
+            return 1;
+        }
+        let idx: int = index_of(titles, argv[1]);
+        if idx == -1 {
+            println("error: no note titled", argv[1]);
+            fail("note not found");
+        }
+        println(titles[idx]);
+        println(bodies[idx]);
+        return 0;
+    }
+
+    if cmd == "search" {
+        if len(argv) < 2 {
+            print_usage();
+            return 1;
+        }
+        let word: str = argv[1];
+        let mut found: int = 0;
+        let mut i: int = 0;
+        while i < len(titles) {
+            if contains(titles[i], word) {
+                println(titles[i]);
+                found = found + 1;
+            } else {
+                if contains(bodies[i], word) {
+                    println(titles[i]);
+                    found = found + 1;
+                }
+            }
+            i = i + 1;
+        }
+        if found == 0 {
+            println("no matches");
+        }
+        return 0;
+    }
+
+    if cmd == "remove" {
+        if len(argv) < 2 {
+            print_usage();
+            return 1;
+        }
+        let idx: int = index_of(titles, argv[1]);
+        if idx == -1 {
+            println("error: no note titled", argv[1]);
+            fail("note not found");
+        }
+        let mut kept_titles: [str] = [];
+        let mut kept_bodies: [str] = [];
+        let mut i: int = 0;
+        while i < len(titles) {
+            if i != idx {
+                push(kept_titles, titles[i]);
+                push(kept_bodies, bodies[i]);
+            }
+            i = i + 1;
+        }
+        titles = kept_titles;
+        bodies = kept_bodies;
+        let saved: bool = save_notes(titles, bodies);
+        if !saved {
+            println("error: could not write notes.txt");
+            return 1;
+        }
+        println("removed", argv[1]);
+        return 0;
+    }
+
+    print_usage();
+    return 1;
+}

@@ -248,6 +248,22 @@ static char *forge_read_file(const char *path) {
     return buf;
 }
 
+static char *forge_read_line(void) {
+    static char buf[8192];
+    if (!fgets(buf, sizeof(buf), stdin)) {
+        char *empty = (char *)malloc(1);
+        if (!empty) forge_fail("out of memory");
+        empty[0] = '\0';
+        return empty;
+    }
+    size_t n = strlen(buf);
+    while (n > 0 && (buf[n-1] == '\n' || buf[n-1] == '\r')) buf[--n] = '\0';
+    char *out = (char *)malloc(n + 1);
+    if (!out) forge_fail("out of memory");
+    memcpy(out, buf, n + 1);
+    return out;
+}
+
 static bool forge_write_file(const char *path, const char *content) {
     FILE *f = fopen(path, "wb");
     if (!f) return false;
@@ -1025,7 +1041,7 @@ class Codegen:
         (a user-function return, a str helper, or string concat),
         so taking it as-is does not leak or double-own."""
         if isinstance(expr, A.Call):
-            if expr.name in ("read_file", "join", "substr", "trim", "http_get", "http_read_request"):
+            if expr.name in ("read_file", "read_line", "join", "substr", "trim", "http_get", "http_read_request"):
                 return True
             if self.func_ret.get(expr.name) == "str" and not self.func_is_extern.get(expr.name):
                 return True
@@ -2361,6 +2377,8 @@ class Codegen:
                 return f"forge_file_exists({self.gen_expr(expr.args[0])})"
             if expr.name == "read_file":
                 return f"forge_read_file({self.gen_expr(expr.args[0])})"
+            if expr.name == "read_line":
+                return "forge_read_line()"
             if expr.name == "write_file":
                 return (f"forge_write_file({self.gen_expr(expr.args[0])}, "
                         f"{self.gen_expr(expr.args[1])})")

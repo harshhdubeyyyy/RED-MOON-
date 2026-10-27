@@ -30,7 +30,7 @@ C_KEYWORDS = {"auto", "case", "char", "const", "continue", "default",
               "void", "volatile", "_Bool", "_Complex", "_Imaginary"}
 STMT_BUILTINS = {"print", "println", "push", "fail", "assert"}
 EXPR_BUILTINS = {"len", "range", "clock_micros", "sqrt", "exp", "log", "pow", "abs",
-                 "read_file", "write_file", "read_bytes", "write_bytes",
+                 "read_file", "read_line", "write_file", "read_bytes", "write_bytes",
                  "file_exists", "args", "parse_int", "parse_float",
                  "split", "join", "substr", "trim", "starts_with", "ends_with",
                  "http_get", "http_listen", "http_accept", "http_read_request",
@@ -879,6 +879,11 @@ class Checker:
         if call.name == "read_file":
             if len(call.args) != 1 or self.check_expr(call.args[0]) != "str":
                 raise ForgeError("read_file() takes exactly one str argument",
+                                 call.line, call.col)
+            return "str"
+        if call.name == "read_line":
+            if len(call.args) != 0:
+                raise ForgeError("read_line() takes no arguments",
                                  call.line, call.col)
             return "str"
         if call.name == "write_file":

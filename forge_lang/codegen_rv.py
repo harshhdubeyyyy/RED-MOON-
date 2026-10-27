@@ -1201,6 +1201,7 @@ class RVGen:
         if name in ("print", "println", "push"):
             raise ForgeError(f"{name}() cannot be used as an expression on big32")
         if name in ("sqrt", "exp", "log", "pow", "clock_micros", "read_file",
+                    "read_line",
                     "write_file", "args", "parse_int", "split", "join",
                     "substr", "trim", "starts_with", "ends_with", "http_get"):
             raise ForgeError(f"builtin {name}() is not supported on big32 (v1)")

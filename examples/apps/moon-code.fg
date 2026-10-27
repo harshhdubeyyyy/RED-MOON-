@@ -1,0 +1,208 @@
+// Moon Code — a tiny line editor, written in The Jal Pari Language.
+// It is the first interactive terminal program in Jal Pari, made
+// possible by the read_line builtin (stdin, one line at a time).
+//
+// Commands (one per line on stdin):
+//   open FILE        load FILE, replacing the buffer
+//   list             show every line, numbered from 1
+//   print N          show line N
+//   append TEXT      add TEXT as a new last line
+//   insert N TEXT    insert TEXT before line N (N may be nlines + 1)
+//   delete N         remove line N
+//   save [FILE]      write the buffer (to FILE, or the opened file)
+//   quit             exit (a blank line, or end of input, also quits)
+//
+// Usage: moon-code [FILE] — with FILE, it opens that file on startup.
+// Bad line numbers, missing files, and unknown commands print an
+// error and do NOT crash: the loop just keeps going.
+//
+// Design notes: the buffer keeps the invariant len(lines) == nlines
+// at all times (edits rebuild the array), so append/insert/delete
+// never touch a stale slot. Line numbers are 1-based, as editors do.
+
+fn is_digit(c: str) -> bool {
+    return c == "0" || c == "1" || c == "2" || c == "3" || c == "4" || c == "5" || c == "6" || c == "7" || c == "8" || c == "9";
+}
+
+// parse_num parses a non-negative integer, or returns -1 for anything
+// else. It exists because parse_int() aborts the whole program on bad
+// input, which must never happen for a typed line number.
+fn parse_num(s: str) -> int {
+    if len(s) == 0 {
+        return -1;
+    }
+    let mut i: int = 0;
+    while i < len(s) {
+        if is_digit(s[i]) {
+            i = i + 1;
+        } else {
+            return -1;
+        }
+    }
+    return parse_int(s);
+}
+
+// load_file reads a file into lines, dropping the empty tail that
+// split() leaves when the file ends with a newline (so "a\nb\n" is
+// two lines, not three). Callers must check file_exists() first:
+// read_file() aborts on a missing file.
+fn load_file(name: str) -> [str] {
+    let text: str = read_file(name);
+    let raw: [str] = split(text, "\n");
+    let n: int = len(raw);
+    if n > 0 {
+        if raw[n - 1] == "" {
+            let mut kept: [str] = [];
+            let mut i: int = 0;
+            while i < n - 1 {
+                push(kept, raw[i]);
+                i = i + 1;
+            }
+            return kept;
+        }
+    }
+    return raw;
+}
+
+// save_file writes lines back with one trailing newline, or an empty
+// file when there are no lines. Returns write_file's success flag.
+fn save_file(name: str, lines: [str]) -> bool {
+    let mut content: str = "";
+    if len(lines) > 0 {
+        content = join(lines, "\n") + "\n";
+    }
+    return write_file(name, content);
+}
+
+fn main() -> int {
+    let mut lines: [str] = [];
+    let mut nlines: int = 0;
+    let mut filename: str = "";
+    let cmdargs: [str] = args();
+    if len(cmdargs) > 0 {
+        filename = cmdargs[0];
+        if file_exists(filename) {
+            lines = load_file(filename);
+            nlines = len(lines);
+            println("opened", filename);
+        } else {
+            println("open: cannot open", filename);
+            filename = "";
+        }
+    }
+    while true {
+        let cmd: str = read_line();
+        if cmd == "" {
+            break;
+        }
+        if cmd == "quit" {
+            break;
+        }
+        if cmd == "list" {
+            let mut i: int = 0;
+            while i < nlines {
+                println(i + 1, lines[i]);
+                i = i + 1;
+            }
+        } else if cmd == "open" {
+            println("open: need a file name");
+        } else if starts_with(cmd, "open ") {
+            let name: str = substr(cmd, 5, len(cmd) - 5);
+            if file_exists(name) {
+                lines = load_file(name);
+                nlines = len(lines);
+                filename = name;
+                println("opened", name);
+            } else {
+                println("open: cannot open", name);
+            }
+        } else if cmd == "print" {
+            println("print: need a line number");
+        } else if starts_with(cmd, "print ") {
+            let n: int = parse_num(substr(cmd, 6, len(cmd) - 6));
+            if n < 1 || n > nlines {
+                println("print: no line", n);
+            } else {
+                println(n, lines[n - 1]);
+            }
+        } else if cmd == "append" {
+            println("append: need text");
+        } else if starts_with(cmd, "append ") {
+            let text: str = substr(cmd, 7, len(cmd) - 7);
+            push(lines, text);
+            nlines = nlines + 1;
+        } else if cmd == "insert" {
+            println("insert: need a line number and text");
+        } else if starts_with(cmd, "insert ") {
+            let rest: str = substr(cmd, 7, len(cmd) - 7);
+            let parts: [str] = split(rest, " ");
+            let n: int = parse_num(parts[0]);
+            if n < 1 || n > nlines + 1 {
+                println("insert: no line", n);
+            } else {
+                let mut text: str = "";
+                if len(parts) > 1 {
+                    text = parts[1];
+                    let mut i: int = 2;
+                    while i < len(parts) {
+                        text = text + " " + parts[i];
+                        i = i + 1;
+                    }
+                }
+                let mut kept: [str] = [];
+                let mut i: int = 0;
+                while i < nlines {
+                    if i == n - 1 {
+                        push(kept, text);
+                    }
+                    push(kept, lines[i]);
+                    i = i + 1;
+                }
+                if n == nlines + 1 {
+                    push(kept, text);
+                }
+                lines = kept;
+                nlines = nlines + 1;
+            }
+        } else if cmd == "delete" {
+            println("delete: need a line number");
+        } else if starts_with(cmd, "delete ") {
+            let n: int = parse_num(substr(cmd, 7, len(cmd) - 7));
+            if n < 1 || n > nlines {
+                println("delete: no line", n);
+            } else {
+                let mut kept: [str] = [];
+                let mut i: int = 0;
+                while i < nlines {
+                    if i != n - 1 {
+                        push(kept, lines[i]);
+                    }
+                    i = i + 1;
+                }
+                lines = kept;
+                nlines = nlines - 1;
+            }
+        } else if cmd == "save" {
+            if filename == "" {
+                println("save: no file name (use save FILE)");
+            } else {
+                if save_file(filename, lines) {
+                    println("saved", filename);
+                } else {
+                    println("save: cannot write", filename);
+                }
+            }
+        } else if starts_with(cmd, "save ") {
+            filename = substr(cmd, 5, len(cmd) - 5);
+            if save_file(filename, lines) {
+                println("saved", filename);
+            } else {
+                println("save: cannot write", filename);
+            }
+        } else {
+            println("unknown command:", cmd);
+        }
+    }
+    println("bye");
+    return 0;
+}

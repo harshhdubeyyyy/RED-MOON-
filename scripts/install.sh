@@ -3,7 +3,7 @@
 # Usage, from a checkout of RED-MOON-:
 #   sh scripts/install.sh
 # Usage, without cloning first (needs git):
-#   git clone https://github.com/jayantt1dubeyy/RED-MOON- && cd RED-MOON- && sh scripts/install.sh
+#   git clone https://github.com/harshhdubeyyyy/RED-MOON- && cd RED-MOON- && sh scripts/install.sh
 # What it does:
 #   1. Checks python3 and a C compiler (cc) are present.
 #   2. Symlinks bin/jalpari into ~/.local/bin/jalpari.
