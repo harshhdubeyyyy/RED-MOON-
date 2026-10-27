@@ -316,6 +316,51 @@ halted, final states [running, done, done, free], exit codes
 0, pids 1 and 2 recorded, plus a probe proving the
 exit-with-nobody-left halt path. Next: shell.
 
+**Checkpoint 6 DONE 27 Oct 2026 — shell:** a REPL over UART
+RX: prompt, line input with echo, dispatch on the first
+character (freestanding rejects string values, so commands are
+single characters): h = help, p = procs, s = spawn the demo
+task, w = wait for the last spawned task, q = quit, anything
+else = ?. The shell yields while waiting for input and once
+per iteration, so spawned tasks genuinely run between
+keystrokes. This checkpoint also extends the big32 model
+itself: `run()` takes `input_bytes`, and RX pops from that
+queue (previously RX always returned -1, so no interactive
+program could ever be tested). Kernel
+`examples/os/kernel_shell.fg` verified by
+`tests/test_kernel_shell.py`: exact transcript over the input
+`h, x, s, w, p, q` (help, unknown, spawn with H/I landing
+between prompts, wait printing W0, procs showing ready ->
+done, BYE), halted. Next: GUI.
+
+**Checkpoint 7 DONE 27 Oct 2026 — GUI:** no framebuffer
+hardware exists in the model or the Verilog, so the GUI is a
+text windowing system over UART in the ncurses spirit:
+ANSI-drawn boxes rendered by the terminal, single-character
+titles (freestanding rejects string values), and focus as a
+redraw (no back-buffer exists). Kernel
+`examples/os/kernel_gui.fg` verified by
+`tests/test_kernel_gui.py`: exact ANSI byte stream (clear,
+window A, overlapping window B, A redrawn to front, DONE),
+halted. Next: drivers.
+
+**Checkpoint 8 DONE 27 Oct 2026 — drivers:** UART driver
+(putc/getc) and timer driver (mtime/mtimecmp, interrupt
+enable, sleep) as the hardware layer — all MMIO goes through
+these functions. Sleep blocks the task until its wake time;
+the timer interrupt wakes due tasks and preemptively
+switches; interrupts resume at mepc, ecalls at mepc + 4.
+Kernel `examples/os/kernel_drivers.fg` verified by
+`tests/test_kernel_drivers.py`: exact transcript
+`KERNBADONE` (B before A proves wake ordering), halted,
+final states [running, done, done, free], 7 timer ticks.
+Caught in testing: the first demo used 3 vs 1 ticks and the
+two wake times landed in the same tick interval, so A
+printed first — sleep differences must exceed scheduling
+jitter (~1900 steps here), so the demo uses 6 vs 1. Known
+limitation: no idle task yet, so sleep with no other ready
+task degrades to an immediate resume. Next: networking.
+
 ## What does not change
 
 - Black Moon OS (the Linux distro) continues as the system people
