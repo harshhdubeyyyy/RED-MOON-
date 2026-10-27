@@ -28,7 +28,8 @@ C_KEYWORDS = {"auto", "case", "char", "const", "continue", "default",
               "register", "restrict", "short", "signed", "sizeof",
               "static", "switch", "typedef", "union", "unsigned",
               "void", "volatile", "_Bool", "_Complex", "_Imaginary"}
-STMT_BUILTINS = {"print", "println", "push", "fail", "assert", "poke32"}
+STMT_BUILTINS = {"print", "println", "push", "fail", "assert", "poke32",
+                 "csr_write", "csr_set", "csr_clear"}
 EXPR_BUILTINS = {"len", "range", "clock_micros", "sqrt", "exp", "log", "pow", "abs",
                  "read_file", "read_line", "write_file", "read_bytes", "write_bytes",
                  "file_exists", "args", "parse_int", "parse_float",
@@ -38,7 +39,7 @@ EXPR_BUILTINS = {"len", "range", "clock_micros", "sqrt", "exp", "log", "pow", "a
                  "alloc_count", "free_count",
                  "parallel_dot", "parallel_matmul",
                  "arr_alloc_count", "arr_free_count",
-                 "peek32"}
+                 "peek32", "csr_read", "ecall"}
 BUILTINS = STMT_BUILTINS | EXPR_BUILTINS
 
 
@@ -671,6 +672,18 @@ class Checker:
                     raise ForgeError("poke32() takes int arguments",
                                      call.line, call.col)
             return
+        if call.name in ("csr_write", "csr_set", "csr_clear"):
+            if len(call.args) != 2 or not isinstance(call.args[0], A.IntLit):
+                raise ForgeError(f"{call.name}() takes a literal CSR number "
+                                 f"and an int value",
+                                 call.line, call.col)
+            if not 0 <= call.args[0].value <= 4095:
+                raise ForgeError("CSR number must be in 0..4095",
+                                 call.line, call.col)
+            if self.check_expr(call.args[1]) != "int":
+                raise ForgeError(f"{call.name}() value must be int",
+                                 call.line, call.col)
+            return
         raise ForgeError(f"unknown builtin '{call.name}'", call.line, call.col)
 
     def check_expr(self, expr):
@@ -929,6 +942,26 @@ class Checker:
             if len(call.args) != 1 or self.check_expr(call.args[0]) != "int":
                 raise ForgeError("peek32() takes exactly one int argument",
                                  call.line, call.col)
+            return "int"
+        if call.name == "csr_read":
+            # RISC-V CSR instructions take a 12-bit immediate, not a
+            # register, so the CSR number must be a literal.
+            if len(call.args) != 1 or not isinstance(call.args[0], A.IntLit):
+                raise ForgeError("csr_read() takes exactly one literal CSR number",
+                                 call.line, call.col)
+            if not 0 <= call.args[0].value <= 4095:
+                raise ForgeError("CSR number must be in 0..4095",
+                                 call.line, call.col)
+            return "int"
+        if call.name == "ecall":
+            if len(call.args) != 2:
+                raise ForgeError("ecall() takes exactly two arguments "
+                                 "(extension id, argument)",
+                                 call.line, call.col)
+            for a in call.args:
+                if self.check_expr(a) != "int":
+                    raise ForgeError("ecall() takes int arguments",
+                                     call.line, call.col)
             return "int"
         if call.name == "write_file":
             if len(call.args) != 2:

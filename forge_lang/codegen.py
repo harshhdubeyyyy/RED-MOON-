@@ -2504,6 +2504,10 @@ class Codegen:
             if expr.name == "poke32":
                 return (f"forge_poke32({self.gen_expr(expr.args[0])}, "
                         f"{self.gen_expr(expr.args[1])})")
+            if expr.name in ("csr_read", "csr_write", "csr_set", "csr_clear", "ecall"):
+                raise ForgeError(f"{expr.name}() needs RISC-V CSRs/ecall "
+                                 f"(big32 target only)",
+                                 expr.line, expr.col)
             if expr.name == "write_file":
                 return (f"forge_write_file({self.gen_expr(expr.args[0])}, "
                         f"{self.gen_expr(expr.args[1])})")

@@ -133,21 +133,46 @@ bump allocator for strings/arrays is now kernel work, not a
 Phase C promise: the roadmap's original allocator line is
 superseded by this honest v1.
 
-### Phase D — Traps, interrupts, and firmware calls
+### Phase D — Traps, interrupts, and firmware calls (DONE 27 Oct 2026)
 
-- CSR builtins (`csr_read`/`csr_write`/`csr_set`/`csr_clear`) for
-  `mstatus`, `mtvec`, `mie`, `mtimecmp` and friends.
-- A trap-handler hook: the runtime's assembly entry saves
-  registers and calls a Jal Pari function with a reserved name,
-  so interrupt and exception handling is written in Jal Pari.
-- An `ecall` builtin for SBI calls during bring-up. Using the
-  existing big32 SBI firmware as a bootloader/firmware layer is
-  honest, not cheating: TempleOS also ran on BIOS/UEFI firmware.
-  The kernel itself is still ours; SBI is the floor it stands on,
-  and later phases can replace SBI console/timer use with direct
+- CSR builtins: `csr_read(csr) -> int` (expression) and
+  statement-only `csr_write`/`csr_set`/`csr_clear` (like
+  `poke32`). The CSR number must be a literal: RISC-V CSR
+  instructions take a 12-bit immediate, not a register, so a
+  runtime value cannot encode one — the checker enforces this.
+  Native and WASM reject all four loudly (no RISC-V CSRs there).
+- Trap-handler hook: defining `fn trap_handler()` (no args,
+  void — enforced by the big32 backend) makes `_start` point
+  `mtvec` at an assembly stub that saves all 30 clobberable
+  registers on the stack, calls the handler, restores, and
+  `mret`s. The stub does NOT touch `mepc`: advancing past an
+  ecall is the handler's job (read `mcause`/`mepc`, write
+  `mepc+4` for ecall traps). Program end still halts with a
+  handler wired: main's ending (and fail/assert paths) clear
+  `mtvec` before the final ecall, since a bare ecall with
+  `mtvec` set would trap, not halt.
+- `ecall(eid, arg) -> int`: extension id in `a7`, argument in
+  `a0`, result back in `a0`. On SBI firmware this is the SBI
+  call primitive; on the model it traps to the program's own
+  handler. v1 covers single-argument calls only — full `sbiret`
+  (error in `a0`, value in `a1`) and two-argument calls are
+  named follow-up, not done.
+- Honest checkpoint correction: the model's timer does not
+  exist — there is no CLINT, no interrupt delivery, and no SBI
+  emulation in `model.py`, so a "timer tick" cannot reach Jal
+  Pari code there. The checkpoint is therefore ecall-driven,
+  not timer-driven: `tests/test_traps.py` (18 checks) proves
+  CSR set/clear/read, an `mscratch` round-trip, an ecall trap
+  firing the handler and returning to continue, the exact UART
+  transcript `SCRTK`, and a clean halt (not a slide through
+  NOPs). A real timer tick needs model or hardware interrupt
+  delivery first — that is Phase E bring-up work, not something
+  Phase D can fake. Using the existing big32 SBI firmware as a
+  bootloader/firmware layer stays honest, not cheating:
+  TempleOS also ran on BIOS/UEFI firmware. The kernel itself
+  is still ours; SBI is the floor it stands on, and later
+  phases can replace SBI console/timer use with direct
   drivers.
-- Checkpoint: a timer tick reaching Jal Pari code, counted and
-  printed to UART.
 
 ### Phase E — Boot story and the first kernel
 

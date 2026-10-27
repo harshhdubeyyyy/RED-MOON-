@@ -8,6 +8,13 @@ without a major version bump (see docs/STABILITY.md).
 
 ## Unreleased
 
+- Traps + firmware calls (Phase D of the freestanding track;
+  see docs/FREESTANDING.md): csr_read/csr_write/csr_set/
+  csr_clear (literal CSR numbers only), trap_handler hook
+  (mtvec + full register save/restore stub + mret), ecall(eid,
+  arg) SBI-call primitive; program end clears mtvec before
+  halting. Checkpoint is ecall-driven (the model has no timer
+  or SBI emulation) with exact UART transcript SCRTK.
 - `--freestanding` build mode (Phase C of the freestanding
   track; see docs/FREESTANDING.md): native builds with
   `-nostdlib` and the program's own `_start` (raw exit_group

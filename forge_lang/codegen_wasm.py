@@ -894,6 +894,9 @@ class WasmGen:
             if expr.name in ("peek32", "poke32"):
                 raise ForgeError(f"wasm: {expr.name}() needs raw memory addresses, "
                                  f"which WASM does not expose")
+            if expr.name in ("csr_read", "csr_write", "csr_set", "csr_clear", "ecall"):
+                raise ForgeError(f"wasm: {expr.name}() needs RISC-V CSRs/ecall "
+                                 f"(big32 target only)")
             if expr.name not in self.func_index:
                 raise ForgeError(f"wasm: call to '{expr.name}' is not supported in v1 "
                                  f"(builtins, structs, and enums are out)")

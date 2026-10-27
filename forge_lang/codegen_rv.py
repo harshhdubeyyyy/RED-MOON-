@@ -174,6 +174,17 @@ class RVGen:
             raise ForgeError("enums are not supported on big32 (v1)")
         if "main" not in self.funcs:
             raise ForgeError("big32 target needs a main function")
+        # Trap-handler hook: a function named trap_handler, if present,
+        # is wired to mtvec by _start and called by the trap entry
+        # stub on every trap. It takes no arguments (it reads mcause/
+        # mepc itself via csr_read) and returns nothing.
+        self.has_trap_handler = "trap_handler" in self.funcs
+        if self.has_trap_handler:
+            th = self.funcs["trap_handler"]
+            if th.params or th.ret != "void":
+                raise ForgeError("trap_handler() must take no arguments "
+                                 "and return nothing",
+                                 th.line, th.col)
         for fn in self.program.funcs:
             if getattr(fn, "is_extern", False):
                 raise ForgeError("extern functions are not supported on big32")
@@ -191,15 +202,26 @@ class RVGen:
             self.gen_func(fn)
         body = self.lines
         self.lines = []
-        # _start: stack, static strings, call main, halt.
+        # _start: stack, static strings, trap vector, call main, halt.
         self.emit("_start:")
         self.emit(f"    li sp, {SP_START}")
         self.lines.extend(self.init_lines)
+        if self.has_trap_handler:
+            self.emit("    la t0, forge_trap_entry")
+            self.emit("    csrw 773, t0")
         self.emit("    jal ra, main")
-        self.emit("    ecall")
+        self.emit_halt()
         self.lines.extend(body)
         self.lines.extend(self.helpers())
         return "\n".join(self.lines) + "\n"
+
+    def emit_halt(self):
+        # Halt: with a trap handler wired, a bare ecall would trap
+        # instead of halting (and the handler would return past it
+        # into whatever follows). So clear mtvec first, then ecall.
+        if self.has_trap_handler:
+            self.emit("    csrw 773, zero")
+        self.emit("    ecall")
 
     def helpers(self):
         # Note: true/false strings are allocated during gen_func (bool
@@ -610,6 +632,27 @@ class RVGen:
         h.append("fm_zero_signed:")
         h.append("    mv a0, s2")
         h.append("    ret")
+        if self.has_trap_handler:
+            # Trap entry: save every register the handler could
+            # touch on the stack (sp is always valid at a trap in
+            # well-formed programs), call the Jal Pari handler,
+            # restore, and return from the trap. The stub does NOT
+            # touch mepc: advancing past an ecall (or not) is the
+            # handler's job — it reads mcause/mepc via csr_read and
+            # writes mepc via csr_write.
+            regs = ["ra", "gp", "tp", "t0", "t1", "t2", "s0", "s1",
+                    "a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7",
+                    "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9",
+                    "s10", "s11", "t3", "t4", "t5", "t6"]
+            h.append("forge_trap_entry:")
+            h.append(f"    addi sp, sp, -{4 * len(regs)}")
+            for i, r in enumerate(regs):
+                h.append(f"    sw {r}, {4 * i}(sp)")
+            h.append("    jal ra, trap_handler")
+            for i, r in enumerate(regs):
+                h.append(f"    lw {r}, {4 * i}(sp)")
+            h.append(f"    addi sp, sp, {4 * len(regs)}")
+            h.append("    mret")
         return h
 
     # ---------- functions ----------
@@ -635,7 +678,7 @@ class RVGen:
             self.emit(f"    sw a{i}, {self.slot_off(slot)}(s0)")
         self.gen_block(fn.body)
         if fn.name == "main":
-            self.emit("    ecall")
+            self.emit_halt()
         else:
             self.emit(f"{self.epilogue}:")
             self.emit("    mv sp, s0")
@@ -808,7 +851,7 @@ class RVGen:
                 self.emit(f"    mv a0, {r}")
                 self.free_reg(r)
             if self.cur_fn == "main":
-                self.emit("    ecall")
+                self.emit_halt()
             else:
                 self.emit(f"    j {self.epilogue}")
             return
@@ -827,7 +870,7 @@ class RVGen:
                 self.free_reg(msg)
                 self.emit("    jal ra, forge_print_str")
                 self.emit("    li a0, 1")
-                self.emit("    ecall")
+                self.emit_halt()
                 self.emit(f"{ok}:")
                 return
             if isinstance(call, A.Call) and call.name == "fail":
@@ -836,7 +879,7 @@ class RVGen:
                 self.free_reg(msg)
                 self.emit("    jal ra, forge_print_str")
                 self.emit("    li a0, 1")
-                self.emit("    ecall")
+                self.emit_halt()
                 return
             if isinstance(call, A.Call) and call.name == "push":
                 raise ForgeError("push (dynamic growth) is not supported on big32 (v1)")
@@ -1218,6 +1261,47 @@ class RVGen:
             self.emit(f"    sw {v}, 0({a})")
             self.free_reg(a)
             return v
+        if name == "csr_read":
+            if not isinstance(expr.args[0], A.IntLit):
+                raise ForgeError("csr_read() takes a literal CSR number",
+                                 expr.line, expr.col)
+            r = self.alloc()
+            self.emit(f"    csrr {r}, {expr.args[0].value}")
+            return r
+        if name in ("csr_write", "csr_set", "csr_clear"):
+            if not isinstance(expr.args[0], A.IntLit):
+                raise ForgeError(f"{name}() takes a literal CSR number",
+                                 expr.line, expr.col)
+            v = self.gen_expr(expr.args[1])
+            mnem = {"csr_write": "csrw", "csr_set": "csrs",
+                    "csr_clear": "csrc"}[name]
+            self.emit(f"    {mnem} {expr.args[0].value}, {v}")
+            return v
+        if name == "ecall":
+            # SBI-style call: extension id in a7, argument in a0,
+            # result back in a0. The trap stub saves/restores every
+            # register, so no spill is needed across the ecall.
+            eid = self.gen_expr(expr.args[0])
+            arg = self.gen_expr(expr.args[1])
+            arg_regs = [eid, arg]
+            scratch = None
+            for cand in TEMPS:
+                if cand not in arg_regs and cand not in self.live:
+                    scratch = cand
+                    break
+            if scratch is None:
+                raise ForgeError("no scratch register available for ecall")
+            for target, r in ((7, eid), (0, arg)):
+                if r == f"a{target}":
+                    continue
+                self.emit(f"    mv {scratch}, {r}")
+                self.emit(f"    mv a{target}, {scratch}")
+            self.emit("    ecall")
+            out = self.alloc()
+            self.emit(f"    mv {out}, a0")
+            self.free_reg(eid)
+            self.free_reg(arg)
+            return out
         if name not in self.funcs:
             raise ForgeError(f"unknown function {name} on big32")
         if len(expr.args) > 8:
