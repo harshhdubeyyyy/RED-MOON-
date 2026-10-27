@@ -1,0 +1,92 @@
+# Integration: RED-MOON- × BLACK-MOON-OS-
+
+How the two repositories fit together, who owns what, and which
+combinations are verified to work. This file lives in RED-MOON- (the
+language side); BLACK-MOON-OS- carries a mirror note (`INTEGRATION.md`
+at its root) from the distro side.
+
+## Current state (27 Oct 2026)
+
+- RED-MOON- live `main`: `d56a903` (v1.1.0, tag + Release 424664586).
+- BLACK-MOON-OS- live `main`: `6fab40f` (theme + AI + cyber update).
+- RED-MOON- working tree (this checkout) holds post-1.1.0 work that is
+  NOT on live `main` yet: the Windows port, registry deploy configs,
+  JalOS with `ai`/`audit` (1408 lines), and CHANGELOG "Unreleased"
+  entries. Pushing it needs the owner's explicit word (see below).
+- Local git HEAD here (`4688857`, v0.3.0 era) is stale and is NOT the
+  push path: RED-MOON- is published by `scripts/push_forge.py`, which
+  builds Git trees from this working tree via the GitHub API. Do not
+  treat local git history as the project's history.
+
+## Ownership
+
+| Component | Owner | Notes |
+|---|---|---|
+| Jal Pari language, compiler, stdlib, registry, packages | RED-MOON- | Source of truth; versioned releases |
+| `examples/os/jalos.fg` (JalOS source) | RED-MOON- | Suite-guarded: `tests/run_tests.py` pins its exact 254-line demo output |
+| Distro profile, theme, AI/sec launchers, installer | BLACK-MOON-OS- | archiso profile under `distro/` |
+| `jalos.fg` copies in BLACK-MOON-OS- (root + `distro/.../blackmoon/`) | BLACK-MOON-OS- vendors | Byte-identical copies of RED-MOON-'s file; see Sync |
+| Kaggle notebook (`jalos-on-kaggle.ipynb`) | Neither (workspace) | Reference combined workflow; clones both repos |
+
+## Interfaces (explicit, no silent dependencies)
+
+1. **Source compatibility.** BLACK-MOON-OS- consumes RED-MOON-
+   releases: any `jalos.fg` it ships must build with the released
+   compiler. JalOS needs v1.1.0-level features (arrays of structs,
+   `break`, string indexing); minimum compiler is RED-MOON- v1.1.0.
+2. **Vendoring, not submodules.** BLACK-MOON-OS- carries copies of
+   `jalos.fg`, not a git submodule: the API push scripts build plain
+   trees and do not support gitlinks, so copies plus a check script
+   are the mechanism that actually works here.
+3. **Sync check.** `tools/check_jalos_sync.py` (this repo) verifies
+   the combined workflow: all three `jalos.fg` copies byte-identical,
+   the demo output matches BLACK-MOON-OS-'s `tests/expected_output.txt`,
+   and the `ai`/`audit` commands print their expected markers.
+   Run it before any release that touches either side.
+4. **Distro install.** `blackmoon-install-jalpari` (BLACK-MOON-OS-)
+   clones RED-MOON- into the installed system and runs its
+   `scripts/install.sh`. The distro therefore depends on RED-MOON-'s
+   install script staying runnable, not on any internal layout.
+5. **Kaggle notebook.** Clones RED-MOON- (compiler) + BLACK-MOON-OS-
+   (`jalos.fg`) and builds across repos. It is the standing proof
+   that the two live mains work together (see Matrix).
+
+## Compatibility matrix (verified, not claimed)
+
+| RED-MOON- | BLACK-MOON-OS- | Verified | How |
+|---|---|---|---|
+| v1.1.0 (`d56a903`) | `6fab40f` | 27 Oct 2026 | Kaggle kernel v1: RUNNING → COMPLETE; log shows demo, `ai` (4 epochs), `audit` |
+| working tree post-1.1.0 | `6fab40f` | 27 Oct 2026 | `jalos.fg` byte-identical across all 3 copies; demo output identical (254 lines) |
+
+## Known drift (open, not hidden)
+
+- RED-MOON- live `main` does NOT contain: Windows port, registry
+  deploy configs, JalOS `ai`/`audit`, CHANGELOG "Unreleased". Until
+  those are pushed, anyone cloning RED-MOON- alone gets the older
+  JalOS (no `ai`/`audit`) — the Kaggle notebook avoids this by
+  taking `jalos.fg` from BLACK-MOON-OS-.
+- BLACK-MOON-OS- live `main` is current (includes the new JalOS).
+- The distro ISO itself is still unbuilt/unbooted (needs an Arch
+  builder); the theme, AI/sec launchers, and installer theme-copying
+  are untested until first boot, same as the rest of the profile.
+
+## Sync procedure (on any JalOS or compiler change)
+
+1. Change `examples/os/jalos.fg` here (or the compiler) and run the
+   full native suite (`python3 forge.py test`).
+2. Copy `jalos.fg` to BLACK-MOON-OS- root and
+   `distro/archiso/airootfs/usr/share/blackmoon/jalos.fg`; byte-compare.
+3. Run `python3 tools/check_jalos_sync.py --blackmoon <dir>`.
+4. Push RED-MOON- (`scripts/push_forge.py`) and BLACK-MOON-OS-
+   (`scripts/push_jalos.py`) — **only on the owner's explicit word**;
+   pushes are external publication and are never assumed.
+5. Update the matrix above with the new refs and how they were verified.
+
+## Next actions
+
+1. Push RED-MOON- post-1.1.0 work (owner approval pending) — closes
+   the drift; then re-run the sync check and extend the matrix.
+2. Decide the next version number/release notes for that push
+   (no version bump decided yet).
+3. First ISO build + VM boot test (needs an Arch builder) — the
+   standing blocker for every distro claim beyond "profile done".

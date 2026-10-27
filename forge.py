@@ -212,13 +212,24 @@ def main(argv=None):
                 with open(c_path, "w", encoding="utf-8") as f:
                     f.write(c_source)
                 cc_bin = os.environ.get("JALPARI_CC", "cc")
-                flags = ([cc_bin, "-O3", "-march=native", "-std=gnu11", "-pthread"] if args.mode == "fast"
+                mingw = "mingw" in cc_bin
+                flags = ([cc_bin, "-O3", "-std=gnu11", "-pthread"] if args.mode == "fast" and mingw
+                         else [cc_bin, "-O3", "-march=native", "-std=gnu11", "-pthread"] if args.mode == "fast"
                          else [cc_bin, "-O2", "-std=gnu11", "-pthread"])
-                cc = subprocess.run(flags + ["-o", exe, c_path, "-lm", "-lssl", "-lcrypto"],
-                                    capture_output=True, text=True)
-                if cc.returncode != 0 and "cannot find -lssl" in cc.stderr:
-                    cc = subprocess.run(flags + ["-o", exe, c_path, "-lm"],
+                if os.environ.get("JALPARI_HAVE_OPENSSL") == "1" and mingw:
+                    flags = flags + ["-DFORGE_HAVE_OPENSSL"]
+                if os.environ.get("JALPARI_NO_OPENSSL") == "1":
+                    flags = flags + ["-DFORGE_NO_OPENSSL"]
+                libs = ["-lm", "-lws2_32"] if mingw else ["-lm"]
+                if os.environ.get("JALPARI_NO_OPENSSL") == "1":
+                    cc = subprocess.run(flags + ["-o", exe, c_path] + libs,
                                         capture_output=True, text=True)
+                else:
+                    cc = subprocess.run(flags + ["-o", exe, c_path] + libs + ["-lssl", "-lcrypto"],
+                                        capture_output=True, text=True)
+                    if cc.returncode != 0 and "cannot find -lssl" in cc.stderr:
+                        cc = subprocess.run(flags + ["-o", exe, c_path] + libs,
+                                            capture_output=True, text=True)
                 if cc.returncode != 0:
                     raise ForgeError(f"C compiler failed:\n{cc.stderr}")
                 prog_args = list(args.program_args)

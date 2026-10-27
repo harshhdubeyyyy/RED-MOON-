@@ -54,7 +54,10 @@ def make_handler(root, token=None):
             self.wfile.write(body)
 
         def do_GET(self):
-            parts = [unquote(p) for p in urlparse(self.path).path.split("/") if p]
+            path = urlparse(self.path).path
+            if path in ("/", "/health"):
+                return self._json({"ok": True, "service": "jalpari-registry"})
+            parts = [unquote(p) for p in path.split("/") if p]
             if parts == ["api", "packages"]:
                 pkgs = []
                 if os.path.isdir(root):
@@ -151,7 +154,10 @@ if __name__ == "__main__":
 
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", default=os.path.expanduser("~/.forge_registry_server"))
-    ap.add_argument("--port", type=int, default=8765)
-    ap.add_argument("--token", default=None)
+    # PORT / FORGE_REGISTRY_TOKEN env vars exist for deploys: hosts
+    # like Render assign PORT dynamically, and tokens should not live
+    # in a command line (visible in ps). CLI flags still win.
+    ap.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8765")))
+    ap.add_argument("--token", default=os.environ.get("FORGE_REGISTRY_TOKEN"))
     args = ap.parse_args()
     serve(args.dir, args.port, token=args.token)

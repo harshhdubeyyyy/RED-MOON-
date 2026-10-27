@@ -1,0 +1,23 @@
+# Fly.io. From the repo root, in order:
+#   fly launch --no-deploy            # creates the app; keep the name it suggests
+#   fly volumes create jalpari_data --size 1 --region iad   # must exist before deploy
+#   fly secrets set FORGE_REGISTRY_TOKEN=<token>
+#   fly deploy --config registry/fly.toml --dockerfile registry/Dockerfile
+# The volume persists published packages across deploys. If the app
+# name differs from below, change the `app` line to match.
+app = "jalpari-registry"
+primary_region = "iad"
+
+[build]
+  dockerfile = "registry/Dockerfile"
+
+[http_service]
+  internal_port = 8765
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+[mounts]
+  source = "jalpari_data"
+  destination = "/data"

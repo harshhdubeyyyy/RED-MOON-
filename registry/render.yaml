@@ -1,0 +1,17 @@
+# Render Blueprint: deploy from the dashboard with New -> Blueprint,
+# point it at this repo. Render sets PORT automatically; the server
+# reads it from the environment. Set FORGE_REGISTRY_TOKEN in the
+# dashboard (it is marked sync: false, so it is never in this file).
+#
+# WARNING: a free Render instance has an ephemeral disk, so published
+# packages vanish when the instance restarts or redeploys. For the
+# real public registry, either attach a persistent disk (paid
+# instance) or use Fly (volume below) / a VPS instead.
+services:
+  - type: web
+    name: jalpari-registry
+    env: docker
+    dockerfilePath: ./registry/Dockerfile
+    envVars:
+      - key: FORGE_REGISTRY_TOKEN
+        sync: false

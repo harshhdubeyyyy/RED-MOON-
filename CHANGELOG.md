@@ -6,6 +6,59 @@ release — the documented language surface will not break
 without a major version bump (see docs/STABILITY.md).
 0.x releases were pre-stable; breaking changes were possible then.
 
+## Unreleased
+
+- Windows port (MinGW-w64, cross-compile verified, not yet
+  run-verified): the generated C now has a `#ifdef _WIN32`
+  branch — winsock headers, a `forge_sock_t` socket type
+  (`SOCKET` on Windows, `int` elsewhere), `closesocket`
+  via `forge_sock_close`, lazy `WSAStartup`, link
+  `-lws2_32`; fast mode drops `-march=native` for MinGW
+  targets. HTTPS is off by default on Windows (no MinGW
+  OpenSSL here): `https_get` compiles to a stub that
+  fails at runtime with a clear message; plain HTTP and
+  non-network programs are unaffected. Opt back in with
+  `JALPARI_HAVE_OPENSSL=1` (MSYS2 OpenSSL, untested).
+  `JALPARI_NO_OPENSSL=1` builds any platform without
+  OpenSSL (same stub). Verified: hello, HTTP registry
+  server, scope/threads, struct-array, nested-array,
+  break, and https programs all cross-compile with
+  `x86_64-w64-mingw32-gcc-posix` 13.2.0. No Wine here,
+  so no `.exe` has executed yet — Windows is not
+  claimed as supported until one runs.
+- Registry deploy files completed (registry/): the server
+  now reads `PORT` and `FORGE_REGISTRY_TOKEN` from the
+  environment (CLI flags still win), `GET /` and
+  `GET /health` answer for health checks, and the
+  Dockerfile no longer passes an empty `--token` (which
+  used to lock publishing even in open mode). New:
+  `render.yaml` (Blueprint), `fly.toml` (with a
+  persistent volume for published packages), a systemd
+  unit for VPS installs, and a rewritten README with
+  exact steps for each. Verified live without Docker
+  (no daemon in this VM): health, empty list, publish
+  401 without token / ok with token / 409 on republish,
+  byte-exact file round-trip, and open-mode publish.
+  The Docker image itself is not built here — the
+  Dockerfile is a 10-line copy of the verified script.
+- JalOS (examples/os/jalos.fg, ~1300 lines): a complete
+  teaching OS in Jal Pari — boot, priority scheduler
+  (29-tick demo: printer, counter, fibber, sorter,
+  idler), first-fit heap allocator with coalescing,
+  hierarchical VFS with permissions, users, /proc,
+  networking (real HTTP fetch), a package manager
+  that really installs registry packages over HTTPS,
+  cron/syslog services, and a ~30-command shell with
+  script-file and single-command modes. The demo tour
+  is offline, deterministic, and wired into the suite
+  as an exact-output test. Honest limits (see
+  examples/os/README.md): simulated, not bootable;
+  text shell, no GUI; plain-string passwords; no
+  persistence across shutdown; HTTPS needs direct
+  internet (proxied sandboxes break the TLS handshake
+  — the language HTTP client has no proxy CONNECT
+  yet).
+
 ## 1.1.0 — 27 Oct 2026
 
 - Book, Tour, LSP parity, fix-ending diagnostics:

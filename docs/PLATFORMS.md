@@ -22,49 +22,54 @@ JALPARI_CC=/usr/bin/gcc python3 forge.py run examples/fib.fg
 JALPARI_CC=x86_64-w64-mingw32-gcc-posix python3 forge.py build prog.fg -o prog.exe
 ```
 
-Setting it to a cross compiler does NOT by itself produce a
-working binary for another OS — the generated C (below) must
-also compile for that OS. The override exists so the toolchain
-choice is not hardcoded when that day comes.
+Setting it to a cross compiler produces a binary for another
+OS wherever the generated C compiles for that OS — that is
+now true for Windows via MinGW (see below; run-verification
+still pending), and still untested for macOS.
 
-## Windows (MinGW-w64) — NOT buildable yet, blockers verified
+## Windows (MinGW-w64) — cross-compiles, not yet run-verified
 
-Attempted 26 Oct 2026: generated C for a fib program (no threads,
-no HTTP in the program itself) cross-compiled with both MinGW
-variants installed from apt (`gcc-mingw-w64-x86-64` 13.2.0,
-`-posix` and `-win32`). Both fail identically at the first
-header:
+Done 27 Oct 2026: the generated C now has a `#ifdef _WIN32`
+branch (forge_lang/codegen.py HEADER) — winsock headers
+(`winsock2.h`, `ws2tcpip.h`) instead of the POSIX socket
+headers, a `forge_sock_t` type (`SOCKET` on Windows, `int`
+elsewhere), `closesocket` via `forge_sock_close`, lazy
+`WSAStartup` via `forge_sock_init` (called by the HTTP client
+and `http_listen`), and link `-lws2_32`. The `-posix`
+MinGW variant provides `pthread.h`, so threads work too.
+Fast mode drops `-march=native` for MinGW targets (it
+describes the build machine, not the target).
+
+Verified 27 Oct 2026 with `gcc-mingw-w64-x86-64` 13.2.0
+(`x86_64-w64-mingw32-gcc-posix`), safe mode unless noted:
 
 ```
-fibtest.c:7:10: fatal error: sys/socket.h: No such file or directory
+JALPARI_CC=x86_64-w64-mingw32-gcc-posix python3 forge.py build prog.fg -o prog.exe
 ```
 
-Why: the codegen HEADER (forge_lang/codegen.py) unconditionally
-emits POSIX socket headers (`sys/socket.h`, `netdb.h`,
-`netinet/in.h`, `arpa/inet.h`), `unistd.h`, and OpenSSL headers
-into EVERY program, because the HTTP/HTTPS helper functions are
-part of the runtime. Stripping those includes from a scratch copy
-shows the next layer of errors: `struct addrinfo`, `getaddrinfo`,
-`AF_UNSPEC`, `SOCK_STREAM`, `SSL_CTX`, `SSL`, `X509_V_OK` — the
-helpers use the POSIX socket API and OpenSSL throughout
-(`socket/connect/send/recv/bind/close`, `SSL_connect/SSL_read/
-SSL_write`), and `close()` on sockets.
+Programs cross-compiled to working `.exe` files: a hello
+program, the HTTP registry server (`examples/apps/
+registry_server.fg`, plain sockets), `scope_demo.fg`
+(threads), struct-array, nested-array, and break demos,
+plus an `http_get("https://…")` program (compiles to the
+HTTPS stub below). Fast mode also cross-compiles.
 
-What a Windows port needs, in order:
+Limits, stated honestly:
 
-1. A `#ifdef _WIN32` branch in the generated runtime: winsock
-   headers (`winsock2.h`, `ws2tcpip.h`) instead of the POSIX
-   ones, `WSAStartup`/`WSACleanup`, `closesocket` instead of
-   `close` on sockets, and link `-lws2_32`.
-2. OpenSSL for MinGW (a mingw build of OpenSSL), or HTTPS made
-   conditional so plain-HTTP and non-network programs build
-   without it.
-3. The `-posix` MinGW variant (it provides `pthread.h` via
-   winpthreads; the `-win32` variant does not).
-
-Until then, do not claim a Windows binary. The `JALPARI_CC`
-override plus the mingw-posix compiler gets as far as the
-socket headers and stops there — that is the verified state.
+- **Run-verified: NO.** No Wine is installed in this VM,
+  so the `.exe` files compile but have never executed.
+  A Windows machine (or Wine) still needs to run one and
+  report back before Windows is called supported.
+- **HTTPS is off by default on Windows.** No MinGW
+  OpenSSL is available here, so `https_get` compiles to
+  a stub that fails at runtime with a clear message
+  ("HTTPS is not supported in this build"). Plain HTTP
+  and non-network programs are unaffected. A Windows
+  user with MSYS2 OpenSSL can opt back in with
+  `JALPARI_HAVE_OPENSSL=1` (untested here).
+- **Same opt-out exists everywhere:** `JALPARI_NO_OPENSSL=1`
+  builds any platform without OpenSSL (same stub). This
+  is also the macOS-without-Homebrew-OpenSSL path.
 
 ## macOS — NOT verified here, path documented
 

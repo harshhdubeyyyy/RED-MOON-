@@ -1,0 +1,26 @@
+# systemd unit for a VPS. Install:
+#   1. Clone the repo to /opt/jalpari (or change WorkingDirectory).
+#   2. sudo mkdir -p /var/lib/jalpari-registry && sudo chown nobody:nogroup /var/lib/jalpari-registry
+#   3. Optional token: put FORGE_REGISTRY_TOKEN=<token> in
+#      /etc/jalpari-registry.env (root-readable only) — without it
+#      the registry is open, anyone can publish.
+#   4. sudo cp registry/jalpari-registry.service /etc/systemd/system/
+#      sudo systemctl daemon-reload && sudo systemctl enable --now jalpari-registry
+# Put nginx/Caddy with HTTPS in front for public use: the server is
+# HTTP only, and the Bearer token must not travel over plain HTTP.
+[Unit]
+Description=Jal Pari package registry
+After=network.target
+
+[Service]
+Type=simple
+User=nobody
+WorkingDirectory=/opt/jalpari
+Environment=PORT=8765
+EnvironmentFile=-/etc/jalpari-registry.env
+ExecStart=/usr/bin/python3 forge_lang/registry_server.py --dir /var/lib/jalpari-registry
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

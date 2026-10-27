@@ -29,17 +29,47 @@ HEADER = r"""#include <stdio.h>
 #include <stdbool.h>
 #include <math.h>
 #include <pthread.h>
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <sys/types.h>
+#else
 #include <sys/socket.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+#endif
+#if (!defined(_WIN32) && !defined(FORGE_NO_OPENSSL)) || defined(FORGE_HAVE_OPENSSL)
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#endif
 #include <time.h>
 
 static void forge_free_str(char *p);
 static void forge_fail(const char *msg);
+/* Socket portability: Winsock sockets are 64-bit SOCKET handles, not
+   ints; INVALID_SOCKET is not -1; close() is closesocket(); and
+   WSAStartup must run before any socket call. POSIX builds keep the
+   plain int fd path. */
+#ifdef _WIN32
+typedef SOCKET forge_sock_t;
+#define FORGE_SOCK_INVALID INVALID_SOCKET
+static int forge_sock_started = 0;
+static void forge_sock_init(void) {
+    if (!forge_sock_started) {
+        WSADATA wsa;
+        if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) forge_fail("WSAStartup failed");
+        forge_sock_started = 1;
+    }
+}
+static void forge_sock_close(forge_sock_t s) { closesocket(s); }
+#else
+typedef int forge_sock_t;
+#define FORGE_SOCK_INVALID (-1)
+static void forge_sock_init(void) {}
+static void forge_sock_close(forge_sock_t s) { close(s); }
+#endif
 typedef struct { long long *data; long long len; long long cap; long long *ref; } ForgeIntArray;
 typedef struct { double *data; long long len; long long cap; long long *ref; } ForgeFloatArray;
 typedef struct { bool *data; long long len; long long cap; long long *ref; } ForgeBoolArray;
@@ -347,6 +377,12 @@ static void forge_join_threads(void) {
 }
 
 static char *forge_https_get(const char *url) {
+#if (defined(_WIN32) && !defined(FORGE_HAVE_OPENSSL)) || defined(FORGE_NO_OPENSSL)
+    (void)url;
+    forge_fail("https_get: HTTPS is not supported in this build (rebuild with OpenSSL to enable it)");
+    return NULL;
+#else
+    forge_sock_init();
     // https://host[:port]/path, with certificate verification on.
     const char *rest = url + 8;
     const char *slash = strchr(rest, '/');
@@ -369,23 +405,23 @@ static char *forge_https_get(const char *url) {
     hints.ai_family = AF_UNSPEC; hints.ai_socktype = SOCK_STREAM;
     struct addrinfo *res = NULL;
     if (getaddrinfo(host, portstr, &hints, &res) != 0) forge_fail("https_get: cannot resolve host");
-    int sock = -1;
+    forge_sock_t sock = FORGE_SOCK_INVALID;
     for (struct addrinfo *ai = res; ai != NULL; ai = ai->ai_next) {
         sock = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
-        if (sock < 0) continue;
+        if (sock == FORGE_SOCK_INVALID) continue;
         if (connect(sock, ai->ai_addr, ai->ai_addrlen) == 0) break;
-        close(sock); sock = -1;
+        forge_sock_close(sock); sock = FORGE_SOCK_INVALID;
     }
     freeaddrinfo(res);
-    if (sock < 0) forge_fail("https_get: cannot connect");
+    if (sock == FORGE_SOCK_INVALID) forge_fail("https_get: cannot connect");
     SSL_CTX *ctx = SSL_CTX_new(TLS_client_method());
-    if (!ctx) { close(sock); forge_fail("https_get: cannot create SSL context"); }
+    if (!ctx) { forge_sock_close(sock); forge_fail("https_get: cannot create SSL context"); }
     SSL_CTX_set_default_verify_paths(ctx);
     SSL *ssl = SSL_new(ctx);
     SSL_set_tlsext_host_name(ssl, host);
-    SSL_set_fd(ssl, sock);
-    if (SSL_connect(ssl) != 1) { SSL_free(ssl); SSL_CTX_free(ctx); close(sock); forge_fail("https_get: TLS handshake failed"); }
-    if (SSL_get_verify_result(ssl) != X509_V_OK) { SSL_free(ssl); SSL_CTX_free(ctx); close(sock); forge_fail("https_get: certificate verification failed"); }
+    SSL_set_fd(ssl, (int)sock);
+    if (SSL_connect(ssl) != 1) { SSL_free(ssl); SSL_CTX_free(ctx); forge_sock_close(sock); forge_fail("https_get: TLS handshake failed"); }
+    if (SSL_get_verify_result(ssl) != X509_V_OK) { SSL_free(ssl); SSL_CTX_free(ctx); forge_sock_close(sock); forge_fail("https_get: certificate verification failed"); }
     char req[1024];
     snprintf(req, sizeof(req), "GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n", path, host);
     SSL_write(ssl, req, (int)strlen(req));
@@ -396,14 +432,16 @@ static char *forge_https_get(const char *url) {
         len += (size_t)got;
         if (len + 1024 >= cap) { cap *= 2; buf = (char *)realloc(buf, cap); }
     }
-    SSL_free(ssl); SSL_CTX_free(ctx); close(sock);
+    SSL_free(ssl); SSL_CTX_free(ctx); forge_sock_close(sock);
     buf[len] = '\0';
     char *sep = strstr(buf, "\r\n\r\n");
     if (!sep) forge_fail("https_get: bad HTTP response");
     return forge_copy_str(sep + 4);
+#endif
 }
 
 static char *forge_http_get(const char *url) {
+    forge_sock_init();
     if (strncmp(url, "https://", 8) == 0) return forge_https_get(url);
     if (strncmp(url, "http://", 7) != 0) forge_fail("http_get: URL must start with http:// or https://");
     const char *rest = url + 7;
@@ -427,18 +465,18 @@ static char *forge_http_get(const char *url) {
     hints.ai_family = AF_UNSPEC; hints.ai_socktype = SOCK_STREAM;
     struct addrinfo *res = NULL;
     if (getaddrinfo(host, portstr, &hints, &res) != 0) forge_fail("http_get: cannot resolve host");
-    int sock = -1;
+    forge_sock_t sock = FORGE_SOCK_INVALID;
     for (struct addrinfo *ai = res; ai != NULL; ai = ai->ai_next) {
         sock = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
-        if (sock < 0) continue;
+        if (sock == FORGE_SOCK_INVALID) continue;
         if (connect(sock, ai->ai_addr, ai->ai_addrlen) == 0) break;
-        close(sock); sock = -1;
+        forge_sock_close(sock); sock = FORGE_SOCK_INVALID;
     }
     freeaddrinfo(res);
-    if (sock < 0) forge_fail("http_get: cannot connect");
+    if (sock == FORGE_SOCK_INVALID) forge_fail("http_get: cannot connect");
     char req[1024];
     snprintf(req, sizeof(req), "GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n", path, host);
-    if (send(sock, req, strlen(req), 0) < 0) { close(sock); forge_fail("http_get: send failed"); }
+    if (send(sock, req, strlen(req), 0) < 0) { forge_sock_close(sock); forge_fail("http_get: send failed"); }
     size_t cap = 8192, len = 0;
     char *buf = (char *)malloc(cap);
     ssize_t got;
@@ -446,7 +484,7 @@ static char *forge_http_get(const char *url) {
         len += (size_t)got;
         if (len + 1024 >= cap) { cap *= 2; buf = (char *)realloc(buf, cap); }
     }
-    close(sock);
+    forge_sock_close(sock);
     buf[len] = '\0';
     char *sep = strstr(buf, "\r\n\r\n");
     if (!sep) forge_fail("http_get: bad HTTP response");
@@ -458,27 +496,28 @@ static char *forge_http_get(const char *url) {
    bodies, IPv4 0.0.0.0. Enough for small services, CLIs with a
    status page, and webhooks; not a production web server. */
 static long long forge_http_listen(long long port) {
-    int fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (fd < 0) forge_fail("http_listen: socket failed");
+    forge_sock_init();
+    forge_sock_t fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd == FORGE_SOCK_INVALID) forge_fail("http_listen: socket failed");
     int one = 1;
-    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (const char *)&one, sizeof(one));
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = htonl(INADDR_ANY);
     addr.sin_port = htons((unsigned short)port);
-    if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) != 0) { close(fd); forge_fail("http_listen: bind failed (port in use?)"); }
-    if (listen(fd, 16) != 0) { close(fd); forge_fail("http_listen: listen failed"); }
+    if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) != 0) { forge_sock_close(fd); forge_fail("http_listen: bind failed (port in use?)"); }
+    if (listen(fd, 16) != 0) { forge_sock_close(fd); forge_fail("http_listen: listen failed"); }
     return fd;
 }
 static long long forge_http_accept(long long fd) {
-    int client = accept((int)fd, NULL, NULL);
-    if (client < 0) forge_fail("http_accept: accept failed");
+    forge_sock_t client = accept((forge_sock_t)fd, NULL, NULL);
+    if (client == FORGE_SOCK_INVALID) forge_fail("http_accept: accept failed");
     return client;
 }
 static char *forge_http_read_request(long long client) {
     char *buf = (char *)malloc(8192);
-    ssize_t n = recv((int)client, buf, 8191, 0);
+    ssize_t n = recv((forge_sock_t)client, buf, 8191, 0);
     if (n < 0) { free(buf); forge_fail("http_read_request: recv failed"); }
     buf[n] = '\0';
     return buf;
@@ -486,10 +525,10 @@ static char *forge_http_read_request(long long client) {
 static long long forge_http_send_response(long long client, long long status, const char *reason, const char *body) {
     char head[256];
     int hl = snprintf(head, sizeof(head), "HTTP/1.1 %lld %s\r\nContent-Type: text/plain\r\nContent-Length: %zu\r\nConnection: close\r\n\r\n", status, reason, strlen(body));
-    if (hl < 0 || hl >= (int)sizeof(head)) { close((int)client); forge_fail("http_respond: header failed"); }
-    if (send((int)client, head, (size_t)hl, 0) < 0) { close((int)client); forge_fail("http_respond: send failed"); }
-    if (send((int)client, body, strlen(body), 0) < 0) { close((int)client); forge_fail("http_respond: send failed"); }
-    close((int)client);
+    if (hl < 0 || hl >= (int)sizeof(head)) { forge_sock_close((forge_sock_t)client); forge_fail("http_respond: header failed"); }
+    if (send((forge_sock_t)client, head, (size_t)hl, 0) < 0) { forge_sock_close((forge_sock_t)client); forge_fail("http_respond: send failed"); }
+    if (send((forge_sock_t)client, body, strlen(body), 0) < 0) { forge_sock_close((forge_sock_t)client); forge_fail("http_respond: send failed"); }
+    forge_sock_close((forge_sock_t)client);
     return (long long)hl + (long long)strlen(body);
 }
 static long long forge_http_respond(long long client, const char *body) {
@@ -506,7 +545,8 @@ static long long forge_http_respond_status(long long client, long long status, c
     return forge_http_send_response(client, status, reason, body);
 }
 static long long forge_http_close(long long fd) {
-    return close((int)fd);
+    forge_sock_close((forge_sock_t)fd);
+    return 0;
 }
 
 /* GPU-style parallel kernels, run on CPU threads here (no GPU in

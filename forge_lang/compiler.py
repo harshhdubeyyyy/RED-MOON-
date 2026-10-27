@@ -140,11 +140,20 @@ def compile_file_wasm(path, wit_path=None):
     return generate_wasm(program, types), program
 
 
+def _is_mingw():
+    """True when the selected C compiler targets Windows (MinGW)."""
+    return "mingw" in _cc()
+
+
 def _cc_flags(mode):
     # The generated header defines every builtin helper; unused ones
     # are expected, so silence that one warning (other -Wall warnings
     # still show).
     if mode == "fast":
+        if _is_mingw():
+            # -march=native is wrong for a cross-compiled binary: it
+            # describes the build machine, not the target.
+            return [_cc(), "-O3", "-std=gnu11", "-Wall", "-Wno-unused-function", "-pthread"]
         return [_cc(), "-O3", "-march=native", "-std=gnu11", "-Wall", "-Wno-unused-function", "-pthread"]
     return [_cc(), "-O2", "-std=gnu11", "-Wall", "-Wextra", "-Wno-unused-function", "-pthread"]
 
@@ -164,13 +173,26 @@ def build(source_path, output_path, mode="safe", keep_c=None, debug=False):
     try:
         # HTTPS needs OpenSSL; if the machine lacks libssl, retry
         # without it (programs that never call http_get still link,
-        # because the unused SSL helper is optimised away).
+        # because the unused SSL helper is optimised away). On MinGW,
+        # Winsock needs -lws2_32, and OpenSSL is off by default in the
+        # generated C (JALPARI_HAVE_OPENSSL=1 opts back in).
         flags = _cc_flags(mode) + (["-g"] if debug else [])
-        result = subprocess.run(flags + ["-o", output_path, c_path, "-lm", "-lssl", "-lcrypto"],
-                                capture_output=True, text=True)
-        if result.returncode != 0 and "cannot find -lssl" in result.stderr:
-            result = subprocess.run(flags + ["-o", output_path, c_path, "-lm"],
+        have_ssl = os.environ.get("JALPARI_HAVE_OPENSSL") == "1"
+        no_ssl = os.environ.get("JALPARI_NO_OPENSSL") == "1"
+        if no_ssl:
+            flags = flags + ["-DFORGE_NO_OPENSSL"]
+        elif have_ssl and _is_mingw():
+            flags = flags + ["-DFORGE_HAVE_OPENSSL"]
+        libs = ["-lm", "-lws2_32"] if _is_mingw() else ["-lm"]
+        if no_ssl:
+            result = subprocess.run(flags + ["-o", output_path, c_path] + libs,
                                     capture_output=True, text=True)
+        else:
+            result = subprocess.run(flags + ["-o", output_path, c_path] + libs + ["-lssl", "-lcrypto"],
+                                    capture_output=True, text=True)
+            if result.returncode != 0 and not have_ssl and "cannot find -lssl" in result.stderr:
+                result = subprocess.run(flags + ["-o", output_path, c_path] + libs,
+                                        capture_output=True, text=True)
         if result.returncode != 0:
             raise ForgeError(f"C compiler failed:\n{result.stderr}")
         if result.stderr.strip():
