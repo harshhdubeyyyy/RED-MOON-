@@ -393,12 +393,61 @@ positions/stats 0x82F0-0x830C, net packet area 0x8310, heap
 data below 0xA000, clear of both stack regions. Verified by
 `tests/test_kernel_unified.py`: exact transcript over the
 shell tour h/p/s/w/m/f/g/n/q (help, procs, spawn with
-HI landing across a timer tick, wait W0, alloc M33792, FS
-F, GUI windows, net PONG + S4R3D1, BYE), halted, states
-[running, done, free, free], 25 timer ticks, heap bump
-+16, net 4/3/1. Honest limits carried over: 2 child slots
-only (a third stack would grow down through the kernel
-regions), and the shell never sleeps (no idle task yet).
+HI landing across a timer tick, wait W0, alloc M8400 in
+hex, FS F, GUI windows, net PONG + S4R3D1, BYE), halted,
+states [running, done, free, free], 25 timer ticks, heap
+bump +16, net 4/3/1. Honest limits carried over: 2 child
+slots only (a third stack would grow down through the
+kernel regions), and the shell never sleeps (no idle task
+yet). The 'm' command prints addresses in HEX, not
+decimal: print_num assumes non-negative input, but SOC2
+addresses sit above 2^31 and are negative in signed
+32-bit arithmetic (0x80008400 printed as '*' through
+print_num, since -2147449856 % 10 is -6) — hex works on
+bit patterns via shifts and masks, so it is correct for
+any address.
+
+**Hardware frontier 1 DONE 27 Oct 2026 — legacy UART RX
+on the Verilog SOC:** surveying the SOC before building
+corrected an outdated note — the CLINT (mtime/mtimecmp,
+timer interrupt into the core) already exists in
+big32_soc2.v from the Linux-boot track's Phase 5, so the
+real first gap was receive: the core already implemented
+the RX contract (load 0x10000004 returns the byte, -1
+when empty, pop on load) but the SOC tied ready to 0.
+Added a 16-byte RX FIFO in big32_soc2.v (same push/pop
+discipline as the 16550 FIFO; overflow drops), wired to
+the core, fed by the existing top-level rx_data/rx_valid
+pins. Proven by a directed echo program (~/workspace/
+rx-proof/echo.s + tb_rx.v, kept out of the shared tree):
+"Hi\n" fed through the pins came back out of TX —
+**RX ECHO PASS**. Regression: soc2 plic + timer64 still
+PASS with the edited SOC. The edit is LOCAL to the
+shared big32 tree (not pushed — the Linux-boot track
+owns BIG-32 publication). NEXT hardware item: the
+unified kernel cannot run on SOC2 as-is — its scratch
+(0x8000), stacks, and SP (0xFFFC) assume the model's
+flat 64 KB memory, while SOC2 RAM lives at 0x80000000,
+so it needs rebasing to SOC2 RAM addresses.
+
+**Hardware frontier 2 DONE 27 Oct 2026 — unified kernel
+runs on the Verilog SOC:** tools/rebase_soc2.py shifts
+the kernel's RAM literals (105 in [0x8000, 0x10000),
+MMIO/CSR/counts untouched, verified by distinct-value
+audit) into examples/os/kernel_unified_soc2.fg, and a
+new --stack-top build flag (default 65532 unchanged)
+puts main's stack at 0x800F0000. The full shell tour
+ran on big32_soc2 via the new RX path (tb_shell.v):
+KERN, help, procs, spawn, W0, M80008400, F, GUI
+windows, PONG + S4R3D1, BYE, HALTED after 45,461
+cycles. One real bug found by the run: decimal
+print_num breaks on SOC2 addresses (above 2^31, hence
+negative signed — 0x80008400 printed as '*'), fixed by
+printing addresses in hex (print_hex, shifts + masks).
+Model test updated (M33792 -> M8400) and green. The
+SOC2 edit from frontier 1 stays local (BIG-32
+publication belongs to the Linux-boot track); the
+RED-MOON- push below carries the rebase tooling.
 
 ## What does not change
 

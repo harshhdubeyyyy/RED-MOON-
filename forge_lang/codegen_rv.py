@@ -76,9 +76,10 @@ TEMPS = ["t0", "t1", "t2", "t3", "t4", "t5", "t6",
 
 
 class RVGen:
-    def __init__(self, program, types):
+    def __init__(self, program, types, stack_top=SP_START):
         self.program = program
         self.types = types
+        self.stack_top = stack_top
         self.lines = []
         self.init_lines = []          # _start static-string initialisation
         self.label_n = 0
@@ -216,7 +217,7 @@ class RVGen:
         self.lines = []
         # _start: stack, static strings, trap vector, call main, halt.
         self.emit("_start:")
-        self.emit(f"    li sp, {SP_START}")
+        self.emit(f"    li sp, {self.stack_top}")
         self.lines.extend(self.init_lines)
         if self.has_trap_handler:
             self.emit("    la t0, forge_trap_entry")
@@ -1363,6 +1364,7 @@ class RVGen:
         return out
 
 
-def generate_rv(program, types):
-    gen = RVGen(program, types)
+def generate_rv(program, types, stack_top=None):
+    gen = RVGen(program, types,
+                stack_top=stack_top if stack_top is not None else SP_START)
     return gen.generate()

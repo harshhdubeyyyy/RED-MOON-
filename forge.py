@@ -71,6 +71,10 @@ def main(argv=None):
                    help="build without libc/OS: no files, sockets, threads, "
                         "clock, print, or strings/arrays (freestanding v1)")
     p.add_argument("--target", choices=["native", "big32", "wasm"], default="native")
+    p.add_argument("--stack-top", default=None,
+                   help="big32 only: initial sp value (decimal or 0x hex); "
+                        "default 65532, the model flat-memory top. SOC2 "
+                        "builds pass a RAM address such as 0x800F0000.")
     p.add_argument("-o", "--output", default=None)
     p.add_argument("--keep-c", default=None)
     p.add_argument("--wit", default=None,
@@ -157,7 +161,10 @@ def main(argv=None):
             raise ForgeError("--wit requires --target wasm")
         if args.cmd == "build" and args.target == "big32":
             from forge_lang.compiler import compile_file_rv
-            asm, _ = compile_file_rv(args.file, freestanding=args.freestanding)
+            stack_top = (int(args.stack_top, 0)
+                         if getattr(args, "stack_top", None) else None)
+            asm, _ = compile_file_rv(args.file, freestanding=args.freestanding,
+                                     stack_top=stack_top)
             out = args.output or os.path.splitext(args.file)[0]
             if out.endswith(".hex"):
                 out = out[:-4]

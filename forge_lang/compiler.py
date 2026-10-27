@@ -112,13 +112,13 @@ def build_shared(source_path, output_path, mode="safe"):
     return output_path
 
 
-def compile_file_rv(path, freestanding=False):
+def compile_file_rv(path, freestanding=False, stack_top=None):
     """Forge source -> big32 RISC-V assembly (no C, no x86)."""
     from .codegen_rv import generate_rv
     program = load_program(path)
     check(program, freestanding=freestanding)
     types = infer_types(program)
-    return generate_rv(program, types), program
+    return generate_rv(program, types, stack_top=stack_top), program
 
 
 def compile_file_wasm(path, wit_path=None):

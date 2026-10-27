@@ -53,12 +53,40 @@ fn put(c: int) {
 
 fn print_num(n: int) {
   let mut div = 1;
-  while div * 10 <= n {
+  while div <= n / 10 {
     div = div * 10;
   }
   while div >= 1 {
     put(48 + (n / div) % 10);
     div = div / 10;
+  }
+}
+
+// Hex printing for addresses: print_num is decimal and
+// assumes non-negative input, but SOC2 addresses are above
+// 2^31, so they are negative in signed 32-bit arithmetic
+// (0x80008400 prints as '*' through print_num, since
+// -2147449856 % 10 is -6). Hex works on bit patterns via
+// shifts and masks, so it is correct for any address.
+fn print_hex(n: int) {
+  let mut started = 0;
+  let mut shift = 28;
+  while shift >= 0 {
+    let d = (n >> shift) & 15;
+    if d != 0 {
+      started = 1;
+    }
+    if started == 1 {
+      if d < 10 {
+        put(48 + d);
+      } else {
+        put(55 + d);
+      }
+    }
+    shift = shift - 4;
+  }
+  if started == 0 {
+    put(48);
   }
 }
 
@@ -733,7 +761,7 @@ fn main() {
         put(10);
       } else {
         put(77);
-        print_num(addr);
+        print_hex(addr);
         put(10);
       }
     } else if cmd == 102 {
