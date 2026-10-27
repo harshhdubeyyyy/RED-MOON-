@@ -63,8 +63,15 @@ FRAME_BYTES = 2048
 SP_START = 65532
 # Temp pool: t0-t6, a1-a7 (a0 is return/arg0, never a temp), s2-s11.
 # Caller spills live temps across calls, so all of these are safe.
+# Expression temps. NOTE: argument registers a0-a7 are deliberately
+# NOT in this list. They used to be, and that was unsound: when an
+# argument expression was evaluated into, say, a1, the call's
+# argument-staging loop then overwrote a1 with another argument
+# before copying it to its target register — so fs_write(1, 3, 44)
+# stored 3 (the index) instead of 44 (the value), found 27 Oct
+# 2026 via the filesystem kernel's readback check. With a-regs
+# excluded, argument temps can never collide with staging.
 TEMPS = ["t0", "t1", "t2", "t3", "t4", "t5", "t6",
-         "a1", "a2", "a3", "a4", "a5", "a6", "a7",
          "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9", "s10", "s11"]
 
 

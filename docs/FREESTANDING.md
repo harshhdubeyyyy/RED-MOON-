@@ -262,6 +262,42 @@ Kernel `examples/os/kernel_freelist.fg` verified by
 re-alloc), halted, and the predicted heap state (16-byte split
 remainder at 0xA038 as free-list head). Next: filesystem.
 
+**Checkpoint 3 DONE 27 Oct 2026 — tiny filesystem:** files are
+identified by numeric id, not names (freestanding rejects string
+values, so names wait for a later checkpoint). Files are
+fixed-size at create time, stored as contiguous 256-byte blocks:
+file table in scratch 0x8060 (8 slots x 16 bytes [id, used,
+size_words, start_block]), next-free-block in scratch 0x8050,
+data blocks at 0xD000 (16 x 256 bytes). API: format, create,
+write, read (0 ok, -1 fail; read returns -1 as a sentinel for
+missing/out-of-bounds). Delete is NOT in v1 — freed blocks are
+reclaimed only by reformat. Kernel `examples/os/kernel_fs.fg`
+verified by `tests/test_kernel_fs.py`: exact transcript
+`KERNKKKKKDONE` (create, readback, cross-block boundary,
+disk-full failure, out-of-bounds failure), halted, file
+contents intact in the model heap. This checkpoint also caught
+and fixed a real big32 backend bug: argument registers used to
+be expression temps, so under temp pressure the call-staging
+loop overwrote an argument with another one (`fs_write(1, 3,
+44)` stored 3 instead of 44); a-regs are now excluded from
+TEMPS in `forge_lang/codegen_rv.py`. Next: delete with block
+reclaim, then processes.
+
+**Checkpoint 4 DONE 27 Oct 2026 — filesystem v2, delete with
+block reclaim:** v1's contiguous files stranded freed blocks,
+so v2 uses indexed allocation (the Unix direct-blocks idea):
+each file owns a row of up to 16 block indices, and freed
+blocks go on a free-list whose links live in the freed blocks
+themselves. `create` allocates block by block (free-list first,
+then bump) with clean rollback when a block allocation fails
+mid-create; `delete` pushes every mapped block onto the
+free-list. Kernel `examples/os/kernel_fs2.fg` verified by
+`tests/test_kernel_fs2.py` 6/6: exact transcript
+`KERNKKKKKDONE` (boundary, delete + reuse, disk-full failure,
+full-disk re-alloc after deletes), halted, and the predicted
+heap state (bump 16, free-list empty, file 5's map row in
+free-list pop order). Next: processes.
+
 ## What does not change
 
 - Black Moon OS (the Linux distro) continues as the system people
