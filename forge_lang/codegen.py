@@ -27,6 +27,7 @@ HEADER = r"""#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <math.h>
 #include <pthread.h>
 #ifdef _WIN32
@@ -262,6 +263,20 @@ static char *forge_read_line(void) {
     if (!out) forge_fail("out of memory");
     memcpy(out, buf, n + 1);
     return out;
+}
+
+// Raw 32-bit memory access for bare-metal code (Phase B of the
+// freestanding track). Volatile so the compiler never optimises an
+// MMIO access away, and deliberately UNCHECKED in every mode: a raw
+// address is unsafe by definition, and safe-mode checks cannot judge
+// whether an address is a valid device register.
+static int64_t forge_peek32(int64_t addr) {
+    return (int64_t)(*(volatile uint32_t *)(uintptr_t)addr);
+}
+
+static int64_t forge_poke32(int64_t addr, int64_t val) {
+    *(volatile uint32_t *)(uintptr_t)addr = (uint32_t)val;
+    return val;
 }
 
 static bool forge_write_file(const char *path, const char *content) {
@@ -2388,6 +2403,11 @@ class Codegen:
                 return f"forge_read_file({self.gen_expr(expr.args[0])})"
             if expr.name == "read_line":
                 return "forge_read_line()"
+            if expr.name == "peek32":
+                return f"forge_peek32({self.gen_expr(expr.args[0])})"
+            if expr.name == "poke32":
+                return (f"forge_poke32({self.gen_expr(expr.args[0])}, "
+                        f"{self.gen_expr(expr.args[1])})")
             if expr.name == "write_file":
                 return (f"forge_write_file({self.gen_expr(expr.args[0])}, "
                         f"{self.gen_expr(expr.args[1])})")

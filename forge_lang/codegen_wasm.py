@@ -891,6 +891,9 @@ class WasmGen:
                 raise ForgeError(f"wasm: len() of {t} is not supported")
             if expr.name in ("print", "println", "push", "fail", "assert"):
                 raise ForgeError(f"wasm: {expr.name}() is statement-only")
+            if expr.name in ("peek32", "poke32"):
+                raise ForgeError(f"wasm: {expr.name}() needs raw memory addresses, "
+                                 f"which WASM does not expose")
             if expr.name not in self.func_index:
                 raise ForgeError(f"wasm: call to '{expr.name}' is not supported in v1 "
                                  f"(builtins, structs, and enums are out)")

@@ -75,15 +75,27 @@ transcript, checker rejections, formatter stability):
   WASM `>>` was first emitted as `shr_u` (0x88) instead of `shr_s`
   (0x87); fixed and re-verified.
 
-### Phase B — Raw memory access (next)
+### Phase B — Raw memory access (DONE 27 Oct 2026)
 
 Volatile `peek32`/`poke32` builtins (32-bit load/store through a
-raw address): native emits a volatile pointer dereference, big32
-emits `lw`/`sw`, WASM rejects loudly (no raw memory there).
-This is what lets kernel code talk to UART MMIO, the CLINT timer,
-and a framebuffer. Checkpoint: a native test program that pokes a
-known buffer address and reads it back, plus a big32 model run
-writing a byte to the UART address.
+raw address): native emits a volatile pointer dereference
+(`forge_peek32`/`forge_poke32` helpers, so the compiler can never
+optimise an MMIO access away), big32 emits `lw`/`sw`, WASM
+rejects loudly (no raw addresses there). `peek32(addr) -> int`
+is an expression; `poke32(addr, val)` is statement-only, like
+`push` — a write has no value, and the checker rejects using it
+as one (this rule was found by the tests, not planned: the first
+version made poke32 an expression and the checker refused bare
+`poke32(...);` statements). Both are UNCHECKED in every mode, by
+design: a raw address is unsafe by definition. Pinned by
+`tests/test_peek_poke.py` (13 checks): big32 model run writes
+byte `A` to the UART address and reads back status 0, RX -1,
+and a RAM round-trip (`A0\n-1\n123456` transcript); native
+generated C contains the volatile helpers; checker rejections;
+WASM rejections. Note for kernel code: the language has no
+address-of operator, so native round-trips cannot be addressed
+from Jal Pari itself — big32 is where these builtins are truly
+proven.
 
 ### Phase C — Freestanding codegen
 

@@ -28,7 +28,7 @@ C_KEYWORDS = {"auto", "case", "char", "const", "continue", "default",
               "register", "restrict", "short", "signed", "sizeof",
               "static", "switch", "typedef", "union", "unsigned",
               "void", "volatile", "_Bool", "_Complex", "_Imaginary"}
-STMT_BUILTINS = {"print", "println", "push", "fail", "assert"}
+STMT_BUILTINS = {"print", "println", "push", "fail", "assert", "poke32"}
 EXPR_BUILTINS = {"len", "range", "clock_micros", "sqrt", "exp", "log", "pow", "abs",
                  "read_file", "read_line", "write_file", "read_bytes", "write_bytes",
                  "file_exists", "args", "parse_int", "parse_float",
@@ -37,7 +37,8 @@ EXPR_BUILTINS = {"len", "range", "clock_micros", "sqrt", "exp", "log", "pow", "a
                  "http_respond", "http_respond_status", "http_close",
                  "alloc_count", "free_count",
                  "parallel_dot", "parallel_matmul",
-                 "arr_alloc_count", "arr_free_count"}
+                 "arr_alloc_count", "arr_free_count",
+                 "peek32"}
 BUILTINS = STMT_BUILTINS | EXPR_BUILTINS
 
 
@@ -644,6 +645,15 @@ class Checker:
             if vt2 != et:
                 raise ForgeError(f"push() value must be {et}, got {vt2}", call.line, call.col)
             return
+        if call.name == "poke32":
+            if len(call.args) != 2:
+                raise ForgeError("poke32() takes exactly two arguments",
+                                 call.line, call.col)
+            for a in call.args:
+                if self.check_expr(a) != "int":
+                    raise ForgeError("poke32() takes int arguments",
+                                     call.line, call.col)
+            return
         raise ForgeError(f"unknown builtin '{call.name}'", call.line, call.col)
 
     def check_expr(self, expr):
@@ -888,6 +898,11 @@ class Checker:
                 raise ForgeError("read_line() takes no arguments",
                                  call.line, call.col)
             return "str"
+        if call.name == "peek32":
+            if len(call.args) != 1 or self.check_expr(call.args[0]) != "int":
+                raise ForgeError("peek32() takes exactly one int argument",
+                                 call.line, call.col)
+            return "int"
         if call.name == "write_file":
             if len(call.args) != 2:
                 raise ForgeError("write_file() takes exactly two arguments",

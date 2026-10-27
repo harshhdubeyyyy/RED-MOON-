@@ -8,6 +8,14 @@ without a major version bump (see docs/STABILITY.md).
 
 ## Unreleased
 
+- Raw memory builtins `peek32`/`poke32` (Phase B of the
+  freestanding track; see docs/FREESTANDING.md): volatile 32-bit
+  load/store through a raw address — native via volatile pointer
+  helpers, big32 via `lw`/`sw`, WASM rejects loudly. `peek32` is
+  an expression, `poke32` is statement-only like `push`; both
+  unchecked in every mode, by design. Proven by a big32 model
+  run (UART byte write, status/RX reads, RAM round-trip) in
+  `tests/test_peek_poke.py`.
 - Bitwise operators `& | ^ << >> ~` on ints (first step toward a
   freestanding, bare-metal-capable language; see
   docs/FREESTANDING.md): C-like precedence, two's-complement

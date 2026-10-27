@@ -1208,6 +1208,16 @@ class RVGen:
                     "write_file", "args", "parse_int", "split", "join",
                     "substr", "trim", "starts_with", "ends_with", "http_get"):
             raise ForgeError(f"builtin {name}() is not supported on big32 (v1)")
+        if name == "peek32":
+            r = self.gen_expr(expr.args[0])
+            self.emit(f"    lw {r}, 0({r})")
+            return r
+        if name == "poke32":
+            a = self.gen_expr(expr.args[0])
+            v = self.gen_expr(expr.args[1])
+            self.emit(f"    sw {v}, 0({a})")
+            self.free_reg(a)
+            return v
         if name not in self.funcs:
             raise ForgeError(f"unknown function {name} on big32")
         if len(expr.args) > 8:
