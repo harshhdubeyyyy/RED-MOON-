@@ -11,7 +11,7 @@ and only one should own them.
 - **Syntax highlighting** for the whole language: keywords (`fn`,
   `let`, `mut`, `struct`, `enum`, `match`, `spawn`, `break`, …),
   types (`int`, `float`, `bool`, `str`, `void`, `Option`, `Result`),
-  all 40 builtins, `//` and `/* */` comments, strings with escapes,
+  all 48 builtins, `//` and `/* */` comments, strings with escapes,
   numbers, and `=>` match arms.
 - **Snippets**: `main`, `fn`, `fnvoid`, `let`, `letmut`, `if`,
   `ifelse`, `while`, `for`, `match`, `struct`, `enum`, `scope`,

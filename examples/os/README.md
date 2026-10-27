@@ -1,6 +1,6 @@
 # JalOS — a complete teaching OS in Jal Pari
 
-One file, `jalos.fg` (~1300 lines), implementing every subsystem a
+One file, `jalos.fg` (1408 lines), implementing every subsystem a
 modern OS has, at the architecture level:
 
 | Subsystem | What JalOS does |
@@ -30,11 +30,17 @@ The demo tour is offline and deterministic, and it is wired into
 
 ## Honest limits
 
-- **Not bootable.** Jal Pari has no pointers, inline assembly,
-  interrupts, or freestanding mode, so this runs on top of a host
-  OS. A bootable Jal Pari kernel would need a freestanding backend
-  first — the big32 RISC-V CPU in this workspace is the plausible
-  target for that someday, not today.
+- **Not bootable — yet.** JalOS itself still runs on top of a
+  host OS: it is a simulation, not a kernel. But the language
+  underneath it has changed since this was written: Jal Pari now
+  has a freestanding mode (`--freestanding`: no libc, own
+  `_start`), raw memory (`peek32`/`poke32`), bitwise operators,
+  CSR builtins, an `ecall` builtin, and a `trap_handler` hook —
+  the pieces a bootable kernel needs. The from-scratch kernel
+  track (Phases A–D done, first kernel next) lives in
+  `docs/FREESTANDING.md`; JalOS's ideas feed that kernel, but
+  JalOS the program does not become it. What Jal Pari still
+  lacks for kernel work: pointers and inline assembly.
 - **No GUI.** No graphics builtins exist, so the desktop is the
   text shell. A TUI window manager over ANSI escapes is possible
   later; it is not here.

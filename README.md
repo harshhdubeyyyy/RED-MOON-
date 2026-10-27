@@ -9,7 +9,7 @@
 > Static types, no null, immutable by default, checked arithmetic —
 > with C++-style latency and Mojo/Python-style ML ease, in one binary.
 
-![Jal Pari](https://img.shields.io/badge/Jal_Pari-v2.0-pink)
+![Jal Pari](https://img.shields.io/badge/Jal_Pari-v1.2.0-pink)
 ![Native](https://img.shields.io/badge/compiled-native-blue)
 ![Safe mode](https://img.shields.io/badge/safe--mode-checked-green)
 ![Fast mode](https://img.shields.io/badge/fast--mode--O3-orange)
@@ -174,13 +174,13 @@ Jal Pari, what each line means, and where it is used in real life.
 
 Requirements: Python 3 and a C compiler (`cc` / `gcc`).
 
-**Install (0.1.0):**
+**Install (1.2.0):**
 
 ```sh
-git clone https://github.com/jayantt1dubeyy/RED-MOON-
+git clone https://github.com/themythofsisyphusjayant/RED-MOON-
 cd RED-MOON-
 sh scripts/install.sh   # checks python3 + cc, installs jalpari to ~/.local/bin
-jalpari --version       # The Jal Pari Language 0.1.0
+jalpari --version       # The Jal Pari Language 1.2.0
 ```
 
 `jalpari` is the new command name; `python3 forge.py` still works
@@ -193,10 +193,10 @@ jalpari run examples/ml_linear_regression.fg
 jalpari run examples/ml_mlp_xor.fg
 jalpari run examples/benchmark_scaling.fg
 jalpari build examples/benchmark.fg -o bench
-python3 tests/run_tests.py   # all tests pass
+python3 forge.py test   # all tests pass
 ```
 
-See [CHANGELOG.md](CHANGELOG.md) for what is in 0.1.0 and what
+See [CHANGELOG.md](CHANGELOG.md) for what is in 1.2.0 and what
 is honestly not done yet.
 
 ## 🔴 Forge on big32 — your language, running on your own CPU
@@ -236,20 +236,39 @@ How it works (see `forge_lang/codegen_rv.py` for the full contract):
   re-initialises the same slot each iteration (a documented v1
   limitation, not a hidden one).
 - **End of program:** `main`'s return (or falling off the end)
-  becomes ECALL, which halts big32 (mtvec == 0).
+  becomes ECALL, which halts big32 (mtvec == 0 by default; with
+  a `trap_handler` defined, the ending clears mtvec first, so it
+  still halts instead of trapping — see below).
+- **Freestanding + traps (27 Oct 2026):** `forge.py build
+  --target big32 --freestanding` builds without any host OS, and
+  the language now has raw memory (`peek32`/`poke32`), bitwise
+  operators (`& | ^ << >> ~`), CSR builtins (`csr_read`/
+  `csr_write`/`csr_set`/`csr_clear`, literal CSR numbers only),
+  an `ecall` builtin (SBI-call primitive), and a `trap_handler`
+  hook: define `fn trap_handler()` and `_start` points mtvec at
+  a stub that saves all registers, calls it, restores, and
+  `mret`s. The full roadmap is `docs/FREESTANDING.md` — this is
+  the path to a bootable Jal Pari kernel, not just programs
+  running on big32.
 
 Supported on big32 (v1): `int` (32-bit here, not Forge's 64-bit
 x86 int), `bool`, `str` literals/variables, `[int]`/`[bool]`/
 `[str]` arrays, `let`/`assign`, `if`/`else`, `while`, `for` over
 an array or over `range(n)`, functions/calls (≤ 8 args, recursion),
 `return`, `print`/`println` of int/bool/str, `len` of an array or
-a string, `assert`/`fail` (print, halt with a0 = 1).
+a string, `assert`/`fail` (print, halt with a0 = 1), bitwise
+operators, `peek32`/`poke32`, `csr_read`/`csr_write`/`csr_set`/
+`csr_clear`, `ecall`, `trap_handler`, structs as locals/fields,
+and `float` `+` `-` `*` only (soft-float v1, IEEE-754 single
+precision).
 
 NOT supported on big32 (v1), and the backend rejects them with a
-clear error instead of silently miscompiling: `float` (would need
-soft-float), structs, enums/`match`, `spawn`/threads, `extern`/FFI,
-file I/O, `args()`, HTTP, clock, string concatenation/comparison,
-`push` (no dynamic allocation), generics, `Option`/`Result`, GC.
+clear error instead of silently miscompiling: `float` division,
+ordered comparisons, printing, and int↔float casts; struct
+parameters/returns and arrays of structs; enums/`match`,
+`spawn`/threads, `extern`/FFI, file I/O, `args()`, HTTP, clock,
+string concatenation/comparison, string indexing, `push` (no
+dynamic allocation), generics, `Option`/`Result`, GC.
 Arithmetic is native RISC-V, not Forge safe mode: it wraps on
 overflow, div by zero gives -1, rem by zero gives the dividend.
 
@@ -312,9 +331,18 @@ q.x = 6.0;
 Casts are explicit: `x as float`, `y as int`. There is no null and
 no implicit conversion.
 
-Builtins: `print` / `println`, `push`, `fail`, `len`, `range`,
-`clock_micros`, `sqrt`, `exp`, `log`, `pow`, `abs`,
-`read_file` / `write_file`, `args()`, `parse_int`.
+Builtins (48): `print` / `println`, `push`, `fail`, `assert`,
+`len`, `range`, `clock_micros`, `sqrt`, `exp`, `log`, `pow`,
+`abs`, `read_file` / `write_file`, `read_bytes` /
+`write_bytes`, `file_exists`, `read_line`, `args()`,
+`parse_int`, `parse_float`, `split` / `join` / `substr` /
+`trim` / `starts_with` / `ends_with`, `http_get` /
+`http_listen` / `http_accept` / `http_read_request` /
+`http_respond` / `http_respond_status` / `http_close`,
+`parallel_dot` / `parallel_matmul`, `alloc_count` /
+`free_count` / `arr_alloc_count` / `arr_free_count`,
+`peek32` / `poke32`, `csr_read` / `csr_write` / `csr_set` /
+`csr_clear`, `ecall`.
 Run a program with arguments: `python3 forge.py run examples/file_and_args.fg -- out.txt`.
 Run the test suite the Go way: `python3 forge.py test`.
 Standard library (`stdlib/ml.fg`, `import "ml.fg"`): `dot`, `mean`,
@@ -323,11 +351,15 @@ Standard library (`stdlib/ml.fg`, `import "ml.fg"`): `dot`, `mean`,
 ## 📁 Layout
 
 ```
-forge.py              CLI: check / build / run / emit, --mode safe|fast
-forge_lang/           lexer, parser, checker, inference, C codegen, driver
+forge.py              CLI: check / build / run / emit / fmt / doc / lsp / repl / test,
+                      --mode safe|fast, --target native|big32|wasm, --freestanding
+forge_lang/           lexer, parser, checker, inference, C codegen, big32 + WASM codegen, driver
 stdlib/ml.fg          dot, mean, relu, sigmoid, matmul
 examples/             hello2, matrix, benchmark, benchmark_scaling,
-                      ML regression, regression trace, MLP XOR
+                      ML regression, regression trace, MLP XOR, big32/, os/, cuda/
+editors/vscode/jalpari/   VS Code extension (LSP client, snippets, grammar)
+packages/             30 registry packages (units, money, geometry, interest, ...)
+docs/FREESTANDING.md  the from-scratch OS roadmap (Phases A–D done, kernel next)
 figures/              README figures (regenerate: scripts/make_figures.py)
 scripts/make_figures.py   figure generator, with data provenance notes
 tests/                test suite + programs that must fail safely
@@ -360,6 +392,25 @@ The full tooling is documented in `docs/ECOSYSTEM.md`:
 - **AI/ML libraries (0.6.0):** `tensor_autograd.fg` (21 ops), `rnn.fg` (LSTM/GRU), `cnn.fg` (conv+pool), `ml_classical.fg` (logreg/k-NN/k-means), `preprocess.fg`, `metrics.fg`, `csv.fg` — plus `test.fg`, `log.fg`, `cli.fg`, `collections.fg` for general development. Import dedup means libraries now combine freely (nn + tensor training in one program).
 - **0.7.0 additions:** source-level debugger (`build --debug` emits `#line`), binary I/O + image loading (`image.fg`: PPM P3 + BMP), tape-native im2col + stacked convs, curriculum RNN (len-8 wall cracked), big32 structs + soft-float v1 (+ - *, 60/60 fuzz vs Python float32 on model + Verilog), WASM strings + arrays, and a fuzzer (`tools/fuzz.py`). Big TinyStories run: 153,744 params, held-out ppl 2128.55 → 651.44 — better, still not fluent.
 - **1.0.0 additions (market-ready release):** a stability promise (`docs/STABILITY.md` — semver for real), a live browser playground (`web/playground.html` — the real compiler under Pyodide, programs run as WebAssembly, no install), an HTTP server (`http_listen/accept/read_request/respond/respond_status/close` builtins + `stdlib/http_server.fg` + routing demo, verified live with curl), a regex engine (`stdlib/regex.fg` — literals, `.`, `*` `+` `?`, classes with ranges, `\d \w \s`, `^` `$`; no groups/alternation — those are literal), seven real registry packages (`packages/`: units, money, geometry, interest, roman, bases, dice — remote publish/list/add verified against a local registry), a packaged VS Code extension (`editors/vscode/forge/forge-1.0.0.vsix`), honest benchmarks vs Python/Go/Rust/C (`docs/BENCHMARKS_VS.md`, reproducible script), and the MIT LICENSE in the repo root. Install re-verified on a clean HOME and a clean pip venv.
+- **1.1.0 additions (peak-level batch, 27 Oct 2026):** `break`,
+  string indexing, arrays of structs, nested arrays, the registry
+  grown from 7 to 30 packages, check elimination, structured
+  concurrency (`scope`), WIT-first WASM contract checking, and
+  the Book/Tour/LSP + diagnostics.
+- **1.2.0 additions (27 Oct 2026):** HTTPS proxy (`CONNECT`)
+  tunnelling in `http_get`, a Windows port (compile-verified via
+  MinGW), the Moon apps (Notes, Gallery, Browser, Code — all in
+  Jal Pari, on the new `read_line` builtin), and a brand-new VS
+  Code extension (`editors/vscode/jalpari/`, LSP client, 16
+  snippets, `jalpari-1.0.0.vsix`).
+- **Freestanding track (27 Oct 2026, on main after 1.2.0):** the
+  language can now stand without Linux underneath —
+  `--freestanding` builds (no libc, own `_start`, raw exit
+  syscall, `fail()` halts), raw memory (`peek32`/`poke32`),
+  bitwise operators, CSR builtins, an `ecall` builtin, and a
+  `trap_handler` hook, all proven on the big32 CPU model. See
+  `docs/FREESTANDING.md`: Phases A–D are done, the first kernel
+  (Phase E) is next.
 - **CI:** `.github/workflows/ci.yml` runs the test suite, formatter check, and ecosystem example
 
 ## ⚠️ Honest gaps
@@ -391,7 +442,13 @@ fluent generation, a full self-hosting compiler,
 big32 float division/ordered comparisons/printing/casts,
 PNG/JPEG loading,
 and float printing past 6
-significant digits. Still blocked on the user's
+significant digits. Freestanding v1 is honest about its own
+limits too: no strings/arrays (no allocator yet), no I/O
+library (output is `poke32` MMIO + exit codes), native
+freestanding is x86_64 Linux only, the big32 model has no
+timer or SBI emulation (so the trap checkpoint is
+ecall-driven), and full `sbiret` SBI calls are follow-up work.
+Still blocked on the user's
 accounts and token scope, as before: a public registry
 host, CI upload, repo rename, PyPI publish, and VS Code
 Marketplace publish. The playground's end-to-end run in
