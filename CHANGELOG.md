@@ -8,6 +8,8 @@ without a major version bump (see docs/STABILITY.md).
 
 ## Unreleased
 
+## 1.2.0 — 27 Oct 2026
+
 - HTTPS proxy (CONNECT) support in `http_get` (native backend):
   `https_proxy` / `HTTPS_PROXY` (`http://[user[:pass]@]host[:port]`,
   port defaults to 8080) now tunnels HTTPS through a plain HTTP
