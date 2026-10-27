@@ -90,6 +90,6 @@ at its root) from the distro side.
    re-supplied) to close the verification gap in the matrix.
 3. First ISO build + VM boot test (needs an Arch builder) — the
    standing blocker for every distro claim beyond "profile done".
-4. HTTP client proxy (CONNECT) support — the named next language
-   feature JalOS wants, so `pkg install` can fetch over HTTPS
-   through proxied networks.
+4. (Done 27 Oct 2026) HTTP client proxy (CONNECT) support — was the
+   named next language feature JalOS wanted; shipped in RED-MOON-,
+   tested in `tests/test_proxy_connect.py` (6/6).

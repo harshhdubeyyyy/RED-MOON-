@@ -8,6 +8,20 @@ without a major version bump (see docs/STABILITY.md).
 
 ## Unreleased
 
+- HTTPS proxy (CONNECT) support in `http_get` (native backend):
+  `https_proxy` / `HTTPS_PROXY` (`http://[user[:pass]@]host[:port]`,
+  port defaults to 8080) now tunnels HTTPS through a plain HTTP
+  proxy with a `CONNECT host:443` handshake before the TLS
+  handshake (SNI, certificate verification, and all existing
+  failure messages unchanged); `no_proxy` / `NO_PROXY` bypasses
+  the proxy (exact, leading-dot suffix, or `*`). Other proxy
+  schemes are ignored and the connection goes direct, as before;
+  plain `http://` never uses a proxy. Tested end to end with a
+  local CONNECT proxy + local TLS server on a private CA
+  (`tests/test_proxy_connect.py`, 6/6): direct, via proxy,
+  no_proxy bypass, proxy refusal (clean "proxy CONNECT refused"
+  error), proxy auth, and non-http scheme ignored. WASM/big32
+  unaffected (native C only).
 - Windows port (MinGW-w64, cross-compile verified, not yet
   run-verified): the generated C now has a `#ifdef _WIN32`
   branch — winsock headers, a `forge_sock_t` socket type

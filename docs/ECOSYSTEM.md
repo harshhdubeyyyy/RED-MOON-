@@ -142,6 +142,13 @@ and pull request.
   over all addrinfo results. Linking falls back without `-lssl`
   if the machine lacks libssl (programs that never call
   `http_get` still build).
+- **TLS via proxy:** `https://` also works through a plain HTTP
+  proxy: `https_proxy` / `HTTPS_PROXY` (`http://[user[:pass]@]host[:port]`,
+  port defaults to 8080) sends `CONNECT` before the TLS handshake;
+  `no_proxy` / `NO_PROXY` bypasses it. Tested end to end with a
+  local CONNECT proxy + local TLS server (`tests/test_proxy_connect.py`,
+  6/6: direct, via proxy, bypass, refusal, auth, non-http scheme
+  ignored). Plain `http://` stays direct; WASM/big32 unaffected.
 - **Local registry:** `forge pkg publish` copies a package into
   `$FORGE_REGISTRY` (default `~/.forge_registry`) as
   `<name>/<version>/`, and `forge pkg add name@version` vendors

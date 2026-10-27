@@ -376,6 +376,124 @@ static void forge_join_threads(void) {
     for (long long i = 0; i < 1024; i++) forge_thread_joined[i] = 0;
 }
 
+/* HTTPS proxy (CONNECT) support, native backend only.
+   Env: https_proxy (else HTTPS_PROXY), form http://[user[:pass]@]host[:port]
+   (bare host[:port] also works; port defaults to 8080). Only plain HTTP
+   proxies are honoured; any other scheme is ignored and the connection
+   goes direct, as before. no_proxy (else NO_PROXY) lists hosts that
+   bypass the proxy: comma-separated, exact match, leading-dot suffix
+   match, or "*" for all. Plain http:// URLs never use a proxy.
+   Caller provides phost[256], pport[16], pauth[512]. */
+static int forge_ieq_n(const char *a, const char *b, size_t n) {
+    for (size_t i = 0; i < n; i++) {
+        char ca = a[i], cb = b[i];
+        if (ca >= 'A' && ca <= 'Z') ca = (char)(ca - 'A' + 'a');
+        if (cb >= 'A' && cb <= 'Z') cb = (char)(cb - 'A' + 'a');
+        if (ca != cb) return 0;
+    }
+    return 1;
+}
+
+static int forge_ieq(const char *a, const char *b) {
+    size_t la = strlen(a), lb = strlen(b);
+    return la == lb && forge_ieq_n(a, b, la);
+}
+
+static void forge_b64(const unsigned char *in, size_t len, char *out) {
+    static const char tbl[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    size_t i = 0, o = 0;
+    while (i + 3 <= len) {
+        out[o++] = tbl[in[i] >> 2];
+        out[o++] = tbl[((in[i] & 3) << 4) | (in[i + 1] >> 4)];
+        out[o++] = tbl[((in[i + 1] & 15) << 2) | (in[i + 2] >> 6)];
+        out[o++] = tbl[in[i + 2] & 63];
+        i += 3;
+    }
+    if (len - i == 1) {
+        out[o++] = tbl[in[i] >> 2];
+        out[o++] = tbl[(in[i] & 3) << 4];
+        out[o++] = '='; out[o++] = '=';
+    } else if (len - i == 2) {
+        out[o++] = tbl[in[i] >> 2];
+        out[o++] = tbl[((in[i] & 3) << 4) | (in[i + 1] >> 4)];
+        out[o++] = tbl[(in[i + 1] & 15) << 2];
+        out[o++] = '=';
+    }
+    out[o] = '\0';
+}
+
+/* 1 = use proxy (phost/pport/pauth filled, pauth may be ""), 0 = direct,
+   -1 = proxy env present but unusable (caller fails loudly). */
+static int forge_proxy_for(const char *host, char *phost, char *pport, char *pauth) {
+    const char *np = getenv("no_proxy");
+    if (!np) np = getenv("NO_PROXY");
+    if (np) {
+        const char *p = np;
+        while (*p) {
+            while (*p == ' ' || *p == '\t') p++;
+            const char *e = p;
+            while (*e && *e != ',') e++;
+            size_t n = (size_t)(e - p);
+            while (n > 0 && (p[n - 1] == ' ' || p[n - 1] == '\t')) n--;
+            if (n == 1 && p[0] == '*') return 0;
+            if (n > 0 && n < 256) {
+                char entry[256];
+                memcpy(entry, p, n); entry[n] = '\0';
+                if (forge_ieq(entry, host)) return 0;
+                if (entry[0] == '.') {
+                    size_t hl = strlen(host), el = strlen(entry);
+                    if ((hl >= el && forge_ieq_n(host + hl - el, entry, el)) ||
+                        forge_ieq(entry + 1, host)) return 0;
+                }
+            }
+            p = e;
+            if (*p == ',') p++;
+        }
+    }
+    const char *px = getenv("https_proxy");
+    if (!px) px = getenv("HTTPS_PROXY");
+    if (!px || !*px) return 0;
+    const char *s = px;
+    const char *scheme = strstr(px, "://");
+    if (scheme) {
+        if (!((scheme - px) == 4 && forge_ieq_n(px, "http", 4))) return 0;
+        s = scheme + 3;
+    }
+    /* s = [user[:pass]@]host[:port][/...] */
+    const char *slash = strchr(s, '/');
+    size_t auth_len = slash ? (size_t)(slash - s) : strlen(s);
+    if (auth_len == 0 || auth_len >= 512) return -1;
+    char spec[512];
+    memcpy(spec, s, auth_len); spec[auth_len] = '\0';
+    pauth[0] = '\0';
+    const char *at = strchr(spec, '@');
+    const char *hp = spec;
+    if (at) {
+        size_t ulen = (size_t)(at - spec);
+        if (ulen == 0 || ulen > 300) return -1;
+        char userpass[301];
+        memcpy(userpass, spec, ulen); userpass[ulen] = '\0';
+        forge_b64((unsigned char *)userpass, ulen, pauth);
+        hp = at + 1;
+    }
+    if (hp[0] == '[') return -1; /* IPv6 proxy literals not supported */
+    if (hp[0] == '\0') return -1;
+    const char *colon = strchr(hp, ':');
+    if (colon) {
+        size_t hn = (size_t)(colon - hp);
+        if (hn == 0 || hn >= 256) return -1;
+        memcpy(phost, hp, hn); phost[hn] = '\0';
+        const char *pp = colon + 1;
+        if (pp[0] == '\0' || strlen(pp) >= 16) return -1;
+        strcpy(pport, pp);
+    } else {
+        if (strlen(hp) >= 256) return -1;
+        strcpy(phost, hp);
+        strcpy(pport, "8080");
+    }
+    return 1;
+}
+
 static char *forge_https_get(const char *url) {
 #if (defined(_WIN32) && !defined(FORGE_HAVE_OPENSSL)) || defined(FORGE_NO_OPENSSL)
     (void)url;
@@ -401,10 +519,16 @@ static char *forge_https_get(const char *url) {
     char *colon = strchr(hostport, ':');
     if (colon) { size_t hl = (size_t)(colon - hostport); memcpy(host, hostport, hl); host[hl] = '\0'; strcpy(portstr, colon + 1); }
     else strcpy(host, hostport);
+    /* Proxy: only HTTPS uses CONNECT. Plain http:// stays direct. */
+    char phost[256]; char pport[16]; char pauth[512];
+    int px = forge_proxy_for(host, phost, pport, pauth);
+    if (px < 0) forge_fail("https_get: cannot parse https_proxy");
+    const char *conn_host = (px == 1) ? phost : host;
+    const char *conn_port = (px == 1) ? pport : portstr;
     struct addrinfo hints; memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_UNSPEC; hints.ai_socktype = SOCK_STREAM;
     struct addrinfo *res = NULL;
-    if (getaddrinfo(host, portstr, &hints, &res) != 0) forge_fail("https_get: cannot resolve host");
+    if (getaddrinfo(conn_host, conn_port, &hints, &res) != 0) forge_fail("https_get: cannot resolve host");
     forge_sock_t sock = FORGE_SOCK_INVALID;
     for (struct addrinfo *ai = res; ai != NULL; ai = ai->ai_next) {
         sock = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
@@ -414,6 +538,27 @@ static char *forge_https_get(const char *url) {
     }
     freeaddrinfo(res);
     if (sock == FORGE_SOCK_INVALID) forge_fail("https_get: cannot connect");
+    if (px == 1) {
+        /* CONNECT handshake; afterwards the socket carries TLS as usual. */
+        char creq[2048];
+        int cn;
+        if (pauth[0])
+            cn = snprintf(creq, sizeof(creq), "CONNECT %s:%s HTTP/1.1\r\nHost: %s:%s\r\nProxy-Authorization: Basic %s\r\n\r\n", host, portstr, host, portstr, pauth);
+        else
+            cn = snprintf(creq, sizeof(creq), "CONNECT %s:%s HTTP/1.1\r\nHost: %s:%s\r\n\r\n", host, portstr, host, portstr);
+        if (cn < 0 || (size_t)cn >= sizeof(creq)) { forge_sock_close(sock); forge_fail("https_get: proxy CONNECT request too long"); }
+        if (send(sock, creq, (size_t)cn, 0) < 0) { forge_sock_close(sock); forge_fail("https_get: proxy CONNECT failed"); }
+        char resp[8192]; size_t rlen = 0; int done = 0;
+        while (rlen + 1024 < sizeof(resp)) {
+            ssize_t got = recv(sock, resp + rlen, sizeof(resp) - rlen - 1, 0);
+            if (got <= 0) break;
+            rlen += (size_t)got; resp[rlen] = '\0';
+            if (strstr(resp, "\r\n\r\n")) { done = 1; break; }
+        }
+        if (!done) { forge_sock_close(sock); forge_fail("https_get: proxy CONNECT failed (no response)"); }
+        int status = 0;
+        if (sscanf(resp, "HTTP/%*s %d", &status) != 1 || status != 200) { forge_sock_close(sock); forge_fail("https_get: proxy CONNECT refused"); }
+    }
     SSL_CTX *ctx = SSL_CTX_new(TLS_client_method());
     if (!ctx) { forge_sock_close(sock); forge_fail("https_get: cannot create SSL context"); }
     SSL_CTX_set_default_verify_paths(ctx);

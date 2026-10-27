@@ -41,10 +41,10 @@ The demo tour is offline and deterministic, and it is wired into
 - **No passwords worth trusting.** Passwords are compared as plain
   strings (no hashing builtin exists) — the user model demonstrates
   permissions, it does not secure anything real.
-- **HTTPS needs direct internet.** `pkg install` and `httpget` over
-  HTTPS fail behind HTTP proxies: the language's HTTP client does
-  not speak proxy CONNECT yet, so a proxied sandbox breaks the TLS
-  handshake. Plain HTTP works everywhere. Proxy support in the
-  HTTP client is the next language feature this OS wants.
+- **HTTPS works through proxies now.** `pkg install` and `httpget`
+  over HTTPS honour `https_proxy` / `HTTPS_PROXY` (plain HTTP
+  proxy, `CONNECT` handshake before TLS; `no_proxy` bypasses it).
+  In a proxied sandbox, set the proxy env vars and HTTPS works;
+  plain HTTP works everywhere regardless.
 - **No persistence.** The VFS lives in memory; shutdown loses it.
   Saving the filesystem image to a host file is a planned step.
