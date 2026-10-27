@@ -449,6 +449,27 @@ SOC2 edit from frontier 1 stays local (BIG-32
 publication belongs to the Linux-boot track); the
 RED-MOON- push below carries the rebase tooling.
 
+**Hardware frontier 5 DONE 27 Oct 2026 — pixels
+with a font:** SOC2 pixel framebuffer at 0x10020000,
+mode-13h-style: 320x200, 8 bits per pixel, 64000 bytes
+as 16000 words (byte 0 = leftmost of 4 pixels), word
+stores only, aligned-word reads, NOT reset-cleared.
+Kernel `examples/os/kernel_pix.fg` (SOC2-only, no RAM
+scratch so no rebase needed) clears to black, draws a
+white border and a white filled rectangle, and renders
+"KERN" in black on the rectangle from a hand-drawn 8x8
+font (glyphs K, E, R, N as small positive row bytes —
+the font lives in code as row functions, because
+freestanding mode has no arrays). Verified by
+`tests/test_kernel_pix.py`: PIX PASS, all 64000 pixels
+match, halted, UART KERN / DONE — and the text reads
+cleanly as ASCII art in the test output. Regression:
+soc2 plic + timer64 still PASS. Honest scope: palette
+indices only (0 black, 1 white) — a palette register
+is the next display step, not this one. The SOC2 pixel
+edit stays LOCAL (BIG-32 publication belongs to the
+Linux-boot track).
+
 **Hardware frontier 4 DONE 27 Oct 2026 — a real
 framebuffer:** SOC2 text-mode VRAM at 0x10004000,
 VGA-text-style: 80x25 cells, 2 bytes per cell (char +
