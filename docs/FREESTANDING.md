@@ -298,6 +298,24 @@ full-disk re-alloc after deletes), halted, and the predicted
 heap state (bump 16, free-list empty, file 5's map row in
 free-list pop order). Next: processes.
 
+**Checkpoint 5 DONE 27 Oct 2026 — processes:** process table
+in scratch 0x8000 (4 slots x 16 bytes [state, frame, mepc,
+exit_code]; 0 free, 1 ready, 2 running, 3 done), cooperative
+switching via ecall: 2 = spawn (fork into a free slot; parent
+gets the pid, child 0, -1 if no slot), 3 = yield (round-robin
+to the next ready task), 4 = exit(code) (mark done, switch on;
+if nobody is ready, clear mtvec and ecall, which halts). The
+sharp rule: fork copies only the trap frame, not main's
+function frame, so the child must branch on the spawn result
+immediately, and the parent records pids into scratch before
+any yield and waits on those copies, never on the shared
+locals. Kernel `examples/os/kernel_proc.fg` verified by
+`tests/test_kernel_proc.py` 9/9: exact transcript
+`KERNABABABDONE` (the ABABAB interleave proves switching),
+halted, final states [running, done, done, free], exit codes
+0, pids 1 and 2 recorded, plus a probe proving the
+exit-with-nobody-left halt path. Next: shell.
+
 ## What does not change
 
 - Black Moon OS (the Linux distro) continues as the system people
