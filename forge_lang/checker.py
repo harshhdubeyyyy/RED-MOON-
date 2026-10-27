@@ -788,6 +788,8 @@ class Checker:
                 return t
             if expr.op == "!" and t == "bool":
                 return "bool"
+            if expr.op == "~" and t == "int":
+                return "int"
             raise ForgeError(f"operator '{expr.op}' does not apply to {t}", expr.line, expr.col)
         if isinstance(expr, A.BinOp):
             return self.check_binop(expr)
@@ -1082,6 +1084,11 @@ class Checker:
             if lt == "bool" and rt == "bool":
                 return "bool"
             raise ForgeError(f"operator '{op}' needs bool operands, got {lt} and {rt}",
+                             node.line, node.col)
+        if op in ("&", "|", "^", "<<", ">>"):
+            if lt == "int" and rt == "int":
+                return "int"
+            raise ForgeError(f"operator '{op}' needs int operands, got {lt} and {rt}",
                              node.line, node.col)
         raise ForgeError(f"unknown operator '{op}'", node.line, node.col)
 

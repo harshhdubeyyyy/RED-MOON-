@@ -368,13 +368,25 @@ class Parser:
         return self._level(self.parse_and, {"||"})
 
     def parse_and(self):
-        return self._level(self.parse_equality, {"&&"})
+        return self._level(self.parse_bitor, {"&&"})
+
+    def parse_bitor(self):
+        return self._level(self.parse_bitxor, {"|"})
+
+    def parse_bitxor(self):
+        return self._level(self.parse_bitand, {"^"})
+
+    def parse_bitand(self):
+        return self._level(self.parse_equality, {"&"})
 
     def parse_equality(self):
         return self._level(self.parse_comparison, {"==", "!="})
 
     def parse_comparison(self):
-        return self._level(self.parse_additive, {"<", "<=", ">", ">="})
+        return self._level(self.parse_shift, {"<", "<=", ">", ">="})
+
+    def parse_shift(self):
+        return self._level(self.parse_additive, {"<<", ">>"})
 
     def parse_additive(self):
         return self._level(self.parse_multiplicative, {"+", "-"})
@@ -384,7 +396,7 @@ class Parser:
 
     def parse_unary(self):
         tok = self.peek()
-        if tok.kind == "OP" and tok.value in ("-", "!"):
+        if tok.kind == "OP" and tok.value in ("-", "!", "~"):
             self.next()
             return A.UnaryOp(tok.value, self.parse_unary(), tok.line, tok.col)
         return self.parse_postfix()

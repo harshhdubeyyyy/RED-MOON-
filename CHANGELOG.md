@@ -8,6 +8,14 @@ without a major version bump (see docs/STABILITY.md).
 
 ## Unreleased
 
+- Bitwise operators `& | ^ << >> ~` on ints (first step toward a
+  freestanding, bare-metal-capable language; see
+  docs/FREESTANDING.md): C-like precedence, two's-complement
+  `& | ^`, wrapping `<<`, arithmetic `>>`, shift counts masked
+  (0..63 native/WASM, 0..31 big32). Native, WASM, and big32
+  backends; `tests/test_bitwise.py` covers all three plus
+  checker rejections and formatter stability.
+
 ## 1.2.0 — 27 Oct 2026
 
 - HTTPS proxy (CONNECT) support in `http_get` (native backend):

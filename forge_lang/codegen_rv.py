@@ -1073,6 +1073,9 @@ class RVGen:
                     self.emit(f"    sub {r}, zero, {r}")
             elif expr.op == "!":
                 self.emit(f"    xori {r}, {r}, 1")
+            elif expr.op == "~":
+                # Bitwise not: x xor -1 (-1 fits the 12-bit immediate).
+                self.emit(f"    xori {r}, {r}, -1")
             else:
                 raise ForgeError(f"unsupported unary operator {expr.op} on big32")
             return r

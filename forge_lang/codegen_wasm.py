@@ -837,6 +837,9 @@ class WasmGen:
                 return b"\x42\x00" + inner + b"\x7d"  # i64.const 0, x, i64.sub
             if expr.op == "!":
                 return inner + b"\x45"  # i32.eqz
+            if expr.op == "~":
+                # WASM has no bitwise not: x xor -1.
+                return inner + b"\x42\x7f" + b"\x85"  # i64.const -1, i64.xor
             raise ForgeError(f"wasm: unary {expr.op} is not supported in v1")
         if isinstance(expr, A.BinOp):
             lt = self.expr_type(expr.left)
@@ -857,7 +860,8 @@ class WasmGen:
             right = self.gen_expr(expr.right)
             if lt == "int":
                 ops = {"+": 0x7C, "-": 0x7D, "*": 0x7E, "/": 0x7F, "%": 0x81,
-                       "==": 0x51, "!=": 0x52, "<": 0x53, ">": 0x55, "<=": 0x57, ">=": 0x59}
+                       "==": 0x51, "!=": 0x52, "<": 0x53, ">": 0x55, "<=": 0x57, ">=": 0x59,
+                       "&": 0x83, "|": 0x84, "^": 0x85, "<<": 0x86, ">>": 0x87}
             elif lt == "float":
                 ops = {"+": 0xA0, "-": 0xA1, "*": 0xA2, "/": 0xA3,
                        "==": 0x61, "!=": 0x62, "<": 0x63, ">": 0x64, "<=": 0x65, ">=": 0x66}

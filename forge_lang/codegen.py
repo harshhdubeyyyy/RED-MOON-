@@ -2351,6 +2351,15 @@ class Codegen:
                         if pure:
                             self._check_cache[key] = True
                         return f"{checked[expr.op]}({left}, {right})"
+                # Bitwise shifts have defined two's-complement semantics:
+                # << wraps through uint64, >> is arithmetic, and the
+                # count is masked to 0..63 so all backends agree
+                # (WASM masks to 64, big32 masks to 32 — see the
+                # freestanding docs for the cross-backend note).
+                if expr.op == "<<":
+                    return f"((int64_t)((uint64_t)({left}) << ((uint64_t)({right}) & 63)))"
+                if expr.op == ">>":
+                    return f"(({left}) >> (({right}) & 63))"
             return f"({left} {expr.op} {right})"
         if isinstance(expr, A.Call):
             # A call may mutate shared state (an array passed to it

@@ -6,8 +6,8 @@ from .errors import ForgeError
 KEYWORDS = {"fn", "let", "mut", "if", "else", "while", "for", "in",
             "return", "true", "false", "import", "as", "struct",
             "enum", "match", "spawn", "extern", "break"}
-TWO_CHAR = {"==", "!=", "<=", ">=", "&&", "||", "->", "=>"}
-ONE_CHAR = set("+-*/%<>=!;,:(){}[].?")
+TWO_CHAR = {"==", "!=", "<=", ">=", "&&", "||", "->", "=>", "<<", ">>"}
+ONE_CHAR = set("+-*/%<>=!;,:(){}[].?&|^~")
 
 
 @dataclass
