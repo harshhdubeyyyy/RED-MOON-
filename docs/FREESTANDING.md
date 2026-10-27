@@ -449,6 +449,35 @@ SOC2 edit from frontier 1 stays local (BIG-32
 publication belongs to the Linux-boot track); the
 RED-MOON- push below carries the rebase tooling.
 
+**Hardware frontier 3 DONE 27 Oct 2026 — a real network
+device:** SOC2 serial packet device at 0x10003000
+(SLIP over a serial line, RFC 1055): TX_DATA +0x00 (WO),
+RX_DATA +0x04 (RO, pop on read, -1 when empty), STATUS
++0x08 (RX ready, TX not full); 64-byte FIFOs each way,
+TX drains one byte per cycle to the pins, RX pop uses
+the mem_load_w discipline of the 16550. Kernel
+`examples/os/kernel_netdev.fg` (model addresses, via
+rebase_soc2.py; SOC2-only — the model has no net
+device) runs the checkpoint-9 stack against it, with
+the testbench as the peer: both transmitted packets
+verified byte-exact, then the peer sends a reflection
+(ESC path), a corrupted packet (dropped), and a pong.
+Verified by `tests/test_kernel_netdev.py`: NETDEV PASS,
+transcript KERN / PONG / S2R2D1 / DONE, halted.
+Regression: soc2 plic + timer64 still PASS. Debugging
+note, owned plainly: the first run failed with only
+KERN — the bus trace showed stores to 0x10001000
+(virtio), not 0x10003000, because the decimal I wrote
+for 0x10003000 was wrong (268439552 is 0x10001000;
+the correct value is 268447744). The assembler was
+right; the hex spelling in the earlier probe had been
+right. Lesson, now in the kernel's comments: the
+language has no hex literals, so round-trip every MMIO
+decimal through hex() before use. The SOC2 device edit
+stays LOCAL (BIG-32 publication belongs to the
+Linux-boot track). What remains on the hardware
+frontier: a real framebuffer for the GUI.
+
 ## What does not change
 
 - Black Moon OS (the Linux distro) continues as the system people
