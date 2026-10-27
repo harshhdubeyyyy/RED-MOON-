@@ -7,11 +7,14 @@ at its root) from the distro side.
 
 ## Current state (27 Oct 2026)
 
-- RED-MOON- live `main`: `627904d` (post-1.1.0 work pushed 27 Oct 2026).
-- BLACK-MOON-OS- live `main`: `8fa46c2` (INTEGRATION.md added 27 Oct 2026).
+- RED-MOON- live `main` (code): `6a92164f` (HTTPS proxy support, pushed 27 Oct 2026).
+- BLACK-MOON-OS- live `main` (code): `a98cddb` (INTEGRATION.md added 27 Oct 2026).
 - The post-1.1.0 drift is CLOSED: live `main` now contains the Windows
   port, registry deploy configs, JalOS with `ai`/`audit` (1408 lines),
   and CHANGELOG "Unreleased" entries.
+- Note on refs: doc-only pushes move `main` after this file is written,
+  so the refs above name the last code push. The matrix below records
+  code combinations, which doc pushes do not invalidate.
 - Local git HEAD here (`4688857`, v0.3.0 era) is stale and is NOT the
   push path: RED-MOON- is published by `scripts/push_forge.py`, which
   builds Git trees from this working tree via the GitHub API. Do not
@@ -57,14 +60,14 @@ at its root) from the distro side.
 | v1.1.0 (`d56a903`) | `6fab40f` | 27 Oct 2026 | Kaggle kernel v1: RUNNING → COMPLETE; log shows demo, `ai` (4 epochs), `audit` |
 | working tree post-1.1.0 | `6fab40f` | 27 Oct 2026 | `jalos.fg` byte-identical across all 3 copies; demo output identical (254 lines) |
 | `627904d` | `8fa46c2` | 27 Oct 2026 | Fresh public clones of both repos: full native suite PASS + sync check 9/9 |
+| `6a92164f` | `a98cddb` | 27 Oct 2026 | Kaggle kernel v2: RUNNING → COMPLETE; log shows demo, `ai` (4 epochs), `audit`; clones used contain the proxy code |
 
 ## Known drift (open, not hidden)
 
 - No code drift at present: both live mains contain the same JalOS.
-- Verification gap (honest): the Kaggle-verified combination is the
-  older refs (`d56a903` + `6fab40f`); the new refs are verified from
-  fresh public clones locally, not yet by a Kaggle re-run (that needs
-  the owner's token re-supplied, per the standing rule).
+- Verification gap CLOSED 27 Oct 2026: Kaggle kernel v2 ran the current
+  code refs (`6a92164f` + `a98cddb`) to COMPLETE. (Kaggle re-runs need
+  the owner's token re-supplied each time, per the standing rule.)
 - BLACK-MOON-OS- live `main` is current.
 - The distro ISO itself is still unbuilt/unbooted (needs an Arch
   builder); the theme, AI/sec launchers, and installer theme-copying
@@ -86,10 +89,10 @@ at its root) from the distro side.
 
 1. Decide the next version number/release notes (no version bump
    decided yet) — the pushed tree is post-1.1.0 but unversioned.
-2. Kaggle re-run against the new refs (needs the owner's token
-   re-supplied) to close the verification gap in the matrix.
-3. First ISO build + VM boot test (needs an Arch builder) — the
+2. First ISO build + VM boot test (needs an Arch builder) — the
    standing blocker for every distro claim beyond "profile done".
+3. (Done 27 Oct 2026) Kaggle re-run against the new refs — kernel v2
+   COMPLETE; verification gap closed (see matrix).
 4. (Done 27 Oct 2026) HTTP client proxy (CONNECT) support — was the
    named next language feature JalOS wanted; shipped in RED-MOON-,
    tested in `tests/test_proxy_connect.py` (6/6).
