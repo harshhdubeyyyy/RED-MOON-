@@ -449,6 +449,32 @@ SOC2 edit from frontier 1 stays local (BIG-32
 publication belongs to the Linux-boot track); the
 RED-MOON- push below carries the rebase tooling.
 
+**Hardware frontier 4 DONE 27 Oct 2026 — a real
+framebuffer:** SOC2 text-mode VRAM at 0x10004000,
+VGA-text-style: 80x25 cells, 2 bytes per cell (char +
+attribute), stored as 1000 words (2 cells per word).
+Word stores only, aligned-word reads, VRAM deliberately
+NOT reset-cleared (the kernel must clear it, like real
+hardware powering up undefined). Kernel
+`examples/os/kernel_fb.fg` (SOC2-only, no RAM scratch
+so no rebase needed) clears the screen to spaces and
+draws the GUI checkpoint's windows — A, B, then A to
+the front — into VRAM instead of UART escapes.
+Verified by `tests/test_kernel_fb.py`: FB PASS, all
+2000 cells match including attributes (title chars
+attr 1, everything else 0; the overlap region shows
+A's cells, spaces included, over B's), halted, UART
+KERN / DONE. Regression: soc2 plic + timer64 still
+PASS. Debugging notes, owned: the first build failed
+on the checker's own rule (`word` reassigned after a
+plain `let` — needs `let mut`); then the clear word
+took two tries (0x20202020 sets attr 0x20 too — the
+right clear word is 0x00200020, char space + attr 0).
+The SOC2 VRAM edit stays LOCAL (BIG-32 publication
+belongs to the Linux-boot track). Honest scope: this
+is TEXT mode, not pixels — a pixel framebuffer with a
+font is the next hardware step, not this one.
+
 **Hardware frontier 3 DONE 27 Oct 2026 — a real network
 device:** SOC2 serial packet device at 0x10003000
 (SLIP over a serial line, RFC 1055): TX_DATA +0x00 (WO),
