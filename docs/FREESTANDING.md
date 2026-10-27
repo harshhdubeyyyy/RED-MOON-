@@ -235,6 +235,20 @@ networking (the capability TempleOS never had); user programs —
 the Moon apps, rewritten as native OS programs. A PC port comes
 only after the big32 OS is real.
 
+**Checkpoint 1 DONE 27 Oct 2026 — bump allocator:** an allocator
+needs no pointers (addresses are ints, peek32/poke32 are the
+read/write). Heap [0xA000, 0xC000), bump pointer in RAM scratch
+0x8040. `alloc` aligns up to 4, fails with -1 past the heap end,
+else advances and returns the block; `free` is deliberately a
+no-op (a free-list is checkpoint 2). Kernel
+`examples/os/kernel_alloc.fg` verified by
+`tests/test_kernel_alloc.py` 6/6: exact transcript
+`KERNKKKKDONE`, halted, patterns intact in the model heap.
+Phase E push also landed (RED-MOON- 10d9a19f -> 1c815883,
+verified live) and the Phase E model timer was pushed to BIG-32
+(commit 9e7ef047, verified live) — the model change is no longer
+local-only.
+
 ## What does not change
 
 - Black Moon OS (the Linux distro) continues as the system people
