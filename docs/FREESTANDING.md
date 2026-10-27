@@ -470,6 +470,34 @@ is the next display step, not this one. The SOC2 pixel
 edit stays LOCAL (BIG-32 publication belongs to the
 Linux-boot track).
 
+**INTEGRATION ON HARDWARE DONE 27 Oct 2026 — one
+kernel, everything:** `examples/os/kernel_full.fg`
+(unified base: shell, processes, bump allocator,
+filesystem v2, sleep, ANSI GUI) + the network stack
+over the REAL serial device (the loopback retires;
+its buffer frees up) + text-VRAM windows (`t`) +
+pixel windows with the font (`v`, including two new
+glyphs A and B — the first draft's window titles
+couldn't render with the K/E/R/N-only font).
+One map, no collisions: device scratch remapped into
+the unified net area (0x82F8–0x8350). Both VRAMs are
+cleared at boot (the pixel clear alone is 16000
+words). Verified by `tests/test_kernel_full.py` on
+the combined testbench (shell tour fed over UART RX,
+network peer live): FULL PASS — all 2000 text cells
+and the pixel windows match, both TX packets
+byte-exact, halted, exact 329-char shell-tour
+transcript (KERN, help, procs, spawn H/I interleave,
+M80008400, F, ANSI windows, PONG + S2R2D1, T, V,
+BYE). Regression: soc2 plic + timer64 still PASS.
+Testbench lesson, kept: the tour feeder syncs on the
+KERN banner — a fixed delay would overflow the
+16-byte RX FIFO during the boot VRAM clears. Limits
+carried over: 2 child slots, no idle task, palette
+indices only. The SOC2 device edits stay LOCAL
+(BIG-32 publication belongs to the Linux-boot
+track).
+
 **Hardware frontier 4 DONE 27 Oct 2026 — a real
 framebuffer:** SOC2 text-mode VRAM at 0x10004000,
 VGA-text-style: 80x25 cells, 2 bytes per cell (char +
