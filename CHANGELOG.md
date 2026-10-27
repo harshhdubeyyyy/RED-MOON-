@@ -8,6 +8,14 @@ without a major version bump (see docs/STABILITY.md).
 
 ## Unreleased
 
+- `--freestanding` build mode (Phase C of the freestanding
+  track; see docs/FREESTANDING.md): native builds with
+  `-nostdlib` and the program's own `_start` (raw exit_group
+  syscall, main's return value = exit code); OS needs
+  (files, sockets, threads, clock, args, print, libm, extern)
+  are clean checker errors and strings/arrays are clean
+  codegen errors; big32 runs under the same flag, WASM
+  refuses it. `fail()` halts instead of exiting.
 - Raw memory builtins `peek32`/`poke32` (Phase B of the
   freestanding track; see docs/FREESTANDING.md): volatile 32-bit
   load/store through a raw address — native via volatile pointer

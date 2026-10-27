@@ -47,6 +47,9 @@ def main(argv=None):
         p = sub.add_parser(name)
         p.add_argument("file")
         p.add_argument("--mode", choices=["safe", "fast"], default="safe")
+        p.add_argument("--freestanding", action="store_true",
+                       help="build without libc/OS: no files, sockets, threads, "
+                            "clock, print, or strings/arrays (freestanding v1)")
     p = sub.add_parser("run")
     p.add_argument("file")
     p.add_argument("--mode", choices=["safe", "fast"], default="safe")
@@ -64,6 +67,9 @@ def main(argv=None):
     p = sub.add_parser("build")
     p.add_argument("file")
     p.add_argument("--mode", choices=["safe", "fast"], default="safe")
+    p.add_argument("--freestanding", action="store_true",
+                   help="build without libc/OS: no files, sockets, threads, "
+                        "clock, print, or strings/arrays (freestanding v1)")
     p.add_argument("--target", choices=["native", "big32", "wasm"], default="native")
     p.add_argument("-o", "--output", default=None)
     p.add_argument("--keep-c", default=None)
@@ -116,11 +122,11 @@ def main(argv=None):
             root = os.path.dirname(os.path.abspath(__file__))
             return dispatch(list(args.pkg_args), os.path.abspath(__file__), os.getcwd())
         if args.cmd == "check":
-            compile_file(args.file, mode=args.mode)
+            compile_file(args.file, mode=args.mode, freestanding=args.freestanding)
             print("ok: no errors")
             return 0
         if args.cmd == "emit":
-            c_source, _ = compile_file(args.file, mode=args.mode)
+            c_source, _ = compile_file(args.file, mode=args.mode, freestanding=args.freestanding)
             print(c_source)
             return 0
         if args.cmd == "emit-big32":
@@ -151,7 +157,7 @@ def main(argv=None):
             raise ForgeError("--wit requires --target wasm")
         if args.cmd == "build" and args.target == "big32":
             from forge_lang.compiler import compile_file_rv
-            asm, _ = compile_file_rv(args.file)
+            asm, _ = compile_file_rv(args.file, freestanding=args.freestanding)
             out = args.output or os.path.splitext(args.file)[0]
             if out.endswith(".hex"):
                 out = out[:-4]
@@ -180,6 +186,9 @@ def main(argv=None):
             print(f"built big32: {s_path} + {hex_path}")
             return 0
         if args.cmd == "build" and args.target == "wasm":
+            if args.freestanding:
+                raise ForgeError("freestanding is not supported for wasm "
+                                 "(WASM is always hosted)")
             from forge_lang.compiler import compile_file_wasm
             wasm, _ = compile_file_wasm(args.file, wit_path=args.wit)
             out = args.output or (os.path.splitext(args.file)[0] + ".wasm")
@@ -196,8 +205,9 @@ def main(argv=None):
         if args.cmd == "build":
             out = args.output or os.path.splitext(args.file)[0]
             build(args.file, out, mode=args.mode, keep_c=args.keep_c,
-                  debug=args.debug)
-            print(f"built: {out} (mode={args.mode})")
+                  debug=args.debug, freestanding=args.freestanding)
+            print(f"built: {out} (mode={args.mode}"
+                  f"{', freestanding' if args.freestanding else ''})")
             return 0
         if args.cmd == "test":
             root = os.path.dirname(os.path.abspath(__file__))

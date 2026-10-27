@@ -74,18 +74,18 @@ def load_program(path, seen=None):
     return A.Program([], all_funcs, all_structs, all_enums)
 
 
-def compile_source(source, mode="safe"):
+def compile_source(source, mode="safe", freestanding=False):
     program = parse(source)
-    check(program)
+    check(program, freestanding=freestanding)
     types = infer_types(program)
-    return generate(program, types, mode=mode), program
+    return generate(program, types, mode=mode, freestanding=freestanding), program
 
 
-def compile_file(path, mode="safe", require_main=True, debug=False):
+def compile_file(path, mode="safe", require_main=True, debug=False, freestanding=False):
     program = load_program(path)
-    check(program, require_main=require_main)
+    check(program, require_main=require_main, freestanding=freestanding)
     types = infer_types(program)
-    return generate(program, types, mode=mode, debug=debug), program
+    return generate(program, types, mode=mode, debug=debug, freestanding=freestanding), program
 
 
 def build_shared(source_path, output_path, mode="safe"):
@@ -112,11 +112,11 @@ def build_shared(source_path, output_path, mode="safe"):
     return output_path
 
 
-def compile_file_rv(path):
+def compile_file_rv(path, freestanding=False):
     """Forge source -> big32 RISC-V assembly (no C, no x86)."""
     from .codegen_rv import generate_rv
     program = load_program(path)
-    check(program)
+    check(program, freestanding=freestanding)
     types = infer_types(program)
     return generate_rv(program, types), program
 
@@ -158,8 +158,8 @@ def _cc_flags(mode):
     return [_cc(), "-O2", "-std=gnu11", "-Wall", "-Wextra", "-Wno-unused-function", "-pthread"]
 
 
-def build(source_path, output_path, mode="safe", keep_c=None, debug=False):
-    c_source, _ = compile_file(source_path, mode=mode, debug=debug)
+def build(source_path, output_path, mode="safe", keep_c=None, debug=False, freestanding=False):
+    c_source, _ = compile_file(source_path, mode=mode, debug=debug, freestanding=freestanding)
     if keep_c:
         with open(keep_c, "w", encoding="utf-8") as f:
             f.write(c_source)
@@ -176,7 +176,15 @@ def build(source_path, output_path, mode="safe", keep_c=None, debug=False):
         # because the unused SSL helper is optimised away). On MinGW,
         # Winsock needs -lws2_32, and OpenSSL is off by default in the
         # generated C (JALPARI_HAVE_OPENSSL=1 opts back in).
+        # Freestanding: no libc at all, so no -pthread, no -lm, no
+        # SSL libs — just -nostdlib. The _start asm is x86_64 Linux
+        # only, so freestanding native refuses MinGW outright.
+        if freestanding and _is_mingw():
+            raise ForgeError("freestanding native is only supported for x86_64 Linux "
+                             "(the _start entry uses the Linux exit_group syscall)")
         flags = _cc_flags(mode) + (["-g"] if debug else [])
+        if freestanding:
+            flags = [f for f in flags if f != "-pthread"] + ["-nostdlib"]
         have_ssl = os.environ.get("JALPARI_HAVE_OPENSSL") == "1"
         no_ssl = os.environ.get("JALPARI_NO_OPENSSL") == "1"
         if no_ssl:
@@ -184,7 +192,10 @@ def build(source_path, output_path, mode="safe", keep_c=None, debug=False):
         elif have_ssl and _is_mingw():
             flags = flags + ["-DFORGE_HAVE_OPENSSL"]
         libs = ["-lm", "-lws2_32"] if _is_mingw() else ["-lm"]
-        if no_ssl:
+        if freestanding:
+            result = subprocess.run(flags + ["-o", output_path, c_path],
+                                    capture_output=True, text=True)
+        elif no_ssl:
             result = subprocess.run(flags + ["-o", output_path, c_path] + libs,
                                     capture_output=True, text=True)
         else:

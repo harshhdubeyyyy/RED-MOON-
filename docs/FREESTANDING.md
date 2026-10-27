@@ -97,17 +97,41 @@ address-of operator, so native round-trips cannot be addressed
 from Jal Pari itself — big32 is where these builtins are truly
 proven.
 
-### Phase C — Freestanding codegen
+### Phase C — Freestanding codegen (DONE 27 Oct 2026)
 
-A `--freestanding` build mode: no libc prelude (no stdio, pthread,
-socket, or file helpers in the generated code), no hosted `main`
-(a custom `_start` entry instead), `fail()` halts instead of
-exiting, and strings/arrays allocate from a small bump allocator
-emitted with the program — one the kernel can later replace with
-its own allocator. Anything that needs the OS (files, sockets,
-threads, `read_line`, clock) is a clean compile-time error in this
-mode, not a link error. Checkpoint: a freestanding program that
-builds with no libc symbols and runs on the big32 model.
+`forge.py build --freestanding` (also `check`/`emit`): the
+program stands without libc or Linux. Native builds with
+`-nostdlib`; the program's own `_start` entry calls
+`jalpari_main` and exits via the raw Linux `exit_group` syscall
+with main's return value (int main -> exit code, void main ->
+exit 0), so a freestanding program's only observable output is
+its exit code. The prelude is a minimal header (only the
+freestanding-compatible `<stdint.h>`/`<stdbool.h>` types, checked
+arithmetic via gcc builtins, volatile peek/poke helpers);
+`fail()` halts in an infinite loop, since there is no OS to
+exit to. Anything needing the OS is a clean error, not a link
+error: the checker rejects files, sockets, threads (spawn and
+scope), clock, args, print/println, libm builtins (sqrt/exp/log/
+pow/abs), and extern C functions; the codegen rejects any
+string/array value (including structs carrying str/array fields)
+and `emit_free_owned` is a no-op, since no owned values can
+exist. big32 runs under the same flag (its output is already
+bare metal); WASM refuses the flag outright. Pinned by
+`tests/test_freestanding.py` (24 checks): native exit codes
+(27 computed, 0 void, 42 fast), ldd statically linked, nm zero
+undefined symbols, `_start` + `jalpari_main` present, checked
+overflow halts (proven by timeout, not exit), big32 model
+"OK" via poke32 + RAM round-trip, all rejections, and the
+hosted control (the same print program builds fine without the
+flag). Two real bugs found by testing, both fixed: the Return
+path in main also emitted `forge_join_threads`, and unused
+str/array parameters could emit frees for helpers that don't
+exist. Limits: x86_64 Linux only for native (the `_start` asm);
+freestanding v1 has no allocator, so no strings/arrays and no
+I/O library — output is via poke32 (MMIO) and exit codes. The
+bump allocator for strings/arrays is now kernel work, not a
+Phase C promise: the roadmap's original allocator line is
+superseded by this honest v1.
 
 ### Phase D — Traps, interrupts, and firmware calls
 

@@ -792,6 +792,65 @@ static ForgeFloatArray forge_parallel_matmul(ForgeFloatArray a, ForgeFloatArray 
 """
 
 
+# Freestanding prelude (Phase C): NO libc at all. Only <stdint.h>
+# and <stdbool.h>, which are freestanding-compatible headers: they
+# define types, not linkable symbols. Checked arithmetic via gcc
+# builtins (no libm, no libc). forge_fail halts: there is no OS
+# to exit to. Array struct types are included so unused array/str
+# parameters still declare, but no allocator exists: strings and
+# arrays have no values in freestanding v1 (see the gen_expr guard).
+FREESTANDING_HEADER = r"""#include <stdint.h>
+#include <stdbool.h>
+
+typedef struct { int64_t *data; int64_t len; int64_t cap; int64_t *ref; } ForgeIntArray;
+typedef struct { double *data; int64_t len; int64_t cap; int64_t *ref; } ForgeFloatArray;
+typedef struct { bool *data; int64_t len; int64_t cap; int64_t *ref; } ForgeBoolArray;
+typedef struct { char **data; int64_t len; int64_t cap; int64_t *ref; } ForgeStrArray;
+
+static void forge_fail(const char *msg) {
+    (void)msg;
+    for (;;) {}
+}
+static int64_t forge_add(int64_t a, int64_t b) {
+    int64_t r;
+    if (__builtin_add_overflow(a, b, &r)) forge_fail("integer overflow");
+    return r;
+}
+static int64_t forge_sub(int64_t a, int64_t b) {
+    int64_t r;
+    if (__builtin_sub_overflow(a, b, &r)) forge_fail("integer overflow");
+    return r;
+}
+static int64_t forge_mul(int64_t a, int64_t b) {
+    int64_t r;
+    if (__builtin_mul_overflow(a, b, &r)) forge_fail("integer overflow");
+    return r;
+}
+static int64_t forge_neg(int64_t a) {
+    if (a == (-9223372036854775807LL - 1)) forge_fail("integer overflow");
+    return -a;
+}
+static int64_t forge_div(int64_t a, int64_t b) {
+    if (b == 0) forge_fail("division by zero");
+    if (a == (-9223372036854775807LL - 1) && b == -1) forge_fail("integer overflow");
+    return a / b;
+}
+static int64_t forge_mod(int64_t a, int64_t b) {
+    if (b == 0) forge_fail("division by zero");
+    if (a == (-9223372036854775807LL - 1) && b == -1) return 0;
+    return a % b;
+}
+static int64_t forge_peek32(int64_t addr) {
+    return (int64_t)(*(volatile uint32_t *)(uintptr_t)addr);
+}
+static int64_t forge_poke32(int64_t addr, int64_t val) {
+    *(volatile uint32_t *)(uintptr_t)addr = (uint32_t)val;
+    return val;
+}
+
+"""
+
+
 def c_type(t):
     if t in C_SCALAR:
         return C_SCALAR[t]
@@ -821,9 +880,10 @@ def elem_of(arr_type):
 
 
 class Codegen:
-    def __init__(self, program, mode="safe", debug=False):
+    def __init__(self, program, mode="safe", debug=False, freestanding=False):
         self.program = program
         self.mode = mode
+        self.freestanding = freestanding
         # --debug: emit #line directives mapping
         # generated C back to .fg files/lines, so
         # gdb (and readelf's line table) step through
@@ -904,6 +964,11 @@ class Codegen:
             self.emit_struct_free(name, typ)
 
     def emit_free_owned(self):
+        if self.freestanding:
+            # No owned values can exist: strings/arrays have no
+            # values in freestanding v1, so there is nothing to free
+            # (unused str/array parameters are dead declarations).
+            return
         for name, typ in self.owned_all():
             self._emit_free_one(name, typ)
 
@@ -1186,7 +1251,7 @@ class Codegen:
         return sorted(out, key=lambda t: t.count("["))
 
     def generate(self):
-        self.lines.append(HEADER)
+        self.lines.append(FREESTANDING_HEADER if self.freestanding else HEADER)
         # Skip generic templates: only concrete structs are emitted.
         # self.structs is built from program.structs, which includes
         # templates; rebuild it from concrete structs only.
@@ -1332,6 +1397,15 @@ class Codegen:
             if getattr(fn, "is_extern", False):
                 continue
             self.gen_func(fn)
+        if self.freestanding and "main" in [f.name for f in self.program.funcs]:
+            # x86_64 Linux entry: no CRT, no libc. _start calls the
+            # program's main and exits with its value via the raw
+            # exit_group syscall (231, code in rdi).
+            self.emit("__attribute__((noreturn)) void _start(void) {")
+            self.emit("    long long code = jalpari_main();")
+            self.emit('    __asm__ volatile ("syscall" :: "a" (231L), "D" (code) : "rcx", "r11", "memory");')
+            self.emit("    __builtin_unreachable();")
+            self.emit("}")
         return "\n".join(self.lines)
 
     def c_sig_extern(self, fn):
@@ -1383,11 +1457,13 @@ class Codegen:
         for pn, pt in fn.params:
             if pt == "str" or self.is_array_type(pt) or self.is_struct_type(pt):
                 self.owned_stack[0][pn] = pt
-        sig = ("int main(int __forge_argc, char **__forge_argv)"
+        sig = ("long long jalpari_main(void)"
+               if fn.name == "main" and self.freestanding
+               else "int main(int __forge_argc, char **__forge_argv)"
                if fn.name == "main" else self.c_sig(fn))
         self.emit(sig + " {")
         self.indent += 1
-        if fn.name == "main":
+        if fn.name == "main" and not self.freestanding:
             self.emit("forge_args_global.len = __forge_argc > 0 ? __forge_argc - 1 : 0;")
             self.emit("forge_args_global.cap = forge_args_global.len;")
             self.emit("forge_args_global.data = forge_args_global.len ? "
@@ -1397,8 +1473,9 @@ class Codegen:
                       "forge_copy_str(__forge_argv[__forge_arg_i + 1]);")
         self.gen_block(fn.body, fn.ret)
         if fn.name == "main":
-            self.emit("forge_join_threads();")
-            self.emit_free_owned()
+            if not self.freestanding:
+                self.emit("forge_join_threads();")
+                self.emit_free_owned()
             self.emit("return 0;")
         elif fn.ret == "void":
             self.emit_free_owned()
@@ -2036,7 +2113,7 @@ class Codegen:
             # threads via the flags, but the order documents intent).
             for start_var, _depth in reversed(self.scope_stack):
                 self.emit(f"forge_join_scope({start_var});")
-            if self.current_fn == "main":
+            if self.current_fn == "main" and not self.freestanding:
                 self.emit("forge_join_threads();")
             if stmt.expr is None:
                 self.emit_free_owned()
@@ -2137,6 +2214,25 @@ class Codegen:
             self.emit('printf("\\n");')
 
     def gen_expr(self, expr):
+        if self.freestanding:
+            # Freestanding v1 has no allocator: strings and arrays
+            # have no values, so any program that builds one fails
+            # here with a clear error, never with a C or link error.
+            if isinstance(expr, (A.StrLit, A.ArrayLit)):
+                raise ForgeError("freestanding v1 does not support strings/arrays yet",
+                                 expr.line, expr.col)
+            t = self.expr_type(expr)
+            if t == "str" or self.is_array_type(t):
+                raise ForgeError("freestanding v1 does not support strings/arrays yet",
+                                 expr.line, expr.col)
+            if t in self.structs:
+                # A struct value carrying str/array fields would need
+                # the hosted copy/free helpers on use; reject it here
+                # rather than at link time.
+                for ft in self.structs[t].values():
+                    if ft == "str" or self.is_array_type(ft):
+                        raise ForgeError("freestanding v1 does not support strings/arrays yet",
+                                         expr.line, expr.col)
         if isinstance(expr, A.IntLit):
             return f"{expr.value}LL"
         if isinstance(expr, A.FloatLit):
@@ -2512,7 +2608,7 @@ class Codegen:
         raise ForgeError(f"unsupported expression {type(expr).__name__}")
 
 
-def generate(program, types, mode="safe", debug=False):
-    gen = Codegen(program, mode=mode, debug=debug)
+def generate(program, types, mode="safe", debug=False, freestanding=False):
+    gen = Codegen(program, mode=mode, debug=debug, freestanding=freestanding)
     gen.attach_types(types)
     return gen.generate()

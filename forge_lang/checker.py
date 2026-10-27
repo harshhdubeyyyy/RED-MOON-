@@ -62,8 +62,9 @@ def elem_type(arr_type):
 
 
 class Checker:
-    def __init__(self, program):
+    def __init__(self, program, freestanding=False):
         self.program = program
+        self.freestanding = freestanding
         self.funcs = {}
         self.structs = {}  # name -> {field: type}
         self.struct_params = {}  # name -> [type params]
@@ -324,6 +325,10 @@ class Checker:
                                  fn.line, fn.col)
             if getattr(fn, "is_extern", False):
                 # No body to check; the C function must exist at link time.
+                if self.freestanding:
+                    raise ForgeError(f"extern fn '{fn.name}' needs link-time C symbols "
+                                     f"(not in freestanding v1)",
+                                     fn.line, fn.col)
                 return
             if self.current_type_params:
                 # Generic template: body is checked only on instantiation,
@@ -513,6 +518,10 @@ class Checker:
                                  stmt.line, stmt.col)
             return
         if isinstance(stmt, A.Spawn):
+            if self.freestanding:
+                raise ForgeError("spawn needs the hosted thread runtime "
+                                 "(not in freestanding v1)",
+                                 stmt.line, stmt.col)
             call = stmt.call
             fn = self.funcs.get(call.name)
             if fn is None:
@@ -531,6 +540,10 @@ class Checker:
                                  stmt.line, stmt.col)
             return
         if isinstance(stmt, A.Scope):
+            if self.freestanding:
+                raise ForgeError("scope needs the hosted thread runtime "
+                                 "(not in freestanding v1)",
+                                 stmt.line, stmt.col)
             # The block's lets are scoped to it, like any block.
             self.check_block(stmt.body)
             return
@@ -624,6 +637,10 @@ class Checker:
                 raise ForgeError("assert() message must be str", call.line, call.col)
             return
         if call.name in ("print", "println"):
+            if self.freestanding:
+                raise ForgeError("print/println need the hosted I/O library "
+                                 "(not in freestanding v1); use poke32 for MMIO output",
+                                 call.line, call.col)
             for a in call.args:
                 self.check_expr(a)
             return
@@ -810,6 +827,16 @@ class Checker:
     def check_call(self, call):
         if call.name in STMT_BUILTINS:
             raise ForgeError(f"'{call.name}' can only be used as a statement, not as a value",
+                             call.line, call.col)
+        if self.freestanding and call.name in (
+                "read_file", "write_file", "read_bytes", "write_bytes",
+                "file_exists", "read_line",
+                "http_get", "http_listen", "http_accept", "http_read_request",
+                "http_respond", "http_respond_status", "http_close",
+                "clock_micros", "args", "parallel_dot", "parallel_matmul",
+                "sqrt", "exp", "log", "pow", "abs"):
+            raise ForgeError(f"'{call.name}' needs the hosted runtime "
+                             f"(not in freestanding v1)",
                              call.line, call.col)
         if call.name in self.enum_variants:
             enum_name = self.enum_variants[call.name]
@@ -1108,5 +1135,5 @@ class Checker:
         raise ForgeError(f"unknown operator '{op}'", node.line, node.col)
 
 
-def check(program, require_main=True):
-    Checker(program).check(require_main=require_main)
+def check(program, require_main=True, freestanding=False):
+    Checker(program, freestanding).check(require_main=require_main)
