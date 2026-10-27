@@ -141,16 +141,18 @@ superseded by this honest v1.
   instructions take a 12-bit immediate, not a register, so a
   runtime value cannot encode one — the checker enforces this.
   Native and WASM reject all four loudly (no RISC-V CSRs there).
-- Trap-handler hook: defining `fn trap_handler()` (no args,
-  void — enforced by the big32 backend) makes `_start` point
-  `mtvec` at an assembly stub that saves all 30 clobberable
-  registers on the stack, calls the handler, restores, and
-  `mret`s. The stub does NOT touch `mepc`: advancing past an
-  ecall is the handler's job (read `mcause`/`mepc`, write
-  `mepc+4` for ecall traps). Program end still halts with a
-  handler wired: main's ending (and fail/assert paths) clear
-  `mtvec` before the final ecall, since a bare ecall with
-  `mtvec` set would trap, not halt.
+- Trap-handler hook: defining `fn trap_handler()` (no args, or
+  one int = the trap-frame pointer since Phase E — enforced by
+  the big32 backend) makes `_start` point `mtvec` at an assembly
+  stub that saves all 30 clobberable registers on the stack,
+  passes the frame pointer in `a0`, calls the handler, and —
+  if the handler wrote a non-zero frame pointer to `mscratch` —
+  switches stacks before restoring and `mret`ing. The stub does
+  NOT touch `mepc`: advancing past an ecall is the handler's
+  job (read `mcause`/`mepc`, write `mepc+4` for ecall traps).
+  Program end still halts with a handler wired: main's ending
+  (and fail/assert paths) clear `mtvec` before the final ecall,
+  since a bare ecall with `mtvec` set would trap, not halt.
 - `ecall(eid, arg) -> int`: extension id in `a7`, argument in
   `a0`, result back in `a0`. On SBI firmware this is the SBI
   call primitive; on the model it traps to the program's own
@@ -182,6 +184,46 @@ concepts (scheduler, allocator, VFS ideas) rewritten as real
 bare-metal code. **Kernel building starts here, not before.**
 Checkpoint: the kernel boots on the big32 model and prints its
 own banner, tick count, and task switches to UART.
+
+**Checkpoint 1 DONE 27 Oct 2026 — timer tick (model + kernel):**
+the Python big32 model gained a minimal timer (mtime 0x10000010,
+mtimecmp 0x10000018, 32-bit halves, mtime +1 per step; mip.MTIP
+level-sensitive while mtime >= mtimecmp; delivery needs mtvec set
++ mstatus.MIE + mie.MTIE; trap entry saves MIE into MPIE and
+clears MIE, mret restores it — without that, the first handler
+instruction would re-trap before the handler could reprogram
+mtimecmp). The Verilog has no CLINT yet, so this is model-only
+so far. Kernel `examples/os/kernel_tick.fg` enables ONLY the
+timer interrupt (no mcause dispatch needed), keeps its tick count
+in RAM scratch 0x8000 (freestanding has no globals), prints `T`
+per tick, and reprograms mtimecmp before mret. Verified:
+`tests/test_kernel_tick.py` 5/5, exact UART transcript
+`KERNTTTTTDONE`, halted, 5,474 steps. Phase D trap suite still
+passes unchanged. NOT done yet: the round-robin scheduler
+(checkpoint 2 — needs a yield path and per-task stacks, since
+the trap stub restores the same frame it saved).
+
+**Checkpoint 2 DONE 27 Oct 2026 — preemptive round-robin
+scheduler:** the trap stub now passes the trap-frame pointer in
+`a0` (no-arg handlers ignore it — Phase D programs unaffected)
+and switches stacks when the handler writes a non-zero frame
+pointer to `mscratch`. The scheduler handler saves the current
+task's frame+`mepc` into its TCB each timer tick, loads the next
+task's, and hands the next frame to the stub. Tasks are created
+by fork: `ecall(2, 0)` copies the 120-byte trap frame onto a
+fresh stack, sets the child's saved-`a0` slot to 0 and the
+parent's to 1, records the child in TCB[1], and advances `mepc`
+past the ecall for both. Kernel `examples/os/kernel_sched.fg`:
+`KERN`, then task_a/task_b printing A/B until tick 20, when the
+handler clears `mtvec` and the next ecall halts. Verified:
+`tests/test_kernel_sched.py` — 907 A + 981 B, 19 A↔B switches,
+halted, tick count exactly 20, 21,328 steps; trap + tick suites
+still green. Honest limits: tasks must be helper functions
+(main's locals live in main's frame, which fork does not copy);
+explicit yield is not a switch yet (unknown ecall ids only
+advance `mepc`); the timer is still model-only, Verilog has no
+CLINT yet. **Phase E's three pieces — UART hello, timer tick,
+scheduler — are all done.**
 
 ### Phase F and beyond — the OS itself
 

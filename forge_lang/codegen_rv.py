@@ -176,13 +176,18 @@ class RVGen:
             raise ForgeError("big32 target needs a main function")
         # Trap-handler hook: a function named trap_handler, if present,
         # is wired to mtvec by _start and called by the trap entry
-        # stub on every trap. It takes no arguments (it reads mcause/
-        # mepc itself via csr_read) and returns nothing.
+        # stub on every trap. It takes no arguments, or one int: the
+        # trap-frame pointer (sp just after the stub saved the 30
+        # registers). A no-arg handler ignores the register; the stub
+        # always passes it, so old handlers keep working. The handler
+        # reads mcause/mepc itself via csr_read, and returns nothing.
         self.has_trap_handler = "trap_handler" in self.funcs
         if self.has_trap_handler:
             th = self.funcs["trap_handler"]
-            if th.params or th.ret != "void":
+            one_int = (len(th.params) == 1 and th.params[0][1] == "int")
+            if (th.params and not one_int) or th.ret != "void":
                 raise ForgeError("trap_handler() must take no arguments "
+                                 "or one int (trap frame pointer) "
                                  "and return nothing",
                                  th.line, th.col)
         for fn in self.program.funcs:
@@ -635,11 +640,15 @@ class RVGen:
         if self.has_trap_handler:
             # Trap entry: save every register the handler could
             # touch on the stack (sp is always valid at a trap in
-            # well-formed programs), call the Jal Pari handler,
-            # restore, and return from the trap. The stub does NOT
-            # touch mepc: advancing past an ecall (or not) is the
-            # handler's job — it reads mcause/mepc via csr_read and
-            # writes mepc via csr_write.
+            # well-formed programs), pass the trap-frame pointer in
+            # a0 (no-arg handlers ignore it), call the Jal Pari
+            # handler, then check mscratch: if the handler wrote a
+            # non-zero frame pointer there, switch stacks to it
+            # (this is how the scheduler context-switches) and clear
+            # it, restore, and return from the trap. The stub does
+            # NOT touch mepc: advancing past an ecall (or not) is
+            # the handler's job — it reads mcause/mepc via csr_read
+            # and writes mepc via csr_write.
             regs = ["ra", "gp", "tp", "t0", "t1", "t2", "s0", "s1",
                     "a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7",
                     "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9",
@@ -648,7 +657,13 @@ class RVGen:
             h.append(f"    addi sp, sp, -{4 * len(regs)}")
             for i, r in enumerate(regs):
                 h.append(f"    sw {r}, {4 * i}(sp)")
+            h.append("    mv a0, sp")
             h.append("    jal ra, trap_handler")
+            h.append("    csrr t0, 832")
+            h.append("    beq t0, zero, forge_trap_noswitch")
+            h.append("    mv sp, t0")
+            h.append("    csrw 832, zero")
+            h.append("forge_trap_noswitch:")
             for i, r in enumerate(regs):
                 h.append(f"    lw {r}, {4 * i}(sp)")
             h.append(f"    addi sp, sp, {4 * len(regs)}")

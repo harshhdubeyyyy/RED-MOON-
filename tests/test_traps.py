@@ -13,10 +13,13 @@ reality:
     instructions take a 12-bit immediate, not a register.
   * Trap-handler hook: defining fn trap_handler() (no args, void)
     makes _start point mtvec at an assembly stub that saves all
-    30 clobberable registers on the stack, calls the handler,
-    restores, and mrets. The stub does NOT touch mepc: advancing
-    past an ecall is the handler's job (read mcause/mepc, write
-    mepc+4 for ecall traps).
+    30 clobberable registers on the stack, passes the trap-frame
+    pointer in a0 (Phase E: a handler may take one int param for
+    it; no-arg handlers ignore it), calls the handler, and — if
+    the handler wrote a non-zero frame pointer to mscratch — switches
+    stacks before restoring and mret-ing. The stub does NOT touch
+    mepc: advancing past an ecall is the handler's job (read
+    mcause/mepc, write mepc+4 for ecall traps).
   * ecall(eid, arg) -> int: extension id in a7, argument in a0,
     result back in a0. On SBI firmware this is the SBI call
     primitive; on the model it traps to the program's handler.
@@ -33,7 +36,7 @@ Tests:
      ecall trap -> handler -> continue, exact UART transcript,
      and the run halts (not a 1M-step slide)
   2. checker rejects non-literal CSR, bad arity, csr_write as a
-     value, trap_handler with params (big32 codegen)
+     value, trap_handler with two params (big32 codegen)
   3. native + wasm reject csr_read and ecall clearly
   4. hosted control: the same big32 program builds WITHOUT
      --freestanding (CSRs/ecall are hardware, not OS)
@@ -145,14 +148,22 @@ def main():
         check(f"checker rejects {name}", r.returncode != 0,
               f"rc={r.returncode} out={r.stdout!r} err={r.stderr!r}")
 
-    print("big32 rejects bad trap_handler")
+    print("big32 rejects bad trap_handler (Phase E: one int param,")
+    print("the trap-frame pointer, is legal; two params are not)")
     d = tempfile.mkdtemp(prefix="traps-handler-")
-    path = write_prog(d, "fn trap_handler(x: int) { }\nfn main() { }\n")
+    path = write_prog(d, "fn trap_handler(x: int, y: int) { }\nfn main() { }\n")
     r = subprocess.run(FORGE + ["build", path, "--target", "big32",
                                 "-o", os.path.join(d, "prog")],
                        capture_output=True, text=True, timeout=60)
-    check("trap_handler with params rejected",
+    check("trap_handler with two params rejected",
           r.returncode != 0 and "trap_handler" in (r.stdout + r.stderr),
+          f"rc={r.returncode} out={r.stdout!r} err={r.stderr!r}")
+    path = write_prog(d, "fn trap_handler(frame: int) { }\nfn main() { }\n")
+    r = subprocess.run(FORGE + ["build", path, "--target", "big32",
+                                "-o", os.path.join(d, "prog")],
+                       capture_output=True, text=True, timeout=60)
+    check("trap_handler with one int param accepted",
+          r.returncode == 0,
           f"rc={r.returncode} out={r.stdout!r} err={r.stderr!r}")
 
     print("native + wasm rejections")
