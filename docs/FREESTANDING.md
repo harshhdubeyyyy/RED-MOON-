@@ -634,6 +634,43 @@ main() too large for one loop back-edge; factoring
 it. Honest scope: still no apps — Finder and Terminal
 are windows with titles, not working programs yet.
 
+**FINDER APP — STAGE 1 DONE 28 Oct 2026 — the first working
+app:** `examples/os/kernel_finder.fg` (SOC2-only, 640x480)
+is the interactive desktop with filesystem v2 behind the
+Finder window. At boot it creates three real files (ids 1,
+2, 3) in the FS table, and the Finder window lists them by
+reading the table itself — rows "FILE 1", "FILE 2", "FILE 3".
+Clicking a row selects it (inverted); focus, drag and close
+from the interactive kernel keep working, and the state
+gains a selection nibble (selected × 8 in the packed state).
+Honest limit, stated up front: FS v2 has numeric ids, no
+filenames, so rows are FILE 1/2/3, not names. Verified by
+`tests/test_kernel_finder.py` (testbench
+`~/workspace/rx-proof/tb_mac_finder.v`, outside the repo
+like all testbenches): FINDER PASS — list, select, drag,
+clock all match, UART exactly "MAC\n", after ~18M cycles.
+Debugging, owned, and worth recording because it will bite
+again: the first finder kernel failed its click test in a
+way that looked impossible — the click code, the call
+sites and the pointer reads were all verified correct in
+the compiled output and in isolation, yet the click
+returned no hit and the screen showed a window the kernel
+state said was never drawn. The cause was not the click
+code at all: the FS v2 data (file table at 0x80008060,
+block map at 0x80008100) sat INSIDE this kernel's code
+image, which ends at 0x80008CC4, so `boot_files()` wrote
+~640 bytes over ~160 of the kernel's own instructions
+before the first draw — the draw survived (its code sits
+below the overwritten region) and the press path did not.
+The fix: FS v2 data lives in high RAM at 0x800E0000+
+(table 0x800E0010, block map 0x800E0100, data blocks
+0x800E1000), above the code and below the stack top, so
+no boot write can ever touch an instruction. Rule going
+forward: any kernel whose code image passes 0x8000 must
+not use the old model-space FS bases. Next in the chain:
+Terminal in a window, then the lifetime-ordered allocator
+borrowed from the QAIRT work.
+
 ## What does not change
 
 - Black Moon OS (the Linux distro) continues as the system people
