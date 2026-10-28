@@ -604,6 +604,36 @@ geometry in the same tree state; their 640-wide
 re-runs are the next verification step, not yet
 claimed here.
 
+**MACOS LOOK — STAGE 2 (INTERACTIVE) DONE 28 Oct 2026 — the
+desktop moves:** `examples/os/kernel_mac_interactive.fg`
+(font + body, SOC2-only, no RAM scratch) runs a redraw-based
+event loop: state lives in main() locals (window positions,
+focus, closed flags, drag state, previous button), and
+`draw_desktop` repaints everything in z-order with the
+focused window last, packing focus/closed flags into one
+int to stay under the 8-register argument limit. Pointer
+polls at 0x10006000; a press hits the top window first,
+then the other — red light closes, title bar focuses and
+starts a drag, body only focuses; a drag redraws only
+when the position changes. The clock reads mtime low,
+hours = (secs/3600)%24, minutes = (secs/60)%60, drawn
+only when the minute changes; its signed low word wraps
+after ~21 s at 100 MHz, so the test checks format and
+position only, never the value. The kernel never halts.
+Verified by `tests/test_kernel_mac_int.py` (testbench
+`~/workspace/rx-proof/tb_mac_int.v`, outside the repo
+like all testbenches): INTERACTIVE PASS — click Finder
+title brings Finder on top, drag moves it by (+50,+50),
+red light closes it and Terminal shows again, clock
+pixels are ink or paper, UART exactly "MAC\n", after
+~22M cycles. Debugging, owned: the first draft failed
+to build with a branch offset of 4164 beyond the
+±4095 range, because duplicated hit-test chains made
+main() too large for one loop back-edge; factoring
+`hit_window` (0 none / 1 red / 2 title / 3 body) fixed
+it. Honest scope: still no apps — Finder and Terminal
+are windows with titles, not working programs yet.
+
 ## What does not change
 
 - Black Moon OS (the Linux distro) continues as the system people
