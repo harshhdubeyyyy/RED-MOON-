@@ -1,0 +1,10 @@
+import "complex.fg";
+
+fn main() -> int {
+    let p: Cx = cx_mul(cx_new(1.0, 2.0), cx_new(3.0, 4.0));
+    println("mul =", p.re, p.im);
+    let s: Cx = cx_add(cx_new(1.0, 2.0), cx_new(3.0, 4.0));
+    println("add =", s.re, s.im);
+    println("abs2 =", cx_abs2(cx_new(3.0, 4.0)));
+    return 0;
+}

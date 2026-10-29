@@ -1,0 +1,11 @@
+import "semver.fg";
+
+fn main() -> int {
+    let v: SemVer = semver_parse("1.2.3");
+    let p: SemVer = semver_bump_patch(v);
+    let m: SemVer = semver_bump_minor(v);
+    println("patch =", p.major, p.minor, p.patch);
+    println("minor =", m.major, m.minor, m.patch);
+    println("cmp =", semver_cmp(v, semver_parse("1.10.0")));
+    return 0;
+}

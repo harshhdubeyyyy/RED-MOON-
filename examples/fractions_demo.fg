@@ -1,0 +1,12 @@
+import "fractions.fg";
+
+fn main() -> int {
+    let s: Frac = frac_add(frac_new(1, 2), frac_new(1, 3));
+    println("sum =", s.num, "/", s.den);
+    let r: Frac = frac_new(2, 4);
+    println("reduced =", r.num, "/", r.den);
+    let m: Frac = frac_mul(frac_new(2, 3), frac_new(3, 4));
+    println("mul =", m.num, "/", m.den);
+    println("float =", frac_to_float(frac_new(1, 2)));
+    return 0;
+}

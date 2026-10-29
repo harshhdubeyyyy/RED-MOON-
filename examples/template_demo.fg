@@ -1,0 +1,9 @@
+import "template.fg";
+
+fn main() -> int {
+    let r: str = template_render("Hello {{name}}, you have {{count}} messages.", ["name", "count"], ["Jayant", "3"]);
+    println(r);
+    let m: str = template_render("Hi {{unknown}}!", ["name"], ["Jayant"]);
+    println(m);
+    return 0;
+}

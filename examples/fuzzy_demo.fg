@@ -1,0 +1,6 @@
+import "fuzzy.fg";
+
+fn main() -> int {
+    println("lev =", levenshtein("kitten", "sitting"), levenshtein("", "abc"), levenshtein("abc", "abc"));
+    return 0;
+}

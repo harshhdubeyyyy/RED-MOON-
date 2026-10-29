@@ -1,0 +1,7 @@
+import "calendar.fg";
+
+fn main() -> int {
+    println("wd =", weekday(2026, 10, 29), weekday(2000, 1, 1));
+    println("feb =", days_in_month(2024, 2), days_in_month(2025, 2));
+    return 0;
+}

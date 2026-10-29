@@ -1,0 +1,11 @@
+import "pandas.fg";
+
+fn main() -> int {
+    let f = Frame { names: ["x", "y"], data: [1.0, 10.0, 3.0, 30.0, 2.0, 20.0], nrows: 3, ncols: 2 };
+    println("rows =", df_row_count(f), "mean_x =", df_mean_col(f, "x"), "mean_y =", df_mean_col(f, "y"));
+    let g: Frame = df_filter_gt(f, "y", 15.0);
+    println("filtered =", df_row_count(g));
+    let s: Frame = df_sort_by(f, "x");
+    println("sorted =", df_get(s, 0, 0), df_get(s, 1, 0), df_get(s, 2, 0));
+    return 0;
+}

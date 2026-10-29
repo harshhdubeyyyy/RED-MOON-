@@ -1,0 +1,10 @@
+import "polynomials.fg";
+
+fn main() -> int {
+    println("eval =", poly_eval([1.0, 2.0, 3.0], 2.0));
+    let d: [float] = poly_deriv([1.0, 2.0, 3.0]);
+    println("deriv =", d[0], d[1]);
+    let q: QuadRoots = quad_roots(1.0, -5.0, 6.0);
+    println("roots =", q.has_real, q.r1, q.r2);
+    return 0;
+}

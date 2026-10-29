@@ -1,0 +1,12 @@
+import "base64.fg";
+
+fn main() -> int {
+    // "Man" = [77, 97, 110].
+    println("b64 =", b64_encode([77, 97, 110]));
+    let d: [int] = b64_decode("TWFu");
+    println("dec =", d[0], d[1], d[2]);
+    println("hex =", hex_encode([222, 173]));
+    let h: [int] = hex_decode("beef");
+    println("hexdec =", h[0], h[1]);
+    return 0;
+}

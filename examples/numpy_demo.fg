@@ -1,0 +1,15 @@
+import "numpy.fg";
+
+fn main() -> int {
+    let a: [float] = [1.0, 2.0, 3.0, 4.0];
+    let b: [float] = [5.0, 6.0, 7.0, 8.0];
+    let m: [float] = np_matmul(a, b, 2, 2, 2);
+    println("matmul =", m[0], m[1], m[2], m[3]);
+    let s: [float] = np_add(a, b);
+    println("add =", s[0], s[1], s[2], s[3]);
+    println("sum =", np_sum(a), "mean =", np_mean(a));
+    println("dot =", np_dot([1.0, 2.0, 3.0], [4.0, 5.0, 6.0]));
+    let t: [float] = np_transpose(a, 2, 2);
+    println("transpose =", t[0], t[1], t[2], t[3]);
+    return 0;
+}

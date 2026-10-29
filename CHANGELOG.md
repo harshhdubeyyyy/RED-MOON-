@@ -8,6 +8,27 @@ without a major version bump (see docs/STABILITY.md).
 
 ## Unreleased
 
+- Daily batch 29 Oct 2026 (16 libraries, all pure Jal Pari with a
+  demo each, verified by `forge run`): numpy (flat row-major
+  arrays, matmul, reductions), pandas (flat DataFrame, filter,
+  sort, means), complex, fractions, statistics (mode, quantiles,
+  IQR), checksum (crc32/fnv1a/adler32 over byte arrays),
+  base64 + hex, semver (struct API — no int-to-string builtin
+  exists yet), units, polynomials, optimization (gradient
+  descent, least squares), fuzzy (Levenshtein), calendar
+  (Zeller weekday), template ({{name}} rendering), color
+  (hex/rgb/hsl), money (integer cents). Checksums cross-checked
+  against Python; weekdays cross-checked against `date`.
+- Daily batch 29 Oct 2026 (10 OS kernels, all freestanding big32
+  verified on the Python big32 model with exact UART transcripts
+  + memory checks): lifetime-ordered allocator (short pool freed
+  by epoch reset, long pool survives), terminal command core
+  (prompt/echo/backspace/dispatch over UART RX — the SOC2 window
+  draw itself is still pending), shell v2 with digit arguments,
+  page bitmap allocator, IPC ring queue, priority scheduler
+  policy, filesystem v3 (delete + rename), network loopback
+  checksum, calculator app, clock app. No SOC2 vvp sims were run
+  this day: the big32 Linux continuation sim was running.
 - Traps + firmware calls (Phase D of the freestanding track;
   see docs/FREESTANDING.md): csr_read/csr_write/csr_set/
   csr_clear (literal CSR numbers only), trap_handler hook

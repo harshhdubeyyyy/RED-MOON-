@@ -1,0 +1,8 @@
+import "statistics.fg";
+
+fn main() -> int {
+    println("mode =", mode_int([1, 2, 2, 3, 4, 5, 5, 5, 6]));
+    let xs: [float] = [1.0, 2.0, 2.0, 3.0, 4.0, 5.0, 5.0, 5.0, 6.0];
+    println("median =", quantile_float(xs, 0.5), "iqr =", iqr_float(xs));
+    return 0;
+}

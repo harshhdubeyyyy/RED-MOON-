@@ -1,0 +1,10 @@
+import "checksum.fg";
+
+fn main() -> int {
+    // Bytes of "123456789"; values cross-checked against Python.
+    let data: [int] = [49, 50, 51, 52, 53, 54, 55, 56, 57];
+    println("crc32 =", crc32_bytes(data));
+    println("fnv1a =", fnv1a_bytes(data));
+    println("adler32 =", adler32_bytes(data));
+    return 0;
+}

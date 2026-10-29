@@ -1,0 +1,8 @@
+import "money.fg";
+
+fn main() -> int {
+    println("add =", money_add(1234, 566));
+    println("tax =", money_tax(10000, 8));
+    println("dollars =", money_dollars(1234));
+    return 0;
+}

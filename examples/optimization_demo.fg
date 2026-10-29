@@ -1,0 +1,8 @@
+import "optimization.fg";
+
+fn main() -> int {
+    println("gd =", gd_quad(0.0, 3.0, 0.1, 100));
+    let fit: LinFit = least_squares([0.0, 1.0, 2.0, 3.0], [1.0, 3.0, 5.0, 7.0]);
+    println("slope =", fit.slope, "intercept =", fit.intercept);
+    return 0;
+}

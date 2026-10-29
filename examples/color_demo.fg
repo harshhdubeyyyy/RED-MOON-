@@ -1,0 +1,10 @@
+import "color.fg";
+
+fn main() -> int {
+    let c: Rgb = hex_to_rgb("#ff8000");
+    println("rgb =", c.r, c.g, c.b);
+    println("hex =", rgb_to_hex(255, 128, 0));
+    let h: Hsl = rgb_to_hsl(255, 0, 0);
+    println("hsl =", h.h, h.s, h.l);
+    return 0;
+}
