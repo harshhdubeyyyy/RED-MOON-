@@ -1,3 +1,7 @@
+![Jal Pari header](https://capsule-render.vercel.app/api?type=waving&color=gradient&height=180&section=header&text=The%20Jal%20Pari%20Language&fontSize=42&animation=fadeIn)
+
+![Typing](https://readme-typing-svg.demolab.com?font=Fira+Code&pause=1000&color=F472B6&width=650&lines=Safe.+Simple.+Natively+fast.;No+null.+No+silent+overflow.;Now+building+100%2B+libraries+in+Jal+Pari)
+
 # 🧜‍♀️ The Jal Pari Language — a production-oriented language, rebuilt from research
 
 > **Dedicated to Tejaswini — Jal Pari.**
@@ -466,3 +470,34 @@ The script documents exactly where every number comes from: the
 scaling and trace figures are real Forge program outputs, the XOR
 heatmap is real MLP outputs, and the 3D surface is computed from
 the regression data itself.
+
+---
+
+## 🗺️ Project map
+
+How the pieces fit — compiler, backends, libraries, and the from-scratch OS track, all in this repo.
+
+```mermaid
+flowchart TD
+    CLI["forge.py — CLI (jalpari)"] --> LANG["forge_lang — lexer, parser, checker"]
+    LANG --> NAT["codegen: native C → gcc"]
+    LANG --> WASM["codegen_wasm: WebAssembly"]
+    LANG --> RV["codegen_rv: big32 RISC-V"]
+    LANG --> CUDA["codegen_cuda: GPU emit"]
+    NAT --> APPS["examples/apps — Moon Notes, Gallery, Browser, Code"]
+    NAT --> ML["stdlib — tensor, autograd, nn, gpt + 16 new libraries"]
+    RV --> OS["examples/os — macOS-look desktop, Finder, Terminal, allocator"]
+    ML --> LIBS["Library program — 120 items, numpy + pandas first"]
+    OS --> DAILY["Daily cadence — 10+ OS items and 10+ library items per day"]
+```
+
+## 📊 At a glance (verified 29 Oct 2026)
+
+| Measure | Value |
+|---|---|
+| Language version | 1.2.0 |
+| Tree size | 46,279 lines (.py, .fg, .js, .sh, .toml) |
+| Standard libraries added 29 Oct | 16 (numpy, pandas, complex, fractions, statistics, checksum, base64, semver, units, polynomials, optimization, fuzzy, calendar, template, color, money) |
+| OS kernels added 29 Oct | 10 (lifetime allocator, terminal UART core, shell v2, page allocator, IPC ring, scheduler, FS v3, net loopback, calculator, clock) |
+| Library program | [120-item roadmap](docs/LIBRARY_ROADMAP_100.md) — Mojo / Python / Rust / Go equivalents, 100% in Jal Pari |
+| License | MIT |
