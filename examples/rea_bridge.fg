@@ -1,0 +1,48 @@
+// REA bridge v0 — a Jal Pari tool that reads REA's own output.
+//
+// Reads a REA capabilities JSON file (default: the one saved at
+// ~/workspace/rx-proof/rea-capabilities.json, or a path passed as the last
+// argument if that file exists) and prints one line per provider/status
+// pair it finds: "provider-id: status".
+//
+// v0 limits, stated honestly: this is a FLAT scan — it splits the JSON on
+// commas, then on quotes, and pairs each "status" value with the most
+// recent "id" seen. Nested status fields (e.g. target_support) print under
+// their provider too, and repeats are not deduped. It reads REA's
+// capabilities output only; decompile/analyze outputs are follow-on work.
+// Verified: output contains "ghidra: available" when run against a
+// capabilities file generated with Ghidra wired up (GHIDRA_INSTALL_DIR +
+// JDK 25), matching the JSON itself.
+
+fn main() {
+  let mut path = "/home/hatch/workspace/rx-proof/rea-capabilities.json";
+  let a = args();
+  if len(a) > 0 {
+    let cand = a[len(a) - 1];
+    if file_exists(cand) {
+      path = cand;
+    }
+  }
+  let text = read_file(path);
+  let chunks = split(text, ",");
+  let mut cur = "";
+  let mut i = 0;
+  while i < len(chunks) {
+    let parts = split(chunks[i], "\"");
+    let mut j = 0;
+    while j < len(parts) {
+      if parts[j] == "id" {
+        if j + 2 < len(parts) {
+          cur = parts[j + 2];
+        }
+      }
+      if parts[j] == "status" {
+        if j + 2 < len(parts) {
+          println(cur + ": " + parts[j + 2]);
+        }
+      }
+      j = j + 1;
+    }
+    i = i + 1;
+  }
+}

@@ -748,3 +748,30 @@ exact on Contents API).
   code does not become kernel code, its ideas do.
 - Numbers in this document come from verified runs only; anything
   unbuilt is labelled as a plan, not a result.
+
+## SBI dispatch demo kernel (agent+REA loop, 30 Oct 2026)
+`examples/os/kernel_sbi_demo.fg` + `tests/test_kernel_sbi_demo.py` — the
+agent+REA loop closed in Jal Pari: Ghidra's RISC-V decode of the big32 SBI
+firmware (mscratch stack swap, mcause dispatch, EID compare-and-branch table)
+was reimplemented fresh as a freestanding kernel with a `trap_handler` that
+dispatches Base FIDs (0 = spec version 2, 1 = demo impl id 7) and TIME
+(mtime low word) from ecalls, returning -2 for unknown EIDs. Documented
+difference from SBI: Jal Pari's 2-argument `ecall` carries (EID in a7, one
+argument in a0), so Base FIDs dispatch from a0, not a6; a 3-argument ecall is
+the named future slice for exact SBI ABI. Model-verified transcript
+`2 / 7 / <mtime> / -2 / DONE`, halted (halt via clear-mtvec-then-ecall).
+
+## 16550 UART driver kernel (drivers item, 30 Oct 2026)
+`examples/os/kernel_uart16550.fg` + `tests/test_kernel_uart16550.py` —
+reference first: REA/Ghidra on /usr/bin/stty (x86-64) found no baud
+procedure of its own (baud search: 0 hits); speed search hit only libc
+termios imports (cfgetispeed/cfsetispeed/cfgetospeed/cfsetospeed), and
+xrefs on cfsetospeed led to stty's own set_speed (src/stty.c, per its
+assert string): a name-table walk + strcmp, then cfsetispeed/cfsetospeed
+with the looked-up speed_t. So the kernel implements the hardware side
+of that call: 16550 divisor = 1,843,200 / (16 * baud), DLAB divisor
+latch, LCR 0x03 (8N1), FIFO enable. Model-verified transcript
+`9600=12 / 19200=6 / 38400=3 / 115200=1 / DONE`, halted. The model has
+no 16550 (those stores wrap into low dmem harmlessly), so the register
+programming itself awaits a SOC2 Verilog run once no other sim is
+running — the computation half is verified, the hardware half is queued.
