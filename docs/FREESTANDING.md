@@ -761,6 +761,17 @@ argument in a0), so Base FIDs dispatch from a0, not a6; a 3-argument ecall is
 the named future slice for exact SBI ABI. Model-verified transcript
 `2 / 7 / <mtime> / -2 / DONE`, halted (halt via clear-mtvec-then-ecall).
 
+## `ecall3` builtin (language upgrade, 30 Oct 2026)
+`ecall3(eid, arg0, arg1) -> int`: extension id in `a7`, arguments in `a0`
+and `a1`, result back in `a0` (big32 target only; native and WASM reject it
+like `ecall`). `examples/os/kernel_ecall3.fg` + `tests/test_kernel_ecall3.py`
+prove the second argument arrives: the handler returns `arg1 + 100` for
+Base fid 1, so `ecall3(16, 1, 41)` prints `141`. Model-verified exact
+transcript `2 / 141 / -2 / DONE`, halted. Honest scope: this is the
+three-register call (`a7`, `a0`, `a1`); real SBI additionally uses `a6` for
+the function id, so calling firmware SBI exactly still needs an
+`a6`-carrying call, which remains a future slice.
+
 ## 16550 UART driver kernel (drivers item, 30 Oct 2026)
 `examples/os/kernel_uart16550.fg` + `tests/test_kernel_uart16550.py` —
 reference first: REA/Ghidra on /usr/bin/stty (x86-64) found no baud

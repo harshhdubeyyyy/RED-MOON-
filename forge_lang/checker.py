@@ -39,7 +39,7 @@ EXPR_BUILTINS = {"len", "range", "clock_micros", "sqrt", "exp", "log", "pow", "a
                  "alloc_count", "free_count",
                  "parallel_dot", "parallel_matmul",
                  "arr_alloc_count", "arr_free_count",
-                 "peek32", "csr_read", "ecall"}
+                 "peek32", "csr_read", "ecall", "ecall3"}
 BUILTINS = STMT_BUILTINS | EXPR_BUILTINS
 
 
@@ -961,6 +961,16 @@ class Checker:
             for a in call.args:
                 if self.check_expr(a) != "int":
                     raise ForgeError("ecall() takes int arguments",
+                                     call.line, call.col)
+            return "int"
+        if call.name == "ecall3":
+            if len(call.args) != 3:
+                raise ForgeError("ecall3() takes exactly three arguments "
+                                 "(extension id, argument 0, argument 1)",
+                                 call.line, call.col)
+            for a in call.args:
+                if self.check_expr(a) != "int":
+                    raise ForgeError("ecall3() takes int arguments",
                                      call.line, call.col)
             return "int"
         if call.name == "write_file":

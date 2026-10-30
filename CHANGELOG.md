@@ -8,6 +8,20 @@ without a major version bump (see docs/STABILITY.md).
 
 ## Unreleased
 
+- Language upgrade 30 Oct 2026: `ecall3(eid, arg0, arg1) -> int`
+  (big32 only) — extension id in `a7`, arguments in `a0`/`a1`,
+  result in `a0`. Proved by `examples/os/kernel_ecall3.fg` +
+  `tests/test_kernel_ecall3.py` (exact transcript `2 / 141 / -2 /
+  DONE`, halted; the 141 proves the second argument arrives in `a1`).
+  Scope note: this is the three-register call; real SBI also uses
+  `a6` for the function id, so exact firmware-SBI calls remain a
+  future slice.
+- Language upgrade 30 Oct 2026: hex integer literals (`0xFF`,
+  `0x10000000`, uppercase `0X` also accepted) — lexer-only, so
+  every backend and the checker see a plain int; a bare `0x` with
+  no hex digit is a compile error. Proved by
+  `tests/test_hex_literals.py` (native values + a big32 model
+  kernel using `0x10000000` as the UART address).
 - Daily batch 30 Oct 2026 (15 libraries, all pure Jal Pari with a
   demo each, verified by `forge run`): fft (radix-2 + inverse,
   Taylor-series twiddles), mathex (erf, gamma), textwrap,

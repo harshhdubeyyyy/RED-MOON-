@@ -60,6 +60,20 @@ def tokenize(source):
 
         sl, sc = line, col
         if ch.isdigit():
+            if source[i:i + 2] in ("0x", "0X"):
+                # Hex integer literal: 0xFF, 0x10000000. Integers only
+                # (no hex floats); the value feeds the normal INT token,
+                # so every backend and the checker see a plain int.
+                j = i + 2
+                while j < n and source[j] in "0123456789abcdefABCDEF":
+                    j += 1
+                if j == i + 2:
+                    raise ForgeError("hex literal needs at least one "
+                                     "hex digit after 0x", sl, sc)
+                text = source[i:j]
+                advance(j - i)
+                tokens.append(Token("INT", int(text[2:], 16), sl, sc))
+                continue
             j = i
             while j < n and source[j].isdigit():
                 j += 1

@@ -1325,6 +1325,34 @@ class RVGen:
             self.free_reg(eid)
             self.free_reg(arg)
             return out
+        if name == "ecall3":
+            # Three-argument call: extension id in a7, arguments in
+            # a0 and a1, result back in a0. Arg registers come from
+            # TEMPS (never a-regs), so the sequential moves below
+            # cannot clobber an argument still to be moved.
+            eid = self.gen_expr(expr.args[0])
+            arg0 = self.gen_expr(expr.args[1])
+            arg1 = self.gen_expr(expr.args[2])
+            arg_regs = [eid, arg0, arg1]
+            scratch = None
+            for cand in TEMPS:
+                if cand not in arg_regs and cand not in self.live:
+                    scratch = cand
+                    break
+            if scratch is None:
+                raise ForgeError("no scratch register available for ecall3")
+            for target, r in ((7, eid), (0, arg0), (1, arg1)):
+                if r == f"a{target}":
+                    continue
+                self.emit(f"    mv {scratch}, {r}")
+                self.emit(f"    mv a{target}, {scratch}")
+            self.emit("    ecall")
+            out = self.alloc()
+            self.emit(f"    mv {out}, a0")
+            self.free_reg(eid)
+            self.free_reg(arg0)
+            self.free_reg(arg1)
+            return out
         if name not in self.funcs:
             raise ForgeError(f"unknown function {name} on big32")
         if len(expr.args) > 8:
