@@ -711,8 +711,29 @@ a fixed count, and wait 14M cycles after the click and
 drag instead of 5.5M. Rule going forward: testbench
 waits must scale with the kernel's repaint size; a
 failure that moves when the waits move is a test-timing
-failure until proven otherwise. Next in the chain: the
-lifetime-ordered allocator borrowed from the QAIRT work.
+failure until proven otherwise.
+
+**LIFETIME-ORDERED ALLOCATOR v2 — DONE 30 Oct 2026 —
+the first QAIRT borrow, applied to the real allocator:**
+`examples/os/kernel_lifetime2.fg` upgrades the C2
+free-list allocator with lifetime-ordered placement: the
+heap is split into a short region [0xA000, 0xB000) and a
+long region [0xB000, 0xC000), each with its own bump
+pointer and free list, and the same first-fit, split
+(≥16), and coalesce rules run per list. `free` picks the
+list from the block's address, so short churn can never
+fragment long-lived space — and because each list holds
+only its own region's blocks, a merge can never cross
+the region boundary: the split is safe by construction,
+not by a runtime guard. Verified by
+`tests/test_kernel_lifetime2.py` (big32 model):
+transcript LIFEKKKKKDONE, halted, short bump advanced
+exactly three 24-byte blocks, long bump exactly one —
+short reuse, long survival through short churn,
+three-block coalescing, and a 48-byte alloc from the
+coalesced space all check out. The segregated allocator
+is available for the unified kernel to adopt; the chain
+continues with the library batches.
 
 ## What does not change
 
