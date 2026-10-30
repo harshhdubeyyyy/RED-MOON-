@@ -1,0 +1,34 @@
+import "sklearn.fg";
+
+fn main() -> int {
+    // Linear regression on y = 2x + 1 (exact line, 5 points).
+    let xs: [float] = [1.0, 2.0, 3.0, 4.0, 5.0];
+    let ys: [float] = [3.0, 5.0, 7.0, 9.0, 11.0];
+    let wb: [float] = sk_linreg_gd(xs, ys, 0.01, 2000);
+    println("linreg w =", wb[0], "b =", wb[1]);
+    println("linreg predict 6 =", sk_linreg_predict(wb, 6.0));
+    // Logistic regression on a separable 1D split (0s then 1s).
+    let lxs: [float] = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+    let lys: [float] = [0.0, 0.0, 0.0, 1.0, 1.0, 1.0];
+    let lwb: [float] = sk_logreg_gd(lxs, lys, 0.1, 2000);
+    println("logreg prob 2.5 =", sk_logreg_prob(lwb, 2.5));
+    println("logreg prob 4.5 =", sk_logreg_prob(lwb, 4.5));
+    // kNN, k = 3, two clusters.
+    let tx: [float] = [1.0, 2.0, 3.0, 8.0, 9.0, 10.0];
+    let ty: [int] = [0, 0, 0, 1, 1, 1];
+    println("knn 2.5 =", sk_knn_predict(tx, ty, 2.5, 3));
+    println("knn 8.5 =", sk_knn_predict(tx, ty, 8.5, 3));
+    // k-means, k = 2, two clusters.
+    let kx: [float] = [1.0, 2.0, 3.0, 10.0, 11.0, 12.0];
+    let centers: [float] = sk_kmeans(kx, 2, 20);
+    println("kmeans centers =", centers[0], centers[1]);
+    // Metrics on a fixed 5-item case: tp 2, fp 1, tn 1, fn 1.
+    let pred: [int] = [1, 0, 1, 1, 0];
+    let truth: [int] = [1, 0, 0, 1, 1];
+    println("accuracy =", sk_accuracy(pred, truth));
+    let cm: [int] = sk_confusion(pred, truth);
+    println("confusion tp fp tn fn =", cm[0], cm[1], cm[2], cm[3]);
+    let prf: [float] = sk_prf(pred, truth);
+    println("precision recall f1 =", prf[0], prf[1], prf[2]);
+    return 0;
+}

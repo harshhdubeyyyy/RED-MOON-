@@ -671,6 +671,49 @@ not use the old model-space FS bases. Next in the chain:
 Terminal in a window, then the lifetime-ordered allocator
 borrowed from the QAIRT work.
 
+**TERMINAL IN A WINDOW — DONE 30 Oct 2026 — the second
+working app:** `examples/os/kernel_term.fg` (SOC2-only,
+640x480) is the Finder kernel plus a working terminal
+inside the Terminal window. The terminal keeps a 16-line
+× 38-column text buffer in high RAM (0x800E3000, one word
+per character; cursor words at 0x800E3980/0x800E3984),
+draws one cell per character at 8px × 10px pitch from the
+window origin, and handles input only while the Terminal
+is focused (focus starts on Terminal, so no click is
+needed to type). Commands follow the C6 shell's first-char
+dispatch: h = help line, f = list FS files as "file <id>"
+lines, c = clear plus a fresh prompt, unknown = "?" line,
+empty = a new prompt; backspace erases but never into the
+prompt. Three glyphs the base font lacks were added
+terminal-only ('>' = 62, '?' = 63, lowercase 'f' = 102);
+the base font file was deliberately not touched. No
+cursor block in v1, stated scope. Verified by
+`tests/test_kernel_term.py` (testbench
+`~/workspace/rx-proof/tb_mac_finder_longwait.v`, outside
+the repo like all testbenches): FINDER PASS — list,
+select, drag, clock all match, UART exactly "MAC\n",
+after ~36M cycles. Debugging, owned, and worth recording
+because it will bite again: the first two terminal runs
+failed in a way that looked like broken input — the
+click did not select, the drag did not move — and a
+pixel-dump run then showed the Finder window VANISHING
+after the click, which looked like a close bug. The
+press path was verified clean in code (the click lands
+as a body hit, not a close). The real cause was test
+timing, not kernel logic: the terminal kernel's repaint
+is bigger than the Finder kernel's (608 terminal cells),
+and the testbench's 5.5M-cycle waits — calibrated for
+the Finder kernel — caught the repaint mid-flight, just
+before the Finder window (which draws last once focus
+flips to it) got painted. The fix was in the test, not
+the kernel: wait for the kernel's MAC signal instead of
+a fixed count, and wait 14M cycles after the click and
+drag instead of 5.5M. Rule going forward: testbench
+waits must scale with the kernel's repaint size; a
+failure that moves when the waits move is a test-timing
+failure until proven otherwise. Next in the chain: the
+lifetime-ordered allocator borrowed from the QAIRT work.
+
 ## What does not change
 
 - Black Moon OS (the Linux distro) continues as the system people
