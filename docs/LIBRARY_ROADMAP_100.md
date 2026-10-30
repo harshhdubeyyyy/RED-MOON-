@@ -34,14 +34,14 @@ things is how the language gets updated. This replaces the earlier
     ops, matmul, reductions, reshape, slicing, random.
 2.  scipy-lite (py) — BUILD: linalg solve/inverse/det, stats
     distributions, integration-lite.
-3.  math-extra (py/mo) — BUILD: special functions (erf, gamma-lite).
+3.  math-extra (py/mo) — DONE 30 Oct 2026: stdlib/mathex.fg (erf via Abramowitz-Stegun, gamma via Lanczos g=7 for x >= 0.5; verified vs Python).
 4.  statistics (py) — BUILD: mean/median/mode/variance/quantiles.
 5.  random (py/rs) — BUILD: extend rand.fg (uniform, normal,
     choice, shuffle, seedable).
 6.  complex (py) — BUILD: complex struct + arithmetic.
 7.  fractions-decimal (py) — BUILD: exact rational + fixed-point.
 8.  matrix (mo/rs) — BUILD: dense linalg on top of tensor.fg.
-9.  fft (py) — BUILD: radix-2 FFT/IFFT for power-of-two sizes.
+9.  fft (py) — DONE 30 Oct 2026: stdlib/fft.fg (iterative radix-2, Taylor-series twiddles in pure .fg; impulse -> all 1, constant -> 4,0,0,0, round-trip exact).
 10. optimization (py) — BUILD: gradient descent, least squares,
     Nelder-Mead-lite.
 11. polynomials (py) — BUILD: poly eval, roots-lite, fitting.
@@ -54,9 +54,9 @@ things is how the language gets updated. This replaces the earlier
     (only after pandas v1 lands).
 15. csv (py/go) — BUILD: reader/writer on read_file + split.
 16. json (py/go/rs) — BUILD: parser + writer (serde-style).
-17. toml (rs) — BUILD: config parser (subset).
-18. ini (py) — BUILD: simple section/key parser.
-19. xml-lite (py) — BUILD: small tag parser (no namespaces).
+17. toml (rs) — DONE 30 Oct 2026: stdlib/toml.fg (sections, string/int/float/bool, '#' comments; no arrays/inline tables/dates in v1).
+18. ini (py) — DONE 30 Oct 2026: stdlib/ini.fg (sections, key=value, ';'/'#' comments, first-occurrence wins).
+19. xml-lite (py) — DONE 30 Oct 2026: stdlib/xml.fg (first-element tag, attribute lookup, child text, inner markup; no namespaces/entities/validation).
 20. table-store (rs sqlite) — BUILD: file-backed tables with
     insert/select/delete (NOT real SQLite — honest name).
 21. datetime (py/go/rs chrono) — BUILD: date/time arithmetic,
@@ -70,16 +70,16 @@ things is how the language gets updated. This replaces the earlier
     + alternation (current: neither).
 26. string-utils (go/py) — BUILD: trim/split/join/case/pad
     (extend existing builtins).
-27. textwrap (py) — BUILD: wrap/fill/indents.
-28. difflib (py) — BUILD: sequence diff, similarity ratio.
+27. textwrap (py) — DONE 30 Oct 2026: stdlib/textwrap.fg (greedy wrap, fill, indent).
+28. difflib (py) — DONE 30 Oct 2026: stdlib/difflib.fg (LCS length + LCS ratio 2M/(m+n), common prefix/suffix; documented as NOT Python SequenceMatcher ratio).
 29. unicode-lite (py) — BUILD: ASCII core + documented limits
     (full Unicode is a later project, not v1).
 30. tokenizer (mo) — DONE: char + BPE (extend vocab tools).
-31. nlp-words (py) — BUILD: stopwords, stemming-lite.
-32. markdown-lite (py) — BUILD: headings/lists/code to text/HTML.
+31. nlp-words (py) — DONE 30 Oct 2026: stdlib/nlp.fg (ASCII tokenize + lowercase, stopword list, suffix-strip stemmer: studies->study, running->run).
+32. markdown-lite (py) — DONE (text) 30 Oct 2026: stdlib/markdown.fg (md_to_text + headings; HTML output still pending).
 33. template (py/rs) — BUILD: mustache-style {{name}} rendering.
-34. i18n-lite (go) — BUILD: message catalogs, plural-lite.
-35. slugify (py) — BUILD: title -> URL slug.
+34. i18n-lite (go) — DONE 30 Oct 2026: stdlib/i18n.fg (two-locale parallel-array catalog, plural one/other, missing-key fallback to key).
+35. slugify (py) — DONE 30 Oct 2026: stdlib/slugify.fg (ASCII lowercase, [a-z0-9] kept, runs folded to one '-', trimmed).
 36. fuzzy (rs) — BUILD: levenshtein, jaro-lite, matching.
 
 ## 4. Web & network (12) — HTTP builtins only; raw sockets NEEDS
@@ -87,7 +87,7 @@ things is how the language gets updated. This replaces the earlier
     POST, JSON helpers) on existing builtins.
 38. http-server (go/py) — BUILD: routing + handlers on
     http_listen/accept/respond.
-39. url (rs/go) — BUILD: parse/build/query-encode URLs.
+39. url (rs/go) — DONE 30 Oct 2026: stdlib/url.fg (parse scheme/host/port/path/query, build round-trip, query get, encode/decode of the reserved set; no ord() so arbitrary bytes pass through in v1).
 40. rest-client (py) — BUILD: JSON API wrapper over http-client.
 41. rss-feed (py) — BUILD: feed parse over http_get.
 42. oauth-client (py) — NEEDS: token flows are HTTP-doable;
@@ -101,7 +101,7 @@ things is how the language gets updated. This replaces the earlier
 48. api-mock (py) — BUILD: stub server for tests.
 
 ## 5. System & files (12)
-49. pathlib (py) — BUILD: path join/split/ext on file builtins.
+49. pathlib (py) — DONE 30 Oct 2026: stdlib/pathlib.fg (POSIX join/dir/base/ext/stem/is_abs).
 50. fs-utils (go) — BUILD: copy/move/list-lite (no readdir yet
     — list-lite NEEDS readdir builtin; copy/move are BUILD).
 51. os-info (go) — BUILD: args/env/platform-lite.
@@ -112,9 +112,9 @@ things is how the language gets updated. This replaces the earlier
 56. archive (py/go) — BUILD: tar writer/reader (uncompressed
     first; compression is item 58).
 57. checksum (py/go) — BUILD: crc32, adler32, fnv.
-58. compress (go/rs) — BUILD: RLE + Huffman-lite; gzip AFTER.
+58. compress (go/rs) — RLE DONE 30 Oct 2026: stdlib/compress.fg (count+char pairs, runs split at 9, round-trip verified); Huffman-lite + gzip still BUILD.
 59. tempfiles (py) — BUILD: temp names + cleanup discipline.
-60. dotenv (rs) — BUILD: .env parse into config.
+60. dotenv (rs) — DONE 30 Oct 2026: stdlib/dotenv.fg (KEY=VALUE, comments, quotes, '=' kept in values; no $ expansion in v1).
 
 ## 6. Crypto & security (8)
 61. hashlib (py) — BUILD: sha256/sha1/md5-lite (pure .fg).

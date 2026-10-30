@@ -1,0 +1,9 @@
+import "slugify.fg";
+
+fn main() -> int {
+    println(slugify("Hello, World! Jal Pari 2026"));
+    println(slugify("  --already--slug--  "));
+    println(slugify("ABC def_123"));
+    println(slugify(""));
+    return 0;
+}

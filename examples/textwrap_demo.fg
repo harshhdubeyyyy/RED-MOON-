@@ -1,0 +1,13 @@
+import "textwrap.fg";
+
+fn main() -> int {
+    let lines: [str] = tw_wrap("The quick brown fox jumps over the lazy dog", 20);
+    println("lines =", len(lines));
+    for ln in lines {
+        println(">", ln);
+    }
+    println("fill =");
+    println(tw_fill("hello world from jal pari", 10));
+    println(tw_indent("a\nb", "  "));
+    return 0;
+}

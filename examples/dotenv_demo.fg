@@ -1,0 +1,11 @@
+import "dotenv.fg";
+
+fn main() -> int {
+    let text: str = "# demo env\nAPP_NAME=Jal Pari\nPORT=8080\nSECRET=\"a=b=c\"\nEMPTY=\n";
+    let env: Env = env_parse(text);
+    println("app =", env_get(env, "APP_NAME"));
+    println("port =", env_get(env, "PORT"));
+    println("secret =", env_get(env, "SECRET"));
+    println("missing =", env_get_or(env, "HOST", "localhost"));
+    return 0;
+}

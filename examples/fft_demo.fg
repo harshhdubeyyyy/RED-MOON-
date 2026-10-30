@@ -1,0 +1,16 @@
+import "fft.fg";
+
+fn main() -> int {
+    let imp: [Cx] = [cx_new(1.0, 0.0), cx_new(0.0, 0.0), cx_new(0.0, 0.0), cx_new(0.0, 0.0)];
+    let fi: [Cx] = fft_forward(imp);
+    println("impulse fft =", fi[0].re, fi[1].re, fi[2].re, fi[3].re);
+    let con: [Cx] = [cx_new(1.0, 0.0), cx_new(1.0, 0.0), cx_new(1.0, 0.0), cx_new(1.0, 0.0)];
+    let fc: [Cx] = fft_forward(con);
+    println("const fft re =", fc[0].re, fc[1].re, fc[2].re, fc[3].re);
+    println("const fft im =", fc[0].im, fc[1].im, fc[2].im, fc[3].im);
+    let sig: [Cx] = [cx_new(1.0, 0.0), cx_new(2.0, 0.0), cx_new(3.0, 0.0), cx_new(4.0, 0.0)];
+    let rt: [Cx] = fft_inverse(fft_forward(sig));
+    println("roundtrip =", rt[0].re, rt[1].re, rt[2].re, rt[3].re);
+    println("mag impulse =", fft_mag(fi[0]), fft_mag(fi[1]));
+    return 0;
+}

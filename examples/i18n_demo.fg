@@ -1,0 +1,10 @@
+import "i18n.fg";
+
+fn main() -> int {
+    let cat: I18n = I18n { keys: ["hello", "bye", "apple_one", "apple_other"], en: ["Hello", "Goodbye", "apple", "apples"], other: ["Namaste", "Alvida", "seb", "seb"], other_code: "hi" };
+    println("hello =", i18n_get(cat, "en", "hello"), i18n_get(cat, "hi", "hello"));
+    println("bye =", i18n_get(cat, "hi", "bye"));
+    println("plural =", i18n_plural(cat, "en", "apple_one", "apple_other", 1), i18n_plural(cat, "en", "apple_one", "apple_other", 5));
+    println("missing =", i18n_get(cat, "en", "nope"));
+    return 0;
+}

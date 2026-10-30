@@ -733,7 +733,11 @@ short reuse, long survival through short churn,
 three-block coalescing, and a 48-byte alloc from the
 coalesced space all check out. The segregated allocator
 is available for the unified kernel to adopt; the chain
-continues with the library batches.
+continues with the library batches. PUSHED + VERIFIED
+30 Oct 2026 ~08:00 IST: RED-MOON- main d7a5c981 →
+ffd9c9cc9752c45d0fc7ee0d874cfb6b716dd910
+(API ref match + kernel_lifetime2.fg 4,462 bytes
+exact on Contents API).
 
 ## What does not change
 

@@ -1,0 +1,8 @@
+import "compress.fg";
+
+fn main() -> int {
+    println("enc =", rle_encode("aaabbc"), rle_encode("abc"), rle_encode("aaaaaaaaaaaa"));
+    println("dec =", rle_decode("3a2b1c"), rle_decode("9a3a"));
+    println("roundtrip =", rle_decode(rle_encode("mississippi")));
+    return 0;
+}

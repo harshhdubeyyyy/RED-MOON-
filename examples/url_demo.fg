@@ -1,0 +1,12 @@
+import "url.fg";
+
+fn main() -> int {
+    let u: Url = url_parse("https://example.com:8080/a/b?x=1&y=hi");
+    println("scheme =", u.scheme, "host =", u.host, "port =", u.port, "path =", u.path, "query =", u.query);
+    println("y =", url_query_get(u, "y"), "missing =", url_query_get(u, "z"));
+    println("built =", url_build(u));
+    println("enc =", url_encode("a b&c=d"));
+    println("dec =", url_decode("a%20b%26c"));
+    println("intstr =", url_int_str(0), url_int_str(8080), url_int_str(0 - 42));
+    return 0;
+}

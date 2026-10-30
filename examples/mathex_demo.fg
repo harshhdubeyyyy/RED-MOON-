@@ -1,0 +1,8 @@
+import "mathex.fg";
+
+fn main() -> int {
+    println("erf =", mathex_erf(0.0), mathex_erf(1.0), mathex_erf(2.0), mathex_erf(0.0 - 1.0));
+    println("erfc 1 =", mathex_erfc(1.0));
+    println("gamma =", mathex_gamma(0.5), mathex_gamma(1.0), mathex_gamma(2.0), mathex_gamma(3.0), mathex_gamma(5.0), mathex_gamma(2.5));
+    return 0;
+}

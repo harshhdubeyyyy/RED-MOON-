@@ -1,0 +1,9 @@
+import "nlp.fg";
+
+fn main() -> int {
+    let keys: [str] = nlp_keywords("The running dogs are jumping quickly");
+    println("keywords =", join(keys, " "));
+    println("stems =", nlp_stem("studies"), nlp_stem("walked"), nlp_stem("classes"), nlp_stem("cats"));
+    println("tokens =", len(nlp_tokenize("Hello, World! 123")));
+    return 0;
+}

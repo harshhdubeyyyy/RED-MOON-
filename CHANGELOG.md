@@ -8,6 +8,20 @@ without a major version bump (see docs/STABILITY.md).
 
 ## Unreleased
 
+- Daily batch 30 Oct 2026 (15 libraries, all pure Jal Pari with a
+  demo each, verified by `forge run`): fft (radix-2 + inverse,
+  Taylor-series twiddles), mathex (erf, gamma), textwrap,
+  difflib (LCS ratio — documented as not Python's SequenceMatcher
+  ratio), slugify, markdown-lite (to text; HTML pending),
+  toml (subset), ini, xml-lite, dotenv, pathlib (POSIX), url
+  (parse/build/encode of the reserved set), compress (RLE only;
+  Huffman/gzip pending), nlp-words (tokenize/stopwords/stem-lite),
+  i18n-lite (two-locale catalog, plural-lite). Two bugs caught by
+  the demos and fixed before push: mathex `sign` needed `mut`,
+  slugify dropped uppercase letters. No kernel sims this day: a
+  big32 diagnostic sim (privilege trace, then CSR-write trace)
+  was running, so per the daily rules the OS track is reported
+  short honestly instead of colliding with it.
 - Daily batch 29 Oct 2026 (16 libraries, all pure Jal Pari with a
   demo each, verified by `forge run`): numpy (flat row-major
   arrays, matmul, reductions), pandas (flat DataFrame, filter,

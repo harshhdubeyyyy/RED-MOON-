@@ -1,0 +1,11 @@
+import "pathlib.fg";
+
+fn main() -> int {
+    println("join =", path_join("/home/jay", "file.txt"), path_join("/home/jay/", "file.txt"), path_join("a", "/abs"));
+    println("dir =", path_dir("/home/jay/file.txt"), path_dir("notes.md"), path_dir("/x"));
+    println("base =", path_base("/home/jay/file.txt"), path_base("a/b/c"));
+    println("ext =", path_ext("/home/jay/file.txt"), path_ext("notes.md"), path_ext(".hidden"));
+    println("stem =", path_stem("/home/jay/file.txt"));
+    println("abs =", path_is_abs("/home/jay"), path_is_abs("rel/path"));
+    return 0;
+}

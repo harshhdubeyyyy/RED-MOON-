@@ -1,0 +1,10 @@
+import "difflib.fg";
+
+fn main() -> int {
+    println("lcs kitten sitting =", dl_lcs_len("kitten", "sitting"));
+    println("ratio kitten sitting =", dl_ratio("kitten", "sitting"));
+    println("ratio abc abc =", dl_ratio("abc", "abc"));
+    println("ratio empty abc =", dl_ratio("", "abc"));
+    println("prefix =", dl_common_prefix("foobar", "foobaz"), "suffix =", dl_common_suffix("foobar", "xxbar"));
+    return 0;
+}
