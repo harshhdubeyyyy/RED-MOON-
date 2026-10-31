@@ -1,0 +1,12 @@
+import "cli-table.fg";
+
+fn main() -> int {
+    let widths: [int] = [6, 3];
+    println(table_sep(widths));
+    println(table_row(["name", "age"], widths));
+    println(table_sep(widths));
+    println(table_row(["teju", "20"], widths));
+    println(table_row(["jayant", "21"], widths));
+    println(table_sep(widths));
+    return 0;
+}

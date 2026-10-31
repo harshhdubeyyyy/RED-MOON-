@@ -1,0 +1,9 @@
+import "uuid.fg";
+
+fn main() -> int {
+    println(uuid_from_seed(42));
+    println(uuid_from_seed(42));
+    println(uuid_from_seed(7));
+    println("formatted =", uuid_is_formatted(uuid_from_seed(42)));
+    return 0;
+}

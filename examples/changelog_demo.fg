@@ -1,0 +1,7 @@
+import "changelog.fg";
+
+fn main() -> int {
+    println(changelog_entry("1.2.0", "2026-10-31", ["added uuid library", "fixed cli-table padding"]));
+    println("count =", changelog_count(["added uuid library", "fixed cli-table padding"]));
+    return 0;
+}

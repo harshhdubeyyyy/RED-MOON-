@@ -1,0 +1,10 @@
+import "progress.fg";
+
+fn main() -> int {
+    println(progress_bar(0, 10));
+    println(progress_bar(50, 10));
+    println(progress_bar(100, 10));
+    println(progress_bar(150, 10));
+    println("done =", progress_done(100));
+    return 0;
+}

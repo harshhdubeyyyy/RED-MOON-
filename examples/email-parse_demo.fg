@@ -1,0 +1,12 @@
+import "email-parse.fg";
+
+fn main() -> int {
+    let a: EmailAddr = email_parse("jayant@example.com");
+    println("local =", a.local, "domain =", a.domain, "valid =", a.valid);
+    let b: EmailAddr = email_parse("not-an-email");
+    println("valid =", b.valid);
+    let c: EmailAddr = email_parse("a@b");
+    println("valid =", c.valid);
+    println("domain =", email_domain("teju@jalpari.dev"));
+    return 0;
+}

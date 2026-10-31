@@ -1,0 +1,9 @@
+import "timers.fg";
+
+fn main() -> int {
+    println("ms =", timer_ms(1000, 2501000));
+    println("secs =", timer_secs(1000, 2501000));
+    println("slow =", timer_is_slow(1000, 2501000, 1000));
+    println("slow2 =", timer_is_slow(1000, 2501000, 5000));
+    return 0;
+}

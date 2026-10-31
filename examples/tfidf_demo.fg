@@ -1,0 +1,11 @@
+import "tfidf.fg";
+
+fn main() -> int {
+    let docs: [str] = ["the cat sat", "the dog sat", "cats and dogs"];
+    println("tf =", tfidf_tf("cat", "the cat sat"));
+    println("idf =", tfidf_idf("cat", docs));
+    println("tfidf =", tfidf("cat", "the cat sat", docs));
+    println("tfidf-the =", tfidf("the", "the cat sat", docs));
+    println("tfidf-missing =", tfidf("zebra", "the cat sat", docs));
+    return 0;
+}
