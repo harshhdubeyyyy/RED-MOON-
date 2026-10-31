@@ -8,6 +8,19 @@ without a major version bump (see docs/STABILITY.md).
 
 ## Unreleased
 
+## 1.3.0 — 31 Oct 2026
+
+- Daily batch 31 Oct 2026 (10 OS kernels + 10 libraries, all
+  verified by real runs): OS kernels, each a new freestanding
+  big32 kernel with a model test (exact UART transcript,
+  halted) — rng (LCG driver), beep (note table), rtc (HH:MM:SS
+  app), editor (type/backspace), fm (file manager), paint (8x8
+  framebuffer), mon (system monitor), bootmenu (app launcher),
+  notes (notes app), pipe (byte-stream ring IPC). Libraries,
+  each a new pure Jal Pari stdlib file with a demo verified by
+  `forge run` — uuid, retry-backoff, cli-table, progress,
+  email-parse, tfidf, ical-lite, config, timers, changelog.
+  Regression suite `tests/run_tests.py` passed.
 - Language upgrade 30 Oct 2026: `ecall3(eid, arg0, arg1) -> int`
   (big32 only) — extension id in `a7`, arguments in `a0`/`a1`,
   result in `a0`. Proved by `examples/os/kernel_ecall3.fg` +

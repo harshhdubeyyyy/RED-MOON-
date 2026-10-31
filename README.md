@@ -13,7 +13,7 @@
 > Static types, no null, immutable by default, checked arithmetic —
 > with C++-style latency and Mojo/Python-style ML ease, in one binary.
 
-![Jal Pari](https://img.shields.io/badge/Jal_Pari-v1.2.0-pink)
+![Jal Pari](https://img.shields.io/badge/Jal_Pari-v1.3.0-pink)
 ![Native](https://img.shields.io/badge/compiled-native-blue)
 ![Safe mode](https://img.shields.io/badge/safe--mode-checked-green)
 ![Fast mode](https://img.shields.io/badge/fast--mode--O3-orange)
@@ -178,13 +178,13 @@ Jal Pari, what each line means, and where it is used in real life.
 
 Requirements: Python 3 and a C compiler (`cc` / `gcc`).
 
-**Install (1.2.0):**
+**Install (1.3.0):**
 
 ```sh
 git clone https://github.com/themythofsisyphusjayant/RED-MOON-
 cd RED-MOON-
 sh scripts/install.sh   # checks python3 + cc, installs jalpari to ~/.local/bin
-jalpari --version       # The Jal Pari Language 1.2.0
+jalpari --version       # The Jal Pari Language 1.3.0
 ```
 
 `jalpari` is the new command name; `python3 forge.py` still works
@@ -495,8 +495,8 @@ flowchart TD
 
 | Measure | Value |
 |---|---|
-| Language version | 1.2.0 |
-| Tree size | 46,279 lines (.py, .fg, .js, .sh, .toml) |
+| Language version | 1.3.0 |
+| Tree size | 53,116 lines (.py, .fg, .js, .sh, .toml) |
 | Standard libraries added 29 Oct | 16 (numpy, pandas, complex, fractions, statistics, checksum, base64, semver, units, polynomials, optimization, fuzzy, calendar, template, color, money) |
 | OS kernels added 29 Oct | 10 (lifetime allocator, terminal UART core, shell v2, page allocator, IPC ring, scheduler, FS v3, net loopback, calculator, clock) |
 | Library program | [120-item roadmap](docs/LIBRARY_ROADMAP_100.md) — Mojo / Python / Rust / Go equivalents, 100% in Jal Pari |
